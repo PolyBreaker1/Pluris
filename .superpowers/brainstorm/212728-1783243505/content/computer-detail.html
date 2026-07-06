@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<title>dev-laptop-001 — Pluris</title>
+<style>
+:root {
+	--chrome-bg: #0a1628; --chrome-bg-alt: #0d1f35; --chrome-bg-hover: #122a45;
+	--chrome-text: #ffffff; --chrome-text-dim: rgba(255,255,255,0.62); --chrome-text-muted: rgba(255,255,255,0.40);
+	--chrome-border: rgba(255,255,255,0.08); --chrome-accent: #00d4ff;
+	--paper: #ffffff; --paper-alt: #f8fafc; --paper-hover: #f1f5f9;
+	--border: #e2e8f0; --border-strong: #cbd5e1;
+	--text: #0f172a; --text-secondary: #475569; --text-muted: #94a3b8;
+	--accent: #0099c2; --accent-hover: #007ea3; --accent-bg: #e0f7fc; --accent-border: #7dd3e8;
+	--ok: #15803d; --ok-bg: #dcfce7; --warn: #b45309; --warn-bg: #fef3c7; --err: #b91c1c; --err-bg: #fee2e2;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background: var(--paper-alt); color: var(--text); font-size: 13px; line-height: 1.5; }
+.font-mono { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+.app { display: flex; height: 100vh; }
+.app main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.app-content { flex: 1; overflow: auto; background: var(--paper-alt); }
+.page-content { padding: 24px 28px; }
+
+.sidebar { width: 240px; flex-shrink: 0; background: var(--chrome-bg); border-right: 1px solid var(--chrome-border); display: flex; flex-direction: column; color: var(--chrome-text); }
+.sidebar-brand { display: flex; align-items: center; gap: 12px; padding: 18px 20px; border-bottom: 1px solid var(--chrome-border); }
+.sidebar-brand-mark { width: 32px; height: 32px; flex-shrink: 0; border-radius: 7px; background: linear-gradient(135deg, var(--chrome-accent), #0066ff); }
+.sidebar-brand-title { font-size: 17px; font-weight: 700; letter-spacing: -0.015em; color: var(--chrome-text); }
+.sidebar-brand-title .accent { color: var(--chrome-accent); }
+.sidebar-brand-sub { font-size: 9px; color: var(--chrome-text-muted); margin-top: 3px; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 600; font-family: 'JetBrains Mono', monospace; }
+.sidebar-nav { flex: 1; overflow-y: auto; padding: 8px 0; }
+.sidebar-link { display: flex; align-items: center; gap: 10px; padding: 8px 20px; font-size: 13px; font-weight: 500; color: var(--chrome-text-dim); border-left: 3px solid transparent; text-decoration: none; }
+.sidebar-link:hover { background: var(--chrome-bg-hover); color: var(--chrome-text); }
+.sidebar-link.active { background: var(--chrome-bg-hover); color: var(--chrome-text); border-left-color: var(--chrome-accent); }
+.sidebar-link .icon { width: 16px; text-align: center; }
+.sidebar-link.child { padding-left: 49px; padding-top: 5px; padding-bottom: 5px; font-size: 12px; color: var(--chrome-text-muted); border-left-color: transparent; }
+.sidebar-link.child.active { color: var(--chrome-accent); background: var(--chrome-bg-hover); }
+.sidebar-foot { padding: 12px 20px; border-top: 1px solid var(--chrome-border); font-size: 10px; color: var(--chrome-text-muted); letter-spacing: 0.04em; }
+
+.app-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 28px; background: var(--paper); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.app-header h1 { margin: 0; font-size: 16px; font-weight: 600; color: var(--text); }
+.user-chip { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-secondary); }
+.user-avatar { width: 28px; height: 28px; border-radius: 50%; background: var(--accent-bg); color: var(--accent); display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; }
+
+.btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; font-family: inherit; font-size: 13px; font-weight: 500; border-radius: 6px; border: 1px solid transparent; cursor: pointer; text-decoration: none; }
+.btn-primary { background: var(--accent); color: white; border-color: var(--accent); }
+.btn-secondary { background: var(--paper); color: var(--text); border-color: var(--border-strong); }
+
+.card { background: var(--paper); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 1px 2px rgba(15,23,42,0.04); }
+
+/* ---- Detail hero + tabs (real classes from web/templates/layout.templ) ---- */
+.asset-detail-hero { display: flex; align-items: center; justify-content: space-between; padding: 0 0 20px; gap: 24px; border-bottom: 1px solid var(--border); }
+.asset-detail-crumb { font-size: 12px; margin-bottom: 8px; color: var(--text-muted); }
+.crumb-link { color: var(--accent); text-decoration: none; }
+.crumb-sep { color: var(--text-muted); margin: 0 2px; }
+.asset-detail-hero-info { flex: 1; min-width: 0; }
+.asset-detail-hero-name { font-size: 24px; font-weight: 700; margin: 0 0 2px; color: var(--text); line-height: 1.2; }
+.asset-detail-hero-id { font-size: 12px; color: var(--text-muted); margin-bottom: 12px; }
+.asset-detail-hero-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+.asset-chip { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 12px; font-size: 11px; font-weight: 600; text-transform: capitalize; }
+.asset-chip-enroll-enrolled { background: rgba(0,150,255,0.12); color: #3b9eff; border: 1px solid rgba(0,150,255,0.25); }
+.asset-chip-lifecycle-active { background: rgba(74,222,128,0.12); color: #36b85c; border: 1px solid rgba(74,222,128,0.25); }
+.asset-detail-hero-defs { display: grid; grid-template-columns: 80px 1fr; gap: 4px 12px; margin: 0; font-size: 12px; }
+.asset-detail-hero-defs dt { font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; font-size: 10px; padding-top: 2px; }
+.asset-detail-hero-defs dd { margin: 0; color: var(--text-secondary); }
+.asset-detail-hero-visual { flex-shrink: 0; width: 140px; height: 120px; display: flex; align-items: center; justify-content: center; font-size: 56px; }
+.asset-detail-tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin: 16px 0 16px; padding: 0; flex-wrap: wrap; }
+.asset-detail-tab { padding: 8px 16px; font-size: 13px; font-weight: 600; color: var(--text-muted); cursor: pointer; border-bottom: 2px solid transparent; }
+.asset-detail-tab:hover { color: var(--text); }
+.asset-detail-tab.is-active { color: var(--accent); border-bottom-color: var(--accent); }
+.asset-detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.asset-detail-section { padding: 20px; }
+.asset-detail-section-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); margin: 0 0 14px; }
+.asset-detail-defs { display: grid; grid-template-columns: 180px 1fr; gap: 10px 16px; margin: 0; }
+.asset-detail-defs dt { font-size: 11px; font-weight: 600; color: var(--text-muted); letter-spacing: 0.04em; text-transform: uppercase; }
+.asset-detail-defs dd { margin: 0; font-size: 13px; color: var(--text); }
+.detail-ad-hint { font-size: 10px; color: var(--text-muted); font-family: 'JetBrains Mono', monospace; margin-left: 6px; opacity: 0.7; }
+
+.pm-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.pm-table thead th { text-align: left; padding: 10px 14px; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-muted); background: #fbfcfd; border-bottom: 1px solid var(--border); }
+.pm-table tbody td { padding: 10px 14px; border-bottom: 1px solid var(--border); }
+.pm-table tbody tr:last-child td { border-bottom: none; }
+
+.badge { display: inline-block; padding: 2px 9px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+.badge-ok { background: var(--ok-bg); color: var(--ok); }
+.badge-warn { background: var(--warn-bg); color: var(--warn); }
+.badge-info { background: var(--accent-bg); color: var(--accent); }
+
+.tab-panel { display: none; }
+.tab-panel.is-active { display: block; }
+
+.override-btn { font-size: 12px; padding: 4px 10px; border-radius: 5px; border: 1px solid var(--border-strong); background: var(--paper); color: var(--text-muted); cursor: not-allowed; }
+.override-btn.can-override { color: var(--accent); border-color: var(--accent); cursor: pointer; background: var(--accent-bg); }
+.perm-note { font-size: 11.5px; color: var(--text-muted); margin: 10px 0 0; font-style: italic; }
+.viewer-toggle { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-secondary); margin-bottom: 14px; }
+.viewer-toggle select { font-size: 12px; padding: 3px 6px; border-radius: 5px; border: 1px solid var(--border-strong); }
+</style>
+</head>
+<body>
+<div class="app">
+	<aside class="sidebar">
+		<a href="#" style="text-decoration:none;" class="sidebar-brand">
+			<div class="sidebar-brand-mark"></div>
+			<div>
+				<div class="sidebar-brand-title"><span class="accent">Pluris</span> <span style="font-weight:500;color:var(--chrome-text-dim);">Console</span></div>
+				<div class="sidebar-brand-sub">Endpoint Management</div>
+			</div>
+		</a>
+		<nav class="sidebar-nav">
+			<a href="#" class="sidebar-link">Dashboard</a>
+			<a href="#" class="sidebar-link">Users</a>
+			<a href="#" class="sidebar-link active">Assets</a>
+			<a href="#" class="sidebar-link child active">Computers</a>
+			<a href="#" class="sidebar-link child">Servers</a>
+			<a href="#" class="sidebar-link child">Printers</a>
+			<a href="#" class="sidebar-link child">Desks</a>
+			<a href="#" class="sidebar-link">Policy</a>
+			<a href="#" class="sidebar-link">Profiles</a>
+			<a href="#" class="sidebar-link">Scripts</a>
+			<a href="#" class="sidebar-link">Wine</a>
+			<a href="#" class="sidebar-link">Package Management</a>
+			<a href="#" class="sidebar-link">Server Administration</a>
+			<a href="#" class="sidebar-link">User / Admin Preferences</a>
+		</nav>
+		<div class="sidebar-foot">Pluris — Design Preview</div>
+	</aside>
+	<main>
+		<header class="app-header">
+			<h1>Assets — Computers</h1>
+			<div style="display:flex;align-items:center;gap:16px;">
+				<div class="user-chip"><span>admin@acme.test</span><div class="user-avatar">A</div></div>
+			</div>
+		</header>
+		<div class="app-content">
+			<div class="page-content">
+				<div class="asset-detail-crumb">
+					<a href="#" class="crumb-link">Assets</a> <span class="crumb-sep">›</span>
+					<a href="#" class="crumb-link">Computers</a> <span class="crumb-sep">›</span>
+					<span>dev-laptop-001</span>
+				</div>
+				<div class="asset-detail-hero">
+					<div class="asset-detail-hero-info">
+						<h2 class="asset-detail-hero-name">dev-laptop-001</h2>
+						<div class="asset-detail-hero-id font-mono">comp.acme.hq.0001</div>
+						<div class="asset-detail-hero-chips">
+							<span class="asset-chip asset-chip-enroll-enrolled">enrolled</span>
+							<span class="asset-chip asset-chip-lifecycle-active">active</span>
+						</div>
+						<dl class="asset-detail-hero-defs">
+							<dt>Site</dt><dd>Headquarters, Floor 1</dd>
+							<dt>Owner</dt><dd>Jane Doe</dd>
+							<dt>OS</dt><dd>Ubuntu 24.04 LTS</dd>
+							<dt>Last seen</dt><dd>2 minutes ago</dd>
+						</dl>
+					</div>
+					<div class="asset-detail-hero-visual">🐧💻</div>
+				</div>
+
+				<div class="asset-detail-tabs" id="tabs">
+					<div class="asset-detail-tab is-active" data-tab="general">General</div>
+					<div class="asset-detail-tab" data-tab="groups">Groups</div>
+					<div class="asset-detail-tab" data-tab="policies">Applied Policies</div>
+					<div class="asset-detail-tab" data-tab="config">Configuration</div>
+					<div class="asset-detail-tab" data-tab="software">Installed Software</div>
+					<div class="asset-detail-tab" data-tab="wine">Wine Groups</div>
+					<div class="asset-detail-tab" data-tab="scripts">Assigned Scripts</div>
+					<div class="asset-detail-tab" data-tab="logs">Logs</div>
+				</div>
+
+				<!-- GENERAL -->
+				<div class="tab-panel is-active" data-panel="general">
+					<div class="asset-detail-grid">
+						<section class="asset-detail-section card">
+							<h4 class="asset-detail-section-title">Identity</h4>
+							<dl class="asset-detail-defs">
+								<dt>Name<span class="detail-ad-hint">cn</span></dt><dd>dev-laptop-001</dd>
+								<dt>Asset ID</dt><dd class="font-mono">comp.acme.hq.0001</dd>
+								<dt>UUID<span class="detail-ad-hint">objectGUID</span></dt><dd class="font-mono">550e8400-e29b-...</dd>
+								<dt>Description<span class="detail-ad-hint">description</span></dt><dd>Engineering laptop</dd>
+								<dt>Managed by<span class="detail-ad-hint">managedBy</span></dt><dd>Jane Doe</dd>
+								<dt>Path<span class="detail-ad-hint">distinguishedName</span></dt><dd>Acme / Headquarters / Engineering</dd>
+								<dt>Tenant</dt><dd>Acme</dd>
+								<dt>Site</dt><dd>Headquarters</dd>
+								<dt>Owner</dt><dd>Jane Doe</dd>
+								<dt>Labels</dt><dd>env=dev, team=engineering</dd>
+							</dl>
+						</section>
+						<section class="asset-detail-section card">
+							<h4 class="asset-detail-section-title">Hardware</h4>
+							<dl class="asset-detail-defs">
+								<dt>Hostname<span class="detail-ad-hint">dNSHostName</span></dt><dd>dev-laptop-001</dd>
+								<dt>FQDN<span class="detail-ad-hint">dNSHostName</span></dt><dd>dev-laptop-001.acme.local</dd>
+								<dt>OS family</dt><dd>Linux</dd>
+								<dt>OS distribution<span class="detail-ad-hint">operatingSystem</span></dt><dd>Ubuntu</dd>
+								<dt>OS version<span class="detail-ad-hint">operatingSystemVersion</span></dt><dd>24.04 LTS</dd>
+								<dt>Kernel version</dt><dd>6.8.0-45-generic</dd>
+								<dt>Architecture</dt><dd>x86_64</dd>
+								<dt>CPU</dt><dd>Intel Core i7-1265U</dd>
+								<dt>RAM</dt><dd>16384 MB</dd>
+								<dt>Serial number<span class="detail-ad-hint">serialNumber</span></dt><dd>5CD1234ABC</dd>
+								<dt>Storage</dt><dd>512000 MB</dd>
+							</dl>
+						</section>
+						<section class="asset-detail-section card">
+							<h4 class="asset-detail-section-title">Enrollment</h4>
+							<dl class="asset-detail-defs">
+								<dt>State</dt><dd>Enrolled</dd>
+								<dt>Enrolled at<span class="detail-ad-hint">whenCreated</span></dt><dd>2025-12-01</dd>
+								<dt>Last seen<span class="detail-ad-hint">lastLogonTimestamp</span></dt><dd>2 minutes ago</dd>
+								<dt>Agent version</dt><dd>1.2.0</dd>
+								<dt>Trust level<span class="detail-ad-hint">userAccountControl</span></dt><dd>Workstation Trust Account</dd>
+							</dl>
+						</section>
+						<section class="asset-detail-section card">
+							<h4 class="asset-detail-section-title">Lifecycle (CMDB)</h4>
+							<dl class="asset-detail-defs">
+								<dt>State</dt><dd>Active</dd>
+								<dt>Vendor</dt><dd>Dell</dd>
+								<dt>Location<span class="detail-ad-hint">location</span></dt><dd>Headquarters, Floor 1</dd>
+								<dt>Purchase date</dt><dd>2025-12-01</dd>
+								<dt>Warranty expires</dt><dd>2029-06-01</dd>
+							</dl>
+						</section>
+					</div>
+				</div>
+
+				<!-- GROUPS -->
+				<div class="tab-panel" data-panel="groups">
+					<div class="card">
+						<table class="pm-table">
+							<thead><tr><th>Group</th><th>Category</th><th>Scope</th><th>Source</th></tr></thead>
+							<tbody>
+								<tr><td>Engineering-Laptops</td><td>Security</td><td>Global</td><td>Direct</td></tr>
+								<tr><td>HQ-Site-Devices</td><td>Security</td><td>Domain Local</td><td>Inherited (Site)</td></tr>
+								<tr><td>VPN-Required</td><td>Security</td><td>Universal</td><td>Direct</td></tr>
+							</tbody>
+						</table>
+					</div>
+					<p class="perm-note">Add/remove group membership — requires Assets → Edit permission.</p>
+				</div>
+
+				<!-- APPLIED POLICIES -->
+				<div class="tab-panel" data-panel="policies">
+					<div class="card">
+						<table class="pm-table">
+							<thead><tr><th>Policy (GP equivalent)</th><th>Source</th><th>Scope</th><th>Value</th><th>Status</th></tr></thead>
+							<tbody>
+								<tr><td>Audit system events</td><td>HQ-Baseline</td><td>Computer</td><td>Success + Failure</td><td><span class="badge badge-ok">Applied</span></td></tr>
+								<tr><td>Password minimum length</td><td>Engineering-Laptops</td><td>Computer</td><td>14 chars</td><td><span class="badge badge-ok">Applied</span></td></tr>
+								<tr><td>Firewall: block inbound</td><td>HQ-Baseline</td><td>Computer</td><td>Enabled</td><td><span class="badge badge-ok">Applied</span></td></tr>
+								<tr><td>Screen lock timeout</td><td>VPN-Required</td><td>Computer</td><td>10 min</td><td><span class="badge badge-info">Pending</span></td></tr>
+							</tbody>
+						</table>
+					</div>
+				</div>
+
+				<!-- CONFIGURATION -->
+				<div class="tab-panel" data-panel="config">
+					<div class="viewer-toggle">
+						Preview permission level:
+						<select id="permSelect" onchange="updatePerm()">
+							<option value="no">Admin — no override permission</option>
+							<option value="yes">Super Admin — has override permission</option>
+						</select>
+					</div>
+					<div class="card">
+						<table class="pm-table">
+							<thead><tr><th>Setting</th><th>Policy value</th><th>Current device value</th><th>Status</th><th>Action</th></tr></thead>
+							<tbody>
+								<tr><td>Screen lock timeout</td><td>10 min</td><td>15 min</td><td><span class="badge badge-warn">Drift</span></td><td><button class="override-btn" disabled>Override</button></td></tr>
+								<tr><td>Firewall: block inbound</td><td>Enabled</td><td>Enabled</td><td><span class="badge badge-ok">In sync</span></td><td><button class="override-btn" disabled>Override</button></td></tr>
+								<tr><td>USB storage</td><td>Blocked</td><td>Allowed</td><td><span class="badge badge-warn">Drift</span></td><td><button class="override-btn" disabled>Override</button></td></tr>
+							</tbody>
+						</table>
+					</div>
+					<p class="perm-note">Fields reflect what policy has assigned. Overriding a policy-set value requires the <strong>Assets → Override policy-set configuration</strong> permission (Roles tab, User detail).</p>
+				</div>
+
+				<!-- INSTALLED SOFTWARE -->
+				<div class="tab-panel" data-panel="software">
+					<div class="card">
+						<table class="pm-table">
+							<thead><tr><th>Name</th><th>Version</th><th>Publisher</th><th>Type</th><th>Installed</th><th>Size</th></tr></thead>
+							<tbody>
+								<tr><td>Firefox</td><td>128.0</td><td>Mozilla</td><td>deb</td><td>2025-12-02</td><td>210 MB</td></tr>
+								<tr><td>Slack</td><td>4.36.0</td><td>Slack Technologies</td><td>appimage</td><td>2025-12-03</td><td>180 MB</td></tr>
+								<tr><td>Microsoft Office 365</td><td>2024</td><td>Microsoft</td><td>wine</td><td>2025-12-05</td><td>3.1 GB</td></tr>
+								<tr><td>Docker</td><td>27.3</td><td>Docker Inc.</td><td>native</td><td>2025-12-01</td><td>450 MB</td></tr>
+							</tbody>
+						</table>
+					</div>
+				</div>
+
+				<!-- WINE GROUPS -->
+				<div class="tab-panel" data-panel="wine">
+					<div class="card">
+						<table class="pm-table">
+							<thead><tr><th>Wine Config Group</th><th>Wine version</th><th>Arch</th><th>Applications</th><th>Assigned</th></tr></thead>
+							<tbody>
+								<tr><td>Office-Prefix-Standard</td><td>staging</td><td>win64</td><td>Microsoft Office 365</td><td>2025-12-05</td></tr>
+							</tbody>
+						</table>
+					</div>
+					<p class="perm-note">Full Wine Config Group fields (separate editor page): wine_version, arch, registry_keys, file_overrides, path_mappings, environment, dll_overrides, tricks.</p>
+				</div>
+
+				<!-- ASSIGNED SCRIPTS -->
+				<div class="tab-panel" data-panel="scripts">
+					<div class="card">
+						<table class="pm-table">
+							<thead><tr><th>Script</th><th>Trigger</th><th>Last run</th><th>Status</th><th>Next run</th></tr></thead>
+							<tbody>
+								<tr><td>disk-cleanup.sh</td><td>Logon</td><td>2026-07-05 08:12</td><td><span class="badge badge-ok">Success</span></td><td>—</td></tr>
+								<tr><td>compliance-check.sh</td><td>Scheduled (daily)</td><td>2026-07-05 03:00</td><td><span class="badge badge-ok">Success</span></td><td>2026-07-06 03:00</td></tr>
+							</tbody>
+						</table>
+					</div>
+				</div>
+
+				<!-- LOGS -->
+				<div class="tab-panel" data-panel="logs">
+					<div class="card">
+						<table class="pm-table">
+							<thead><tr><th>Time</th><th>Event</th><th>Detail</th><th>Actor</th></tr></thead>
+							<tbody>
+								<tr><td>2026-07-05 08:12</td><td>Script executed</td><td>disk-cleanup.sh — success</td><td>System</td></tr>
+								<tr><td>2026-07-05 03:00</td><td>Policy applied</td><td>HQ-Baseline (3 settings)</td><td>System</td></tr>
+								<tr><td>2026-07-04 14:30</td><td>Owner changed</td><td>Unassigned → Jane Doe</td><td>Admin</td></tr>
+							</tbody>
+						</table>
+					</div>
+				</div>
+
+			</div>
+		</div>
+	</main>
+</div>
+<script>
+document.getElementById('tabs').addEventListener('click', function(e) {
+	var tab = e.target.closest('.asset-detail-tab');
+	if (!tab) return;
+	document.querySelectorAll('.asset-detail-tab').forEach(function(t){ t.classList.remove('is-active'); });
+	document.querySelectorAll('.tab-panel').forEach(function(p){ p.classList.remove('is-active'); });
+	tab.classList.add('is-active');
+	document.querySelector('.tab-panel[data-panel="' + tab.dataset.tab + '"]').classList.add('is-active');
+});
+function updatePerm() {
+	var has = document.getElementById('permSelect').value === 'yes';
+	document.querySelectorAll('.override-btn').forEach(function(btn){
+		btn.disabled = !has;
+		btn.classList.toggle('can-override', has);
+	});
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,86 @@
+package templates
+
+// AuthLayout is a minimal centered-card shell for /login and /setup —
+// intentionally NOT the full Layout (no sidebar/nav), since both routes
+// are reachable before any session exists.
+templ AuthLayout(title string) {
+	<!DOCTYPE html>
+	<html lang="en">
+		<head>
+			<meta charset="UTF-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+			<title>{ title } — Pluris</title>
+			<style>
+				body {
+					font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+					background: #0f1115; color: #e6e8eb;
+					display: flex; align-items: center; justify-content: center;
+					min-height: 100vh; margin: 0;
+				}
+				.auth-card {
+					background: #171a21; border: 1px solid #2a2e38; border-radius: 10px;
+					padding: 32px; width: 360px;
+				}
+				.auth-card h1 { font-size: 18px; margin: 0 0 20px; }
+				.auth-card label { display: block; font-size: 13px; margin: 14px 0 4px; color: #b7bcc7; }
+				.auth-card input {
+					width: 100%; box-sizing: border-box; padding: 8px 10px;
+					background: #0f1115; border: 1px solid #2a2e38; border-radius: 6px;
+					color: #e6e8eb; font-size: 14px;
+				}
+				.auth-card button {
+					margin-top: 20px; width: 100%; padding: 10px; border: none;
+					border-radius: 6px; background: #4f7cff; color: white;
+					font-size: 14px; font-weight: 600; cursor: pointer;
+				}
+				.auth-error {
+					margin-top: 12px; padding: 8px 10px; border-radius: 6px;
+					background: #3a1d21; color: #ff9aa6; font-size: 13px;
+				}
+			</style>
+		</head>
+		<body>
+			<div class="auth-card">
+				{ children... }
+			</div>
+		</body>
+	</html>
+}
+
+templ SetupPage(csrfToken string, errorMsg string) {
+	@AuthLayout("Set up Pluris") {
+		<h1>Create your admin account</h1>
+		<form method="POST" action="/setup" data-testid="setup-form">
+			<input type="hidden" name="_csrf" value={ csrfToken }/>
+			<label for="org_name">Organization name</label>
+			<input type="text" id="org_name" name="org_name" required/>
+			<label for="display_name">Your name</label>
+			<input type="text" id="display_name" name="display_name" required/>
+			<label for="email">Email</label>
+			<input type="email" id="email" name="email" required/>
+			<label for="password">Password</label>
+			<input type="password" id="password" name="password" minlength="8" required/>
+			if errorMsg != "" {
+				<div class="auth-error">{ errorMsg }</div>
+			}
+			<button type="submit">Create account</button>
+		</form>
+	}
+}
+
+templ LoginPage(csrfToken string, errorMsg string) {
+	@AuthLayout("Log in") {
+		<h1>Pluris</h1>
+		<form method="POST" action="/login" data-testid="login-form">
+			<input type="hidden" name="_csrf" value={ csrfToken }/>
+			<label for="email">Email</label>
+			<input type="email" id="email" name="email" required autofocus/>
+			<label for="password">Password</label>
+			<input type="password" id="password" name="password" required/>
+			if errorMsg != "" {
+				<div class="auth-error">{ errorMsg }</div>
+			}
+			<button type="submit">Log in</button>
+		</form>
+	}
+}

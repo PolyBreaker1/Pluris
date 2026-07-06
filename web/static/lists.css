@@ -1,0 +1,797 @@
+/* Pluris unified list mechanism — shared CSS surface.
+ *
+ * Every list table opts in by adding class="pluris-list" on the <table>.
+ * Per-list overrides (scope stripes, divider gradients, dialog styling)
+ * stay in their own templates and layer on top of these base rules.
+ *
+ * See docs/UX_INVARIANTS.md INV-L9.
+ */
+
+/* Hidden by filter (rows + dividers + tree leaves) */
+tr.pf-hidden,
+.pf-hidden { display: none !important; }
+
+/* Hidden because a sort is active and dividers don't apply */
+tr.sort-hidden { display: none !important; }
+
+/* Search highlighting — <mark> tags injected by the engine on visible
+   rows. Subtle yellow with a soft outline so the match reads even on
+   colored chip backgrounds. */
+mark.pf-mark {
+    background: #fef08a;
+    color: inherit;
+    padding: 0 2px;
+    border-radius: 2px;
+    box-shadow: 0 0 0 1px rgba(202, 138, 4, 0.35);
+    font-weight: 600;
+}
+.policy-name mark.pf-mark { background: #fde047; }
+
+/* ---- Sortable header — generic across every list ------------------- */
+th.th-sortable { padding: 0; cursor: pointer; user-select: none; }
+.th-sort-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    padding: 10px 12px;
+    background: transparent;
+    border: 0;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    border-radius: 0;
+}
+.th-sort-btn:hover { background: var(--paper-alt); color: var(--text); }
+.th-sort-ind {
+    font-size: 11px;
+    color: var(--border-strong);
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    transition: color 100ms;
+}
+th.th-sortable:not(.is-sorted-asc):not(.is-sorted-desc) .th-sort-btn:not(:hover) .th-sort-ind { opacity: 0.45; }
+th.th-sortable.is-sorted-asc  .th-sort-ind,
+th.th-sortable.is-sorted-desc .th-sort-ind { color: var(--accent); opacity: 1; }
+th.th-sortable.is-sorted-asc  .th-sort-btn,
+th.th-sortable.is-sorted-desc .th-sort-btn { color: var(--text); font-weight: 600; }
+
+/* ---- Filtered counts chip ------------------------------------------ */
+[data-pluris-count] {
+    font-size: 11px;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    color: var(--text-muted);
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--paper);
+    border: 1px solid var(--border);
+}
+[data-pluris-count].chip-filtered {
+    color: var(--accent);
+    border-color: var(--accent-border);
+}
+
+/* ---- Empty state ---------------------------------------------------- */
+[data-pluris-empty] { display: none; }
+[data-pluris-empty].pf-show { display: block; }
+
+/* =====================================================================
+   Concept empty state — content rendered inside any list's
+   [data-pluris-empty] element when the list shows zero matching rows.
+   ===================================================================== */
+.concept-empty {
+    padding: 32px 24px;
+    text-align: center;
+}
+.concept-empty-inner {
+    max-width: 480px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+}
+.concept-empty-title {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text);
+}
+.concept-empty-help {
+    margin: 0;
+    color: var(--text-secondary);
+    line-height: 1.5;
+    font-size: 13px;
+}
+.concept-empty-cta { margin-top: 8px; }
+
+/* =====================================================================
+   Glossary term (INV-O1) — every Linux / Pluris-specific token in user
+   copy is wrapped in this span by lists.glossifyTokens. Subtle dotted
+   underline + a small (?) badge = "hover me / focus me".
+   ===================================================================== */
+.term {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 3px;
+    cursor: help;
+    color: inherit;
+    border-bottom: 1px dotted var(--accent, #0099c2);
+    text-decoration: none;
+    white-space: nowrap;
+}
+.term:hover, .term:focus { color: var(--accent, #0099c2); outline: none; }
+.term .term-text {
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 0.95em;
+}
+.term .term-mark {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 13px;
+    height: 13px;
+    font-size: 9.5px;
+    font-weight: 700;
+    color: var(--accent, #0099c2);
+    background: rgba(0, 212, 255, 0.12);
+    border-radius: 50%;
+    line-height: 1;
+}
+.term-unknown {
+    border-bottom-style: dashed;
+    border-bottom-color: var(--text-muted);
+    cursor: default;
+}
+
+/* ----------------------------------------------------------------- */
+/* Policy Modules — sub-tabs, row actions, defaults, sources, picker.*/
+/* Added 2026-05-16 for the addon-mechanism slice.                   */
+/* ----------------------------------------------------------------- */
+
+/* Sub-tabs sit inside a page that already has top-level tabs (Policy
+   Catalog / Configuration Groups / Modules). Visually lighter so the
+   hierarchy reads: page tabs (heavy) → sub-tabs (light). */
+.tabs.tabs-sub {
+    margin-top: -0.25rem;
+    margin-bottom: 1rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px dashed var(--border, #e2e8f0);
+    font-size: 0.9em;
+}
+
+/* Button size variants used by row actions. .btn-sm = compact; .btn-icon
+   = square icon-only. Defined here because the rest of the codebase has
+   only .btn / .btn-primary / .btn-secondary / .btn-ghost / .btn-danger. */
+.btn.btn-sm {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.825em;
+    line-height: 1.2;
+}
+.btn.btn-sm .icon { width: 12px; height: 12px; }
+.btn.btn-icon {
+    padding: 0.35rem;
+    width: 28px;
+    height: 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Library row actions column: wrap on narrow viewports, gap-separated. */
+.pm-row-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    align-items: center;
+}
+
+/* Defaults sub-view. */
+.pm-defaults-intro { padding: 0.75rem 1rem; margin-bottom: 1rem; }
+.pm-defaults-hint { margin: 0; color: var(--text-secondary, #475569); line-height: 1.5; }
+.pm-defaults-hint strong { color: var(--text, #0f172a); }
+.pm-defaults-table-wrap { padding: 0; overflow-x: auto; }
+.pm-defaults-table { width: 100%; border-collapse: collapse; }
+.pm-defaults-table th,
+.pm-defaults-table td {
+    padding: 0.6rem 0.75rem;
+    text-align: left;
+    border-bottom: 1px solid var(--border, #e2e8f0);
+    vertical-align: top;
+}
+.pm-defaults-table th {
+    font-size: 0.825em;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted, #94a3b8);
+    font-weight: 600;
+}
+.pm-defaults-stale { color: var(--err, #b91c1c); font-size: 0.875em; }
+
+/* Sources sub-view. */
+.pm-sources { padding: 0; }
+.pm-source-list { list-style: none; margin: 0; padding: 0; }
+.pm-source {
+    display: grid;
+    grid-template-columns: 48px 1fr auto;
+    gap: 1rem;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--border, #e2e8f0);
+    align-items: start;
+}
+.pm-source:last-child { border-bottom: 0; }
+.pm-source-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 8px;
+    background: rgba(0, 212, 255, 0.08);
+    color: var(--accent, #0099c2);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+.pm-source-icon .icon { width: 24px; height: 24px; }
+.pm-source-title { font-weight: 600; font-size: 1.05em; color: var(--text, #0f172a); }
+.pm-source-meta { font-size: 0.825em; color: var(--text-muted, #94a3b8); margin-top: 0.15rem; }
+.pm-source-desc { margin-top: 0.5rem; color: var(--text-secondary, #475569); line-height: 1.5; font-size: 0.925em; }
+.pm-source-empty {
+    margin-top: 0.5rem;
+    padding: 0.4rem 0.6rem;
+    border: 1px dashed var(--border, #e2e8f0);
+    border-radius: 4px;
+    font-size: 0.825em;
+    color: var(--text-muted, #94a3b8);
+    display: inline-block;
+}
+.pm-source-status { align-self: center; }
+
+/* Picker dialog. */
+.pmp-dialog {
+    border: 1px solid var(--border, #e2e8f0);
+    border-radius: 8px;
+    background: var(--paper, #ffffff);
+    color: var(--text, #0f172a);
+    width: min(640px, 92vw);
+    max-height: 88vh;
+    padding: 0;
+}
+.pmp-dialog::backdrop { background: rgba(2, 8, 20, 0.6); backdrop-filter: blur(2px); }
+.pmp-form { display: flex; flex-direction: column; max-height: 88vh; }
+.pmp-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--border, #e2e8f0);
+}
+.pmp-eyebrow {
+    font-size: 0.75em;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--accent, #0099c2);
+}
+.pmp-title { margin: 0.1rem 0 0.4rem; font-size: 1.15em; }
+.pmp-target { font-size: 0.875em; color: var(--text-secondary, #475569); display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; }
+.pmp-target-label { color: var(--text-muted, #94a3b8); }
+.pmp-current {
+    padding: 0.85rem 1.25rem;
+    background: rgba(0, 212, 255, 0.04);
+    border-bottom: 1px solid var(--border, #e2e8f0);
+}
+.pmp-current-label { font-size: 0.75em; text-transform: uppercase; color: var(--text-muted, #94a3b8); letter-spacing: 0.05em; }
+.pmp-current-name { font-family: var(--font-mono, monospace); font-size: 0.95em; margin-top: 0.2rem; }
+.pmp-current-source { font-size: 0.825em; color: var(--text-secondary, #475569); margin-top: 0.2rem; }
+.pmp-controls { padding: 0.6rem 1.25rem; border-bottom: 1px solid var(--border, #e2e8f0); }
+.pmp-toggle { display: flex; gap: 0.5rem; align-items: center; font-size: 0.875em; cursor: pointer; }
+.pmp-toggle em { color: var(--text-muted, #94a3b8); font-style: italic; }
+.pmp-candidates { padding: 0.5rem 1.25rem; flex: 1; overflow-y: auto; min-height: 100px; }
+.pmp-candidates-empty {
+    padding: 1rem;
+    text-align: center;
+    color: var(--text-muted, #94a3b8);
+    border: 1px dashed var(--border, #e2e8f0);
+    border-radius: 4px;
+    font-size: 0.9em;
+}
+.pmp-candidate-list { list-style: none; margin: 0; padding: 0; }
+.pmp-deps { padding: 0.6rem 1.25rem; border-top: 1px solid var(--border, #e2e8f0); background: rgba(255, 165, 0, 0.05); }
+.pmp-deps-title { font-size: 0.825em; text-transform: uppercase; letter-spacing: 0.04em; color: var(--warn, #b45309); }
+.pmp-deps-list { margin: 0.3rem 0 0; padding-left: 1.25rem; font-size: 0.875em; }
+.pmp-footer {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: flex-end;
+    padding: 0.75rem 1.25rem;
+    border-top: 1px solid var(--border, #e2e8f0);
+}
+
+/* Row-click clickable list (INV-L10) — any table the engine wires to a
+ * detail dialog gains the .pluris-list-clickable class. The cursor +
+ * hover affordance lives here so per-list CSS never duplicates it.
+ * Also applies to lists that navigate to a detail page (assets). */
+table.pluris-list-clickable tbody tr[data-detail-id] { cursor: pointer; }
+table.pluris-list-clickable tbody tr[data-detail-id]:hover {
+    background: var(--surface-hover, rgba(0, 212, 255, 0.06));
+}
+table.pluris-list-clickable tbody tr[data-detail-id]:focus-visible {
+    outline: 2px solid var(--accent, #00d4ff);
+    outline-offset: -2px;
+}
+/* Asset list rows navigate to a detail page instead of opening a dialog.
+ * The .pluris-list-clickable class isn't added by lists.js here (no dialog),
+ * so we target the assets list directly. */
+table.pluris-list[data-list-id="assets"] tbody tr[data-detail-id] { cursor: pointer; }
+table.pluris-list[data-list-id="assets"] tbody tr[data-detail-id]:hover {
+    background: var(--surface-hover, rgba(0, 212, 255, 0.06));
+}
+table.pluris-list[data-list-id="assets"] tbody tr[data-detail-id]:focus-visible {
+    outline: 2px solid var(--accent, #00d4ff);
+    outline-offset: -2px;
+}
+
+/* =====================================================================
+ * Filter Builder — template-based filter component.
+ *
+ * Two modes that REPLACE each other (not stacked):
+ *   SIMPLE: template-tag + search input (real-time via lists.js)
+ *   ADVANCED: explicit criteria rows + Apply button
+ * ===================================================================== */
+
+/* Toolbar container */
+.fb-toolbar {
+    padding: 16px 20px;
+    margin-bottom: 16px;
+}
+
+/* ---- SIMPLE MODE ---- */
+.fb-simple-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.fb-tpl-btn-wrap {
+    position: relative;
+}
+
+.fb-tpl-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 12px;
+    background: rgba(0, 153, 194, 0.08);
+    border: 1px solid rgba(0, 153, 194, 0.25);
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--accent, #0099c2);
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.12s, border-color 0.12s;
+}
+
+.fb-tpl-btn:hover {
+    background: rgba(0, 153, 194, 0.15);
+    border-color: rgba(0, 153, 194, 0.4);
+}
+
+.fb-tpl-icon {
+    font-size: 14px;
+}
+
+.fb-tpl-name {
+    font-weight: 600;
+}
+
+.fb-tpl-arrow {
+    font-size: 10px;
+    opacity: 0.7;
+}
+
+.fb-dropdown {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    min-width: 200px;
+    background: white;
+    border: 1px solid var(--border, #e2e8f0);
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    z-index: 1000;
+}
+
+.fb-dd-label {
+    padding: 8px 12px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted, #94a3b8);
+    border-bottom: 1px solid var(--border, #e2e8f0);
+}
+
+.fb-dd-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    font-size: 13px;
+    cursor: pointer;
+    transition: background 0.1s;
+}
+
+.fb-dd-item:hover {
+    background: var(--paper-hover, #f1f5f9);
+}
+
+.fb-dd-item.is-active {
+    background: rgba(0, 153, 194, 0.08);
+    color: var(--accent, #0099c2);
+    font-weight: 500;
+}
+
+.fb-dd-badge {
+    font-size: 10px;
+    padding: 2px 6px;
+    background: var(--paper-alt, #f8fafc);
+    border: 1px solid var(--border, #e2e8f0);
+    border-radius: 3px;
+    color: var(--text-secondary, #475569);
+}
+
+.fb-search {
+    flex: 1;
+    min-width: 0;
+    padding: 10px 14px;
+    font-size: 14px;
+    font-family: inherit;
+    color: var(--text, #0f172a);
+    background: white;
+    border: 1px solid var(--border, #e2e8f0);
+    border-radius: 6px;
+    outline: none;
+    transition: border-color 0.12s, box-shadow 0.12s;
+}
+
+.fb-search:focus {
+    border-color: var(--accent, #0099c2);
+    box-shadow: 0 0 0 3px rgba(0, 153, 194, 0.1);
+}
+
+.fb-search::placeholder {
+    color: var(--text-muted, #94a3b8);
+}
+
+.fb-search-small {
+    flex: 0 0 200px;
+}
+
+/* ---- ADVANCED MODE ---- */
+    background: var(--paper, #fff);
+    border: 1px solid var(--border-strong, #cbd5e1);
+    border-radius: 0 6px 6px 0;
+    outline: none;
+    transition: border-color 0.12s, box-shadow 0.12s;
+}
+.fb-search-input:focus {
+    border-color: var(--accent, #0099c2);
+    box-shadow: 0 0 0 3px var(--accent-bg, #e0f7fc);
+}
+.fb-search-input::placeholder {
+    color: var(--text-muted, #94a3b8);
+}
+
+/* Count badge (shared between modes) */
+.fb-count {
+    font-size: 11px;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    color: var(--text-muted, #94a3b8);
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: var(--paper-alt, #f8fafc);
+    border: 1px solid var(--border, #e2e8f0);
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+.fb-count.chip-filtered {
+    color: var(--accent, #0099c2);
+    border-color: rgba(0, 153, 194, 0.3);
+}
+
+/* Mode switch button */
+.fb-mode-btn {
+    flex-shrink: 0;
+}
+
+/* Template dropdown */
+.fb-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    z-index: 200;
+    min-width: 220px;
+    margin-top: 4px;
+    background: var(--paper, #fff);
+    border: 1px solid var(--border, #e2e8f0);
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+    padding: 6px 0;
+}
+.fb-dd-label {
+    padding: 6px 14px 4px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted, #94a3b8);
+}
+.fb-dd-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 14px;
+    font-size: 13px;
+    cursor: pointer;
+    color: var(--text, #0f172a);
+    transition: background 0.1s;
+}
+.fb-dd-item:hover { background: var(--paper-hover, #f1f5f9); }
+.fb-dd-item.is-active {
+    background: rgba(0, 153, 194, 0.06);
+    color: var(--accent, #0099c2);
+    font-weight: 600;
+}
+.fb-dd-badge {
+    margin-left: auto;
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 3px;
+    background: var(--paper-alt, #f8fafc);
+    color: var(--text-muted, #94a3b8);
+    font-weight: 500;
+}
+
+/* ---- ADVANCED MODE ---- */
+.fb-adv-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+.fb-adv-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text, #0f172a);
+    flex: 1;
+}
+
+/* Criteria rows */
+.fb-criteria {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 12px;
+    min-height: 40px;
+}
+.fb-criteria:empty::after {
+    content: 'No filters. Click "+ Add filter" to begin.';
+    font-size: 12px;
+    color: var(--text-muted, #94a3b8);
+    font-style: italic;
+    padding: 10px 0;
+}
+
+/* Single filter row */
+.fb-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: var(--paper-alt, #f8fafc);
+    border: 1px solid var(--border, #e2e8f0);
+    border-radius: 6px;
+    border-left: 3px solid var(--accent, #0099c2);
+}
+.fb-row-logic {
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--accent, #0099c2);
+    text-transform: uppercase;
+    width: 30px;
+    flex-shrink: 0;
+    text-align: center;
+}
+
+/* Selects and inputs in rows */
+.fb-select {
+    padding: 6px 10px;
+    border-radius: 5px;
+    font-size: 13px;
+    font-family: inherit;
+    background: var(--paper, #fff);
+    color: var(--text, #0f172a);
+    border: 1px solid var(--border-strong, #cbd5e1);
+    cursor: pointer;
+}
+.fb-select:focus {
+    outline: none;
+    border-color: var(--accent, #0099c2);
+    box-shadow: 0 0 0 2px var(--accent-bg, #e0f7fc);
+}
+.fb-select-param { min-width: 150px; }
+.fb-select-op { min-width: 120px; }
+
+.fb-input {
+    padding: 6px 10px;
+    border-radius: 5px;
+    font-size: 13px;
+    font-family: inherit;
+    background: var(--paper, #fff);
+    color: var(--text, #0f172a);
+    border: 1px solid var(--border-strong, #cbd5e1);
+    min-width: 100px;
+}
+.fb-input:focus {
+    outline: none;
+    border-color: var(--accent, #0099c2);
+    box-shadow: 0 0 0 2px var(--accent-bg, #e0f7fc);
+}
+
+/* Remove row button */
+.fb-row-remove {
+    background: none;
+    border: none;
+    color: var(--text-muted, #94a3b8);
+    cursor: pointer;
+    font-size: 16px;
+    padding: 2px 6px;
+    border-radius: 3px;
+    margin-left: auto;
+    flex-shrink: 0;
+    line-height: 1;
+}
+.fb-row-remove:hover {
+    color: var(--err, #b91c1c);
+    background: var(--err-bg, #fee2e2);
+}
+
+/* Footer actions */
+.fb-adv-footer {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border, #e2e8f0);
+}
+.fb-spacer { flex: 1; }
+
+/* Logic selector dropdown (AND/OR/NOR) */
+.fb-logic-select {
+    padding: 4px 6px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 700;
+    font-family: inherit;
+    background: var(--paper, #fff);
+    color: var(--accent, #0099c2);
+    border: 1px solid rgba(0, 153, 194, 0.3);
+    cursor: pointer;
+    width: 52px;
+    text-align: center;
+    flex-shrink: 0;
+}
+.fb-logic-select:focus {
+    outline: none;
+    border-color: var(--accent, #0099c2);
+}
+
+/* Value N/A when operator needs no value */
+.fb-val-na {
+    color: var(--text-muted, #94a3b8);
+    font-size: 12px;
+    padding: 0 8px;
+}
+
+/* Value wrapper — input + small menu button */
+.fb-val-wrap {
+    position: relative;
+    display: inline-flex;
+    align-items: stretch;
+}
+.fb-val-wrap .fb-input,
+.fb-val-wrap .fb-select {
+    padding-right: 24px;
+}
+.fb-val-menu-btn {
+    position: absolute;
+    right: 1px;
+    top: 1px;
+    bottom: 1px;
+    width: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--paper-alt, #f8fafc);
+    border: none;
+    border-left: 1px solid var(--border, #e2e8f0);
+    border-radius: 0 4px 4px 0;
+    color: var(--text-muted, #94a3b8);
+    cursor: pointer;
+    font-size: 9px;
+    padding: 0;
+}
+.fb-val-menu-btn:hover {
+    background: var(--paper-hover, #f1f5f9);
+    color: var(--accent, #0099c2);
+}
+
+/* #search_term placeholder badge */
+.fb-val-placeholder {
+    display: inline-flex;
+    align-items: center;
+    padding: 5px 10px;
+    border-radius: 5px;
+    font-size: 12px;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    background: rgba(0, 153, 194, 0.08);
+    border: 1px solid rgba(0, 153, 194, 0.25);
+    color: var(--accent, #0099c2);
+    white-space: nowrap;
+}
+
+/* Value popup menu (appears on ▾ click) */
+.fb-val-popup {
+    z-index: 300;
+    min-width: 160px;
+    background: var(--paper, #fff);
+    border: 1px solid var(--border, #e2e8f0);
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    padding: 4px 0;
+}
+.fb-val-popup-item {
+    padding: 7px 12px;
+    font-size: 13px;
+    cursor: pointer;
+    color: var(--text, #0f172a);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.fb-val-popup-item:hover {
+    background: var(--paper-hover, #f1f5f9);
+}
+.fb-val-hash {
+    font-weight: 700;
+    color: var(--accent, #0099c2);
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+/* Table head with column picker */
+.pm-table-head {
+    display: flex; justify-content: flex-end; padding: 8px 28px 4px;
+    background: white;
+    border-top: 1px solid var(--border, #e2e8f0);
+}
+
+/* Table wrapper - full width, flows to bottom naturally */
+.pm-table-wrap {
+    background: white;
+    /* No max-height, no overflow - let it flow naturally */
+}
+
+/* Table takes full width */
+.pm-table {
+    width: 100%;
+}
+
+.pm-table tbody tr td:first-child,
+.pm-table thead tr th:first-child {
+    padding-left: 28px;
+}
+
+.pm-table tbody tr td:last-child,
+.pm-table thead tr th:last-child {
+    padding-right: 28px;
+}

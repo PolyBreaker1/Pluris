@@ -1,0 +1,46 @@
+id: pluris.sshd.password-auth-disable
+version: 1.0.0
+title: Disable SSH password authentication
+description: |
+  Drops a snippet into /etc/ssh/sshd_config.d/ disabling password authentication
+  (and optionally root login), validates the resulting config with `sshd -t`,
+  and reloads sshd. Idempotent. Reversible via rollback.sh.
+
+target_os: [linux]
+scope: machine
+runtime: bash
+
+# Policy URNs this module satisfies. One module can satisfy many policies;
+# many modules can satisfy one policy. Admin selects which module to bind.
+satisfies:
+  - "Computer/WindowsComponents/RemoteAccess/SSH/PasswordAuthDisable"
+  - "pluris/ssh/password-auth"
+
+# Inputs admin sets per binding (validated against this JSON Schema).
+parameters:
+  type: object
+  properties:
+    allow_root:
+      type: boolean
+      default: false
+      description: Permit root login when password auth is disabled.
+  additionalProperties: false
+
+# Other modules that must be present and run before this one.
+depends_on: []
+conflicts: []
+
+files:
+  enforce: enforce.sh
+  validate: validate.sh
+  rollback: rollback.sh
+
+# Resource limits applied by the agent runtime.
+limits:
+  timeout_seconds: 30
+  max_memory_mb: 64
+
+# Authoring metadata.
+maintainers:
+  - "Pluris core (bundled module)"
+license: Apache-2.0

@@ -1,0 +1,154 @@
+// detail_shell.templ — the standardized detail-page shell (spec §1-2,
+// docs/superpowers/specs/2026-07-05-standardized-detail-pages-design.md).
+//
+// One component set for every entity detail page (Computer, User,
+// Policy, …): breadcrumb + hero + real switching tabs + server-rendered
+// panels. Reuses the existing `.asset-detail-*` CSS classes in
+// layout.templ as the standard shell visuals. Tab switching lives in
+// the single shared web/static/detail.js (INV-L9 discipline).
+package templates
+
+import (
+	"strconv"
+
+	"github.com/pluris/pluris/web/lists"
+)
+
+// Crumb is one breadcrumb segment; Href "" renders a plain <span> (current page).
+type Crumb struct{ Label, Href string }
+
+// Chip is a hero status chip; Class is appended to "asset-chip" (e.g.
+// "asset-chip-enroll-enrolled").
+type Chip struct{ Label, Class string }
+
+// HeroDef is one label/value pair in the hero quick-facts list.
+type HeroDef struct{ Label, Value string }
+
+// HeroSpec describes the standardized detail-page hero (INV: one shell
+// for every entity — see docs/UX_INVARIANTS.md and spec §1).
+type HeroSpec struct {
+	Crumbs []Crumb
+	Name   string
+	ID     string // mono sub-line under the name; "" hides it
+	Chips  []Chip
+	Defs   []HeroDef
+	Visual templ.Component // device icon / avatar / policy icon; nil = omitted
+	Action templ.Component // single optional hero action (picker/button); nil = omitted
+}
+
+// TabSpec is one tab: stable slug (used in data-tab/data-panel and the
+// URL hash), label, and the server-rendered panel body.
+type TabSpec struct {
+	Slug  string
+	Label string
+	Body  templ.Component
+}
+
+// DetailShell renders the full standardized detail page inside Layout:
+// breadcrumb, hero, tab strip and one pre-rendered panel per tab. The
+// first tab/panel starts active; web/static/detail.js handles switching
+// and hash deep-links.
+templ DetailShell(activeNav string, title string, attrs templ.Attributes, hero HeroSpec, tabs []TabSpec) {
+	@Layout(activeNav, title) {
+		<div class="page-content">
+			<div class="asset-detail" { attrs... }>
+				<nav class="asset-detail-crumb">
+					for i, c := range hero.Crumbs {
+						if i > 0 {
+							<span class="crumb-sep">›</span>
+						}
+						if c.Href != "" {
+							<a href={ templ.SafeURL(c.Href) } class="crumb-link">{ c.Label }</a>
+						} else {
+							<span>{ c.Label }</span>
+						}
+					}
+				</nav>
+				<div class="asset-detail-hero">
+					<div class="asset-detail-hero-info">
+						<h2 class="asset-detail-hero-name">{ hero.Name }</h2>
+						if hero.ID != "" {
+							<div class="asset-detail-hero-id font-mono">{ hero.ID }</div>
+						}
+						if len(hero.Chips) > 0 {
+							<div class="asset-detail-hero-chips">
+								for _, ch := range hero.Chips {
+									<span class={ "asset-chip " + ch.Class }>{ ch.Label }</span>
+								}
+							</div>
+						}
+						if len(hero.Defs) > 0 {
+							<dl class="asset-detail-hero-defs">
+								for _, d := range hero.Defs {
+									<dt>{ d.Label }</dt>
+									<dd>{ d.Value }</dd>
+								}
+							</dl>
+						}
+						if hero.Action != nil {
+							@hero.Action
+						}
+					</div>
+					if hero.Visual != nil {
+						<div class="asset-detail-hero-visual">
+							@hero.Visual
+						</div>
+					}
+				</div>
+				<div class="asset-detail-tabs">
+					for i, tab := range tabs {
+						if i == 0 {
+							<div class="asset-detail-tab is-active" data-tab={ tab.Slug } role="tab" tabindex="0">{ tab.Label }</div>
+						} else {
+							<div class="asset-detail-tab" data-tab={ tab.Slug } role="tab" tabindex="0">{ tab.Label }</div>
+						}
+					}
+				</div>
+				for i, tab := range tabs {
+					if i == 0 {
+						<div class="detail-tab-panel is-active" data-panel={ tab.Slug }>
+							@tab.Body
+						</div>
+					} else {
+						<div class="detail-tab-panel" data-panel={ tab.Slug }>
+							@tab.Body
+						</div>
+					}
+				}
+			</div>
+		</div>
+	}
+}
+
+// DetailTableFrame renders the standardized embedded-table frame for a
+// detail tab (spec §2): registry-driven <thead> from web/lists FieldDefs
+// and an optional single primary action in the header. Callers render
+// <tr> rows as templ children.
+templ DetailTableFrame(listID string, action templ.Component) {
+	<section class="card detail-table-card" data-detail-list={ listID }>
+		if action != nil {
+			<div class="detail-table-actions">
+				@action
+			</div>
+		}
+		<table class="pm-table">
+			<thead>
+				<tr>
+					for _, f := range lists.FieldsFor(listID) {
+						<th title={ f.Description }>{ f.Label }</th>
+					}
+				</tr>
+			</thead>
+			<tbody>
+				{ children... }
+			</tbody>
+		</table>
+	</section>
+}
+
+// DetailEmptyRow is the standard empty state inside a DetailTableFrame.
+templ DetailEmptyRow(colspan int, message string) {
+	<tr class="detail-empty-row">
+		<td colspan={ strconv.Itoa(colspan) }>{ message }</td>
+	</tr>
+}

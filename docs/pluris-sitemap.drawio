@@ -1,0 +1,261 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="app.diagrams.net" modified="2026-05-30" agent="Pluris" version="24.0.0" type="device">
+  <diagram id="pluris-sitemap" name="Page Hierarchy &amp; Navigation">
+    <mxGraphModel dx="2800" dy="2000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="0" pageScale="1" pageWidth="4000" pageHeight="3000" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- ==================== LEGEND ==================== -->
+        <mxCell id="legend" value="LEGEND" style="swimlane;startSize=22;fontSize=12;fillColor=#f5f5f5;strokeColor=#666666;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="20" y="20" width="520" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="leg1" value="Top-level Page" style="rounded=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;" vertex="1" parent="legend">
+          <mxGeometry x="10" y="35" width="100" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="leg2" value="Sub-page / Tab" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="legend">
+          <mxGeometry x="120" y="35" width="100" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="leg3" value="Sub-tab (L3)" style="rounded=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;" vertex="1" parent="legend">
+          <mxGeometry x="230" y="35" width="90" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="leg4" value="Canonical Editor" style="rounded=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="legend">
+          <mxGeometry x="330" y="35" width="100" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="leg5" value="Data Model" style="rounded=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="legend">
+          <mxGeometry x="440" y="35" width="70" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- ========================================================================== -->
+        <!-- ROW 1: TOP-LEVEL PAGES (y=140, spaced evenly)                              -->
+        <!-- ========================================================================== -->
+
+        <mxCell id="dashboard" value="Dashboard&#xa;/&#xa;───────────────&#xa;Adjustable tiles&#xa;Hierarchy dropdown filters&#xa;Dynamic search&#xa;Tile types: graph, text,&#xa;table, update view" style="rounded=1;whiteSpace=wrap;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;align=left;spacingLeft=8;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="20" y="140" width="210" height="140" as="geometry" />
+        </mxCell>
+
+        <mxCell id="users" value="Users&#xa;/users&#xa;───────────────&#xa;Identity list (AD/manual)&#xa;Role assignment&#xa;Semi-auto asset pairing&#xa;Roles: super_admin,&#xa;admin, user_self_service" style="rounded=1;whiteSpace=wrap;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;align=left;spacingLeft=8;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="260" y="140" width="210" height="140" as="geometry" />
+        </mxCell>
+
+        <mxCell id="assets" value="Assets&#xa;/assets (redirects to /assets/computers)&#xa;───────────────&#xa;Unified hardware inventory&#xa;Subtype tabs&#xa;Detail view: tabbed sub-modules&#xa;CMDB fields" style="rounded=1;whiteSpace=wrap;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;align=left;spacingLeft=8;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="500" y="140" width="250" height="140" as="geometry" />
+        </mxCell>
+
+        <mxCell id="policy" value="Policy&#xa;/policy (redirects to /policy/catalog)&#xa;───────────────&#xa;GP compatibility layer&#xa;Computer/User scope split&#xa;Catalog from MS GP Reference" style="rounded=1;whiteSpace=wrap;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;align=left;spacingLeft=8;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="780" y="140" width="250" height="140" as="geometry" />
+        </mxCell>
+
+        <mxCell id="profiles" value="Profiles&#xa;/profiles&#xa;───────────────&#xa;Config profiles bundling&#xa;software, wine, scripts,&#xa;packages&#xa;Assignable to assets/users" style="rounded=1;whiteSpace=wrap;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;align=left;spacingLeft=8;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="1060" y="140" width="210" height="140" as="geometry" />
+        </mxCell>
+
+        <!-- ==================== ROW 2: MORE TOP-LEVEL (y=320) ==================== -->
+
+        <mxCell id="scripts" value="Scripts&#xa;/scripts&#xa;───────────────&#xa;Script list with triggers&#xa;Editor with manual test&#xa;Live log from agent&#xa;Predefined scripts (5+)" style="rounded=1;whiteSpace=wrap;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;align=left;spacingLeft=8;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="20" y="320" width="210" height="130" as="geometry" />
+        </mxCell>
+
+        <mxCell id="wine" value="Wine&#xa;/wine&#xa;───────────────&#xa;Applications tab&#xa;Configuration Groups tab&#xa;(file editor, registry,&#xa;DLL overrides, paths)" style="rounded=1;whiteSpace=wrap;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;align=left;spacingLeft=8;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="260" y="320" width="210" height="130" as="geometry" />
+        </mxCell>
+
+        <mxCell id="packages" value="Package Management&#xa;/packages (redirects to /packages/managers)&#xa;───────────────&#xa;Manage system packages&#xa;Staged rollouts&#xa;Update scheduling" style="rounded=1;whiteSpace=wrap;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;align=left;spacingLeft=8;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="500" y="320" width="260" height="130" as="geometry" />
+        </mxCell>
+
+        <mxCell id="server-admin" value="Server Administration&#xa;/server-admin&#xa;───────────────&#xa;AD connection setup&#xa;GP Import wizard&#xa;Policy Enforcement Scripts&#xa;Server logs&#xa;Tenants, Sites, Roles" style="rounded=1;whiteSpace=wrap;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;align=left;spacingLeft=8;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="790" y="320" width="220" height="145" as="geometry" />
+        </mxCell>
+
+        <mxCell id="preferences" value="Preferences&#xa;/preferences&#xa;───────────────&#xa;Per-user settings&#xa;Admin testing workstations" style="rounded=1;whiteSpace=wrap;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;align=left;spacingLeft=8;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="1040" y="320" width="200" height="110" as="geometry" />
+        </mxCell>
+
+        <!-- ========================================================================== -->
+        <!-- ROW 3: SUB-PAGES / TABS (y=510)                                            -->
+        <!-- ========================================================================== -->
+
+        <!-- Assets sub-tabs -->
+        <mxCell id="assets-computers" value="Computers&#xa;/assets/computers&#xa;(default)" style="rounded=1;whiteSpace=wrap;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="420" y="520" width="120" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="assets-servers" value="Servers&#xa;/assets/servers" style="rounded=1;whiteSpace=wrap;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="550" y="520" width="110" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="assets-printers" value="Printers&#xa;/assets/printers" style="rounded=1;whiteSpace=wrap;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="670" y="520" width="110" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="assets-desks" value="Desks&#xa;/assets/desks" style="rounded=1;whiteSpace=wrap;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="790" y="520" width="100" height="45" as="geometry" />
+        </mxCell>
+
+        <!-- Assets -> sub-tabs edges -->
+        <mxCell id="e-assets-comp" style="edgeStyle=orthogonalEdgeStyle;rounded=1;" edge="1" source="assets" target="assets-computers" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e-assets-srv" style="edgeStyle=orthogonalEdgeStyle;rounded=1;" edge="1" source="assets" target="assets-servers" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e-assets-prn" style="edgeStyle=orthogonalEdgeStyle;rounded=1;" edge="1" source="assets" target="assets-printers" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e-assets-dsk" style="edgeStyle=orthogonalEdgeStyle;rounded=1;" edge="1" source="assets" target="assets-desks" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <!-- Policy sub-tabs -->
+        <mxCell id="policy-catalog" value="Policy Catalog&#xa;/policy/catalog (default)&#xa;─────────&#xa;Read-only browser&#xa;Computer/User/Custom trees&#xa;New Custom Policy wizard" style="rounded=1;whiteSpace=wrap;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;align=left;spacingLeft=6;" vertex="1" parent="1">
+          <mxGeometry x="920" y="510" width="190" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="policy-groups" value="Configuration Groups&#xa;/policy/groups&#xa;─────────&#xa;Bind policies to targets&#xa;Scope: machine/user/both&#xa;Hierarchy: Tenant-Site-Group" style="rounded=1;whiteSpace=wrap;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;align=left;spacingLeft=6;" vertex="1" parent="1">
+          <mxGeometry x="1120" y="510" width="200" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="policy-modules" value="Modules&#xa;/policy/modules" style="rounded=1;whiteSpace=wrap;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1330" y="530" width="120" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- Policy -> sub-tabs edges -->
+        <mxCell id="e-pol-cat" style="edgeStyle=orthogonalEdgeStyle;rounded=1;" edge="1" source="policy" target="policy-catalog" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e-pol-grp" style="edgeStyle=orthogonalEdgeStyle;rounded=1;" edge="1" source="policy" target="policy-groups" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e-pol-mod" style="edgeStyle=orthogonalEdgeStyle;rounded=1;" edge="1" source="policy" target="policy-modules" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <!-- Package Management sub-tabs -->
+        <mxCell id="pkg-managers" value="Package Managers&#xa;/packages/managers&#xa;(default)" style="rounded=1;whiteSpace=wrap;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="20" y="520" width="130" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="pkg-packages" value="Packages&#xa;/packages/packages" style="rounded=1;whiteSpace=wrap;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="160" y="520" width="120" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="pkg-cycles" value="Update Cycles&#xa;/packages/cycles" style="rounded=1;whiteSpace=wrap;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="290" y="520" width="115" height="45" as="geometry" />
+        </mxCell>
+
+        <!-- Packages -> sub-tabs edges -->
+        <mxCell id="e-pkg-mgr" style="edgeStyle=orthogonalEdgeStyle;rounded=1;" edge="1" source="packages" target="pkg-managers" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e-pkg-pkg" style="edgeStyle=orthogonalEdgeStyle;rounded=1;" edge="1" source="packages" target="pkg-packages" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e-pkg-cyc" style="edgeStyle=orthogonalEdgeStyle;rounded=1;" edge="1" source="packages" target="pkg-cycles" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <!-- ========================================================================== -->
+        <!-- ROW 4: POLICY MODULES L3 SUB-TABS (y=620)                                  -->
+        <!-- ========================================================================== -->
+
+        <mxCell id="pm-library" value="Library&#xa;/policy/modules (default)" style="rounded=1;whiteSpace=wrap;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="1260" y="620" width="130" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="pm-defaults" value="Tenant Defaults&#xa;/policy/modules/defaults" style="rounded=1;whiteSpace=wrap;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="1400" y="620" width="140" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="pm-sources" value="Sources&#xa;/policy/modules/sources" style="rounded=1;whiteSpace=wrap;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="1550" y="620" width="130" height="40" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e-pm-lib" style="edgeStyle=orthogonalEdgeStyle;rounded=1;" edge="1" source="policy-modules" target="pm-library" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e-pm-def" style="edgeStyle=orthogonalEdgeStyle;rounded=1;" edge="1" source="policy-modules" target="pm-defaults" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e-pm-src" style="edgeStyle=orthogonalEdgeStyle;rounded=1;" edge="1" source="policy-modules" target="pm-sources" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <!-- ========================================================================== -->
+        <!-- SECTION: CANONICAL EDITORS (y=720)                                         -->
+        <!-- ========================================================================== -->
+
+        <mxCell id="editors-container" value="CANONICAL EDITORS  (Single Source of Truth -- same editor mounted from all entry points)" style="swimlane;startSize=24;fontSize=11;fillColor=#fffef0;strokeColor=#d6b656;fontStyle=1;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="20" y="720" width="1660" height="160" as="geometry" />
+        </mxCell>
+
+        <!-- Row 1 of editors -->
+        <mxCell id="ed-asset" value="AssetEditor&#xa;───&#xa;From: Assets, Users,&#xa;Dashboard, Policy picker" style="rounded=1;whiteSpace=wrap;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;align=center;" vertex="1" parent="editors-container">
+          <mxGeometry x="10" y="35" width="150" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="ed-user" value="UserEditor&#xa;───&#xa;From: Users, Asset detail,&#xa;Policy picker" style="rounded=1;whiteSpace=wrap;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;align=center;" vertex="1" parent="editors-container">
+          <mxGeometry x="170" y="35" width="140" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="ed-cg" value="ConfigurationGroup&#xa;Editor&#xa;───&#xa;From: Policy Groups, Asset,&#xa;User, Profile, ServerAdmin" style="rounded=1;whiteSpace=wrap;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;align=center;" vertex="1" parent="editors-container">
+          <mxGeometry x="320" y="35" width="160" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="ed-pm" value="PolicyModule Editor&#xa;───&#xa;From: Modules Library,&#xa;ServerAdmin, CG bindings" style="rounded=1;whiteSpace=wrap;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;align=center;" vertex="1" parent="editors-container">
+          <mxGeometry x="490" y="35" width="155" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="ed-profile" value="ProfileEditor&#xa;───&#xa;From: Profiles, Asset&#xa;detail, User detail" style="rounded=1;whiteSpace=wrap;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;align=center;" vertex="1" parent="editors-container">
+          <mxGeometry x="655" y="35" width="135" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="ed-script" value="ScriptEditor&#xa;───&#xa;From: Scripts, Asset,&#xa;Profile, UpdateCycle" style="rounded=1;whiteSpace=wrap;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;align=center;" vertex="1" parent="editors-container">
+          <mxGeometry x="800" y="35" width="135" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="ed-custom" value="CustomPolicy Wizard&#xa;───&#xa;From: Policy Catalog&#xa;(new / edit custom)" style="rounded=1;whiteSpace=wrap;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;align=center;" vertex="1" parent="editors-container">
+          <mxGeometry x="945" y="35" width="145" height="55" as="geometry" />
+        </mxCell>
+
+        <!-- Row 2 of editors -->
+        <mxCell id="ed-wine-app" value="WineApp Editor&#xa;───&#xa;From: Wine Apps,&#xa;Asset installed SW" style="rounded=1;whiteSpace=wrap;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;align=center;" vertex="1" parent="editors-container">
+          <mxGeometry x="10" y="100" width="135" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="ed-wine-cg" value="WineConfigGroup Editor&#xa;───&#xa;From: Wine Config,&#xa;Asset, Profile" style="rounded=1;whiteSpace=wrap;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;align=center;" vertex="1" parent="editors-container">
+          <mxGeometry x="155" y="100" width="150" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="ed-pkg-mgr" value="PackageManager Editor&#xa;───&#xa;From: Pkg Managers,&#xa;Asset overrides" style="rounded=1;whiteSpace=wrap;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;align=center;" vertex="1" parent="editors-container">
+          <mxGeometry x="315" y="100" width="150" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="ed-pkg" value="PackageEditor&#xa;───&#xa;From: Packages, Asset,&#xa;Profile, CG" style="rounded=1;whiteSpace=wrap;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;align=center;" vertex="1" parent="editors-container">
+          <mxGeometry x="475" y="100" width="130" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="ed-cycle" value="UpdateCycle Editor&#xa;───&#xa;From: Cycles, Asset,&#xa;CG" style="rounded=1;whiteSpace=wrap;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;align=center;" vertex="1" parent="editors-container">
+          <mxGeometry x="615" y="100" width="130" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="ed-tile" value="DashboardTile Editor&#xa;───&#xa;From: Dashboard&#xa;(+Tile / edit)" style="rounded=1;whiteSpace=wrap;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;align=center;" vertex="1" parent="editors-container">
+          <mxGeometry x="755" y="100" width="140" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="ed-role" value="RoleEditor&#xa;───&#xa;From: ServerAdmin Roles,&#xa;User detail" style="rounded=1;whiteSpace=wrap;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;align=center;" vertex="1" parent="editors-container">
+          <mxGeometry x="905" y="100" width="130" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="ed-tenant" value="TenantEditor&#xa;───&#xa;From: ServerAdmin&#xa;Tenants" style="rounded=1;whiteSpace=wrap;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;align=center;" vertex="1" parent="editors-container">
+          <mxGeometry x="1045" y="100" width="120" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="ed-site" value="SiteEditor&#xa;───&#xa;From: ServerAdmin Sites,&#xa;Asset Site field" style="rounded=1;whiteSpace=wrap;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;align=center;" vertex="1" parent="editors-container">
+          <mxGeometry x="1175" y="100" width="130" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="ed-group" value="GroupEditor&#xa;───&#xa;From: Users Groups tab,&#xa;Assets Groups tab" style="rounded=1;whiteSpace=wrap;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;align=center;" vertex="1" parent="editors-container">
+          <mxGeometry x="1315" y="100" width="130" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="ed-picker" value="PolicyModule Picker&#xa;───&#xa;From: CG binding,&#xa;Profile, Wizard step 5" style="rounded=1;whiteSpace=wrap;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;align=center;" vertex="1" parent="editors-container">
+          <mxGeometry x="1100" y="35" width="150" height="55" as="geometry" />
+        </mxCell>
+
+        <!-- ========================================================================== -->
+        <!-- SECTION: DATA MODEL HIERARCHY (y=920)                                      -->
+        <!-- ========================================================================== -->
+
+        <mxCell id="dm-container" value="DATA MODEL HIERARCHY (Scope Resolution Order: Tenant → Site → Group → Asset/Identity)" style="swimlane;startSize=24;fontSize=11;fillColor=#fce4ec;strokeColor=#b85450;fontStyle=1;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="20" y="920" width="780" height="110" as="geometry" />
+        </mxCell>
+
+        <mxCell id="dm-tenant" value="Tenant" style="rounded=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=12;fontStyle=1;" vertex="1" parent="dm-container">
+          <mxGeometry x="20" y="45" width="90" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="dm-site" value="Site" style="rounded=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=12;" vertex="1" parent="dm-container">
+          <mxGeometry x="160" y="45" width="80" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="dm-group" value="Group" style="rounded=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=12;" vertex="1" parent="dm-container">
+          <mxGeometry x="290" y="45" width="80" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="dm-asset" value="Asset&#xa;(computer | server |&#xa;printer | desk)" style="rounded=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="dm-container">
+          <mxGeometry x="430" y="35" width="140" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="dm-identity" value="Identity&#xa;(User)" style="rounded=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="dm-container">
+          <mxGeometry x="620" y="35" width="100" height="50" as="geometry" />
+        </mxCell>
+
+        <mxCell id="dm-e1" style="endArrow=block;endFill=1;strokeWidth=2;" edge="1" source="dm-tenant" target="dm-site" parent="dm-container"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="dm-e2" style="endArrow=block;endFill=1;strokeWidth=2;" edge="1" source="dm-site" target="dm-group" parent="dm-container"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="dm-e3" style="endArrow=block;endFill=1;strokeWidth=2;" edge="1" source="dm-group" target="dm-asset" parent="dm-container"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="dm-e4" style="endArrow=block;endFill=1;strokeWidth=2;" edge="1" source="dm-group" target="dm-identity" parent="dm-container"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <!-- ========================================================================== -->
+        <!-- SCOPE ANNOTATION                                                            -->
+        <!-- ========================================================================== -->
+        <mxCell id="scope-note" value="Every policy entity carries scope: machine | user | both.  Resolution order follows the hierarchy (most specific wins)." style="text;fontSize=10;align=left;fontStyle=2;" vertex="1" parent="1">
+          <mxGeometry x="20" y="1040" width="600" height="20" as="geometry" />
+        </mxCell>
+
+        <!-- ========================================================================== -->
+        <!-- CROSS-NAVIGATION KEY (text note instead of messy dashed lines)             -->
+        <!-- ========================================================================== -->
+        <mxCell id="xnav-note" value="CROSS-NAVIGATION: Every canonical editor is reachable from multiple pages (see 'From:' annotations in editor boxes).&#xa;Invariant INV-U2: all entry points mount the SAME component instance with at most a context filter. Never a separate view." style="text;fontSize=10;align=left;spacingLeft=4;whiteSpace=wrap;" vertex="1" parent="1">
+          <mxGeometry x="20" y="690" width="800" height="30" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

@@ -1,0 +1,71 @@
+package templates
+
+import (
+	"strconv"
+
+	"github.com/pluris/pluris/db"
+	"github.com/pluris/pluris/pkg/services"
+)
+
+// Shared Groups-tab building blocks (Task 9), used by both the asset and
+// the user detail pages. postBase is the entity's membership route base,
+// e.g. "/assets/computers/comp.x.1/groups" or "/users/7/groups".
+
+// groupAddAction is the single tab action: a picker of not-yet-joined
+// tenant groups plus one submit button.
+templ groupAddAction(postBase string, options []db.Group, csrfToken string) {
+	if len(options) > 0 {
+		<form method="POST" action={ templ.SafeURL(postBase) } style="display:flex; gap:8px; align-items:center;">
+			<input type="hidden" name="_csrf" value={ csrfToken }/>
+			<select name="group_id">
+				for _, g := range options {
+					<option value={ strconv.FormatInt(g.ID, 10) }>{ g.Name }</option>
+				}
+			</select>
+			<button type="submit" class="btn btn-primary">Add to group</button>
+		</form>
+	}
+}
+
+// groupMembershipRows renders one row per membership with a per-row
+// Remove form (single confirm).
+templ groupMembershipRows(postBase string, rows []services.GroupRow, csrfToken string) {
+	for _, g := range rows {
+		<tr>
+			<td>{ g.Name }</td>
+			<td>{ g.Category }</td>
+			<td>{ g.Scope }</td>
+			<td>{ g.Source }</td>
+			<td>
+				<form method="POST" action={ templ.SafeURL(postBase + "/" + strconv.FormatInt(g.ID, 10) + "/remove") } onsubmit="return confirm('Remove from this group?')">
+					<input type="hidden" name="_csrf" value={ csrfToken }/>
+					<button type="submit" class="btn">Remove</button>
+				</form>
+			</td>
+		</tr>
+	}
+}
+
+// addPolicyLink is the Applied Policies tab action: a link into the
+// add-from-catalog picker (Task 13).
+templ addPolicyLink(href string) {
+	<a href={ templ.SafeURL(href) } class="btn btn-primary">Add from catalog</a>
+}
+
+// appliedPolicyRows renders resolved AppliedPolicy rows (Task 12),
+// shared by the asset and user detail pages.
+templ appliedPolicyRows(applied []services.AppliedPolicy) {
+	if len(applied) == 0 {
+		@DetailEmptyRow(5, "No policies apply to this entity yet.")
+	} else {
+		for _, ap := range applied {
+			<tr>
+				<td>{ ap.PolicyName }</td>
+				<td>{ ap.SourceGroup }</td>
+				<td>{ ap.Scope }</td>
+				<td class="font-mono">{ ap.ValueSummary }</td>
+				<td><span class={ "asset-chip " + appliedStatusChipClass(ap.Status) }>{ ap.Status }</span></td>
+			</tr>
+		}
+	}
+}

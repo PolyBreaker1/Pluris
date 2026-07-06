@@ -1,0 +1,343 @@
+package templates
+
+import (
+	"strconv"
+
+	"github.com/pluris/pluris/catalog/assets"
+	"github.com/pluris/pluris/catalog/identities"
+	"github.com/pluris/pluris/catalog/params"
+	"github.com/pluris/pluris/db"
+	"github.com/pluris/pluris/pkg/services"
+	"github.com/pluris/pluris/web/lists"
+)
+
+// 2. Users — real, database-backed identity list. Mirrors AssetsPage /
+// assetsList 1:1 (INV-U2 / "one universal code block"): columns, filters,
+// and column-picker groups all derive from catalog/params.SchemaIdentity
+// via the web/lists registry — no independent field declarations. Row
+// click navigates to /users/:id (Task 16 builds that detail page; a 404
+// until then is expected and fine).
+templ UsersPage(rows []identities.Identity) {
+	@Layout("users", "Users") {
+		@PageHeader("Identity", "Users",
+			"Identity list — synced from Kanidm or manually added. Role assignment. Semi-automatic asset pairing. Self-service users see this page in read-only with scope-of-self filter.",
+			"Add user")
+		<div data-testid="page-users">
+			@usersList(rows)
+			@usersListNavigationScript()
+			@invariantFooter()
+		</div>
+	}
+}
+
+// usersList — unified Users list with the same modern filter system as
+// assetsList (search box, quick filters, advanced filter builder, column
+// picker, sortable table).
+templ usersList(rows []identities.Identity) {
+	{{ listID := lists.ListIDIdentities }}
+	{{ fields := lists.FieldsFor(listID) }}
+	{{ filterJSON := params.FilterConfigJSON("identity") }}
+	<div data-pluris-list={ listID } data-filter-builder={ listID }>
+		@templ.Raw(`<script type="application/json" data-filter-config>` + filterJSON + `</script>`)
+
+		<!-- Modern Filter System -->
+		<div class="pluris-filters">
+			<!-- Filter Header: Search + Quick Actions -->
+			<div class="filter-header">
+				<div class="filter-search" id="filter-search-wrap">
+					<svg class="filter-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+						<circle cx="11" cy="11" r="8"></circle>
+						<path d="m21 21-4.35-4.35"></path>
+					</svg>
+					<input type="search"
+						id="filter-search-input"
+						placeholder="Search across all fields..."
+						autocomplete="off">
+					<button class="filter-search-clear" id="filter-search-clear" style="display:none;">✕</button>
+				</div>
+				<div class="filter-quick-actions">
+					<button class="filter-quick-btn active" data-filter="all">All</button>
+					<button class="filter-quick-btn" data-filter="admin">Admins</button>
+					<button class="filter-quick-btn" data-filter="self-service">Users</button>
+					<button class="filter-quick-btn" data-filter="enabled">Enabled</button>
+					<button class="filter-quick-btn" data-filter="locked">Locked</button>
+				</div>
+				<button class="filter-add-btn" id="filter-add-btn">
+					<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+						<line x1="12" y1="5" x2="12" y2="19"></line>
+						<line x1="5" y1="12" x2="19" y2="12"></line>
+					</svg>
+					Add filter
+				</button>
+			</div>
+
+			<!-- Active Filters (Chips) -->
+			<div class="filter-active" id="filter-active">
+				<span class="filter-active-label">Active filters:</span>
+				<div id="filter-chips" style="display: flex; gap: 8px; flex-wrap: wrap; flex: 1;"></div>
+				<button class="filter-clear-all" id="filter-clear-all">Clear all</button>
+			</div>
+
+			<!-- Advanced Filter Builder -->
+			<div class="filter-builder" id="filter-builder">
+				<div id="filter-builder-rows"></div>
+			</div>
+
+			<!-- Results Footer -->
+			<div class="filter-results">
+				<div id="filter-results-count">
+					Showing <span class="filter-results-count-number">{ strconv.Itoa(len(rows)) } of { strconv.Itoa(len(rows)) }</span> users
+				</div>
+				<button class="filter-toggle-advanced" id="filter-toggle-advanced">Advanced</button>
+			</div>
+		</div>
+
+		<!-- Empty State (filter-driven; zero-row concept empty state is below) -->
+		<div class="filter-empty-state" id="filter-empty-state">
+			<div class="filter-empty-icon">🔍</div>
+			<div class="filter-empty-title">No users match your filters</div>
+			<div class="filter-empty-desc">Try adjusting your search or filters</div>
+		</div>
+
+		<!-- Users Table -->
+		<section class="pm-table-wrap"
+			data-list-id={ listID }
+			data-default-cols={ lists.DefaultVisibleKeys(listID) }>
+			<div class="pm-table-head">
+				@ColumnPickerButton(listID)
+			</div>
+			@ConceptEmptyState("users", listID)
+			<table class="pm-table pluris-list" data-list-id={ listID }>
+			<thead>
+				<tr>
+					for _, f := range fields {
+						if f.IsSortable() {
+							<th data-field={ f.Key } data-width={ f.Width } data-sort-type={ f.Sort } title={ f.Description } class="th-sortable">
+								<button type="button" class="th-sort-btn" data-sort-key={ f.Key }>
+									<span>{ f.Label }</span>
+									<span class="th-sort-ind" aria-hidden="true">↕</span>
+								</button>
+							</th>
+						} else {
+							<th data-field={ f.Key } data-width={ f.Width } title={ f.Description }>{ f.Label }</th>
+						}
+					}
+				</tr>
+			</thead>
+			<tbody>
+				{{ rowIdx := 0 }}
+				for _, u := range rows {
+					{{ idStr := strconv.FormatInt(u.ID, 10) }}
+					@templ.Raw(`<tr data-detail-id="` + idStr + `" data-user-id="` + idStr + `" data-searchable="` + identitySearchBlobEscaped(u) + `" data-row-index="` + strconv.Itoa(rowIdx) + `" tabindex="0"` + identityFilterAttrs(u) + `>`)
+						for _, f := range fields {
+							<td data-field={ f.Key } data-sort={ lists.RenderIdentityCellSort(f.Key, u) }>@templ.Raw(lists.RenderIdentityCell(f.Key, u))</td>
+						}
+					@templ.Raw(`</tr>`)
+					{{ rowIdx++ }}
+				}
+			</tbody>
+			</table>
+			@templ.Raw(columnPickerScript)
+		</section>
+	</div>
+}
+
+// UserDetailPage — the standardized user detail page (Task 8): DetailShell
+// hero + 4 tabs. Groups / Policies / Roles are frame-only until Tasks
+// 9/11/12 land; General carries the schema sections, assigned assets and
+// the delete form (guarded, unchanged).
+templ UserDetailPage(user identities.Identity, assigned []assets.Asset, csrfToken string, groups []services.GroupRow, allGroups []db.Group, roles []db.ListRolesForIdentityDetailRow, allRoles []db.Role, applied []services.AppliedPolicy) {
+	@DetailShell(
+		"users",
+		user.ResolvedDisplayName()+" — Identity",
+		templ.Attributes{"data-testid": "page-user-detail", "data-user-id": strconv.FormatInt(user.ID, 10)},
+		userDetailHero(user),
+		userDetailTabs(user, assigned, csrfToken, groups, allGroups, roles, allRoles, applied),
+	)
+}
+
+// userEditAction — the single hero action: link to the edit form.
+templ userEditAction(user identities.Identity) {
+	<a href={ templ.SafeURL("/users/" + strconv.FormatInt(user.ID, 10) + "/edit") } class="btn btn-primary" style="margin-top:8px; display:inline-block;">Edit</a>
+}
+
+// userAvatar — initials circle in the hero visual slot (reuses the
+// header's .user-avatar styling).
+templ userAvatar(user identities.Identity) {
+	<div class="user-avatar" style="width:64px; height:64px; font-size:1.5rem;">{ userInitials(user) }</div>
+}
+
+// userGeneralTab — schema-driven field grid plus assigned assets and the
+// delete form. Field values carry canonical parameter paths (INV-CPP).
+templ userGeneralTab(user identities.Identity, assigned []assets.Asset, csrfToken string) {
+	<div class="asset-detail-grid">
+		{{ schema := params.SchemaIdentity }}
+		for _, sec := range schema.Sections {
+			<section class="asset-detail-section card">
+				<h4 class="asset-detail-section-title">{ sec.Label }</h4>
+				<dl class="asset-detail-defs">
+					for _, key := range sec.Params {
+						{{ def := params.DefByKey(key) }}
+						if def != nil {
+							<dt>{ def.Label }</dt>
+							<dd><span class="field-value" { identityFieldPathAttrs(key)... }>@templ.Raw(lists.RenderIdentityCell(key, user))</span></dd>
+						}
+					}
+				</dl>
+			</section>
+		}
+		<section class="asset-detail-section card">
+			<h4 class="asset-detail-section-title">Assigned assets</h4>
+			if len(assigned) == 0 {
+				<p>No assets assigned to this user.</p>
+			} else {
+				<ul>
+					for _, a := range assigned {
+						<li><a href={ templ.SafeURL("/assets/" + assetSubtypeSlug(a.Subtype) + "/" + a.ID) }>{ a.PrimaryHostname() }</a></li>
+					}
+				</ul>
+			}
+		</section>
+	</div>
+	<div style="margin-top:16px;">
+		<form method="POST" action={ templ.SafeURL("/users/" + strconv.FormatInt(user.ID, 10) + "/delete") } onsubmit="return confirm('Delete this user?')">
+			<input type="hidden" name="_csrf" value={ csrfToken }/>
+			<button type="submit" class="btn">Delete user</button>
+		</form>
+	</div>
+}
+
+// userGroupsTab — live membership rows (Task 9): add-to-group picker
+// as the tab action, per-row Remove.
+templ userGroupsTab(user identities.Identity, groups []services.GroupRow, allGroups []db.Group, csrfToken string) {
+	{{ postBase := "/users/" + strconv.FormatInt(user.ID, 10) + "/groups" }}
+	@DetailTableFrame(lists.ListIDUserGroups, groupAddAction(postBase, groupsNotJoined(allGroups, groups), csrfToken)) {
+		if len(groups) == 0 {
+			@DetailEmptyRow(5, "Not a member of any group yet.")
+		} else {
+			@groupMembershipRows(postBase, groups, csrfToken)
+		}
+	}
+}
+
+// userPoliciesTab — effective policies resolved across every assignment
+// scope (Task 12); action links to the add-from-catalog picker (Task 13).
+templ userPoliciesTab(user identities.Identity, applied []services.AppliedPolicy) {
+	@DetailTableFrame(lists.ListIDAppliedPolicies, addPolicyLink("/users/"+strconv.FormatInt(user.ID, 10)+"/policies/add")) {
+		@appliedPolicyRows(applied)
+	}
+}
+
+// userRolesTab — assignment-only roles surface (Task 11): add-role
+// picker as the tab action, per-row Remove, and a disabled entry point
+// for the future permission editor.
+templ userRolesTab(user identities.Identity, roles []db.ListRolesForIdentityDetailRow, allRoles []db.Role, csrfToken string) {
+	{{ postBase := "/users/" + strconv.FormatInt(user.ID, 10) + "/roles" }}
+	@DetailTableFrame(lists.ListIDUserRoles, roleAddAction(postBase, rolesNotAssigned(allRoles, roles), csrfToken)) {
+		if len(roles) == 0 {
+			@DetailEmptyRow(5, "No roles assigned. The role cache defaults to User.")
+		} else {
+			for _, r := range roles {
+				<tr>
+					<td>{ r.Name }</td>
+					<td>{ roleTypeLabel(r.IsBuiltin) }</td>
+					<td>{ nullStringOrDash(r.Description) }</td>
+					<td>{ r.AssignedAt.Format("2006-01-02") }</td>
+					<td>
+						<form method="POST" action={ templ.SafeURL(postBase + "/" + strconv.FormatInt(r.ID, 10) + "/remove") } onsubmit="return confirm('Remove this role?')">
+							<input type="hidden" name="_csrf" value={ csrfToken }/>
+							<button type="submit" class="btn">Remove</button>
+						</form>
+					</td>
+				</tr>
+			}
+		}
+	}
+	<div style="margin-top:12px;">
+		<button type="button" class="btn btn-secondary" disabled title="Coming with the permission editor">Manage role permissions</button>
+	</div>
+}
+
+// roleAddAction — the single tab action: picker of unassigned roles.
+templ roleAddAction(postBase string, options []db.Role, csrfToken string) {
+	if len(options) > 0 {
+		<form method="POST" action={ templ.SafeURL(postBase) } style="display:flex; gap:8px; align-items:center;">
+			<input type="hidden" name="_csrf" value={ csrfToken }/>
+			<select name="role_id">
+				for _, r := range options {
+					<option value={ strconv.FormatInt(r.ID, 10) }>{ r.Name }</option>
+				}
+			</select>
+			<button type="submit" class="btn btn-primary">Add role</button>
+		</form>
+	}
+}
+
+// UserFormPage — shared create/edit form. isNew picks the POST target and
+// title; the fields mirror the editable subset of identities.Identity that
+// Create/Update accept (see pkg/services.IdentityService).
+templ UserFormPage(user identities.Identity, csrfToken string, errorMsg string, isNew bool) {
+	{{ action := "/users/" + strconv.FormatInt(user.ID, 10) + "/edit" }}
+	{{ title := "Edit user" }}
+	if isNew {
+		{{ action = "/users/new" }}
+		{{ title = "Add user" }}
+	}
+	@Layout("users", title) {
+		<div class="page-content">
+			<form method="POST" action={ templ.SafeURL(action) } data-testid="user-form">
+				<input type="hidden" name="_csrf" value={ csrfToken }/>
+				if isNew {
+					<label for="username">Username</label>
+					<input type="text" id="username" name="username" value={ user.Username } required/>
+				} else {
+					<label for="username">Username</label>
+					<input type="text" id="username" value={ user.Username } disabled/>
+					<input type="hidden" name="username" value={ user.Username }/>
+				}
+				<label for="email">Email</label>
+				<input type="email" id="email" name="email" value={ user.Email } required/>
+				<label for="display_name">Display name</label>
+				<input type="text" id="display_name" name="display_name" value={ user.DisplayName } required/>
+				<label for="title">Title</label>
+				<input type="text" id="title" name="title" value={ user.Title }/>
+				<label for="department">Department</label>
+				<input type="text" id="department" name="department" value={ user.Department }/>
+				if errorMsg != "" {
+					<div class="auth-error">{ errorMsg }</div>
+				}
+				<button type="submit" class="btn btn-primary">Save</button>
+			</form>
+		</div>
+	}
+}
+
+// usersListNavigationScript — mirrors assetListNavigationScript: row
+// clicks on [data-detail-id] navigate to the full user detail page. The
+// lists.js detail-dialog engine is not used because no
+// <dialog data-pluris-detail="users"> exists on the page.
+templ usersListNavigationScript() {
+	<script>
+	(function() {
+		'use strict';
+		document.addEventListener('click', function(e) {
+			if (e.target.closest('button, a, input, select, textarea, label, [data-pluris-no-detail]')) return;
+			var row = e.target.closest('tbody tr[data-detail-id]');
+			if (!row) return;
+			var table = row.closest('[data-list-id="users"]');
+			if (!table) return;
+			e.preventDefault();
+			window.location.href = '/users/' + encodeURIComponent(row.dataset.detailId);
+		});
+		document.addEventListener('keydown', function(e) {
+			if (e.key !== 'Enter') return;
+			var row = e.target.closest('tbody tr[data-detail-id]');
+			if (!row) return;
+			var table = row.closest('[data-list-id="users"]');
+			if (!table) return;
+			e.preventDefault();
+			window.location.href = '/users/' + encodeURIComponent(row.dataset.detailId);
+		});
+	})();
+	</script>
+}

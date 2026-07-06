@@ -1,0 +1,466 @@
+<h2>Complete detail-page mockup — every tab, every field</h2>
+<p class="subtitle">Expand each tab below to review the full parameter set before we lock this in. AD-equivalent attribute names are noted in <code>parentheses</code> where relevant.</p>
+
+<style>
+  .hero-mock {
+    border: 1px solid var(--border, #333); border-radius: 10px; padding: 20px;
+    display: flex; justify-content: space-between; gap: 24px;
+  }
+  .hero-left { flex: 1; min-width: 0; }
+  .hero-left h3 { margin: 0 0 4px; font-size: 20px; }
+  .hero-left .id { font-family: monospace; font-size: 12px; opacity: 0.6; margin-bottom: 10px; }
+  .hero-defs { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 13px; }
+  .hero-defs dt { opacity: 0.6; } .hero-defs dd { margin: 0; }
+  .hero-right {
+    width: 110px; height: 110px; flex-shrink: 0; border: 1px dashed var(--border, #555);
+    border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 36px;
+  }
+  .tabs-accordion { margin-top: 16px; border: 1px solid var(--border, #333); border-radius: 0 0 10px 10px; overflow: hidden; }
+  .tabs-accordion details { border-top: 1px solid var(--border, #333); }
+  .tabs-accordion details:first-child { border-top: none; }
+  .tabs-accordion summary {
+    padding: 10px 16px; cursor: pointer; font-weight: 600; font-size: 13px;
+    background: rgba(127,127,127,0.06); list-style: none; display: flex; justify-content: space-between;
+  }
+  .tabs-accordion summary::-webkit-details-marker { display: none; }
+  .tabs-accordion summary .hint { font-weight: 400; opacity: 0.55; font-size: 11px; }
+  .tab-content { padding: 16px; font-size: 13px; }
+  .param-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  .param-table th, .param-table td { text-align: left; padding: 5px 10px; border-bottom: 1px solid rgba(127,127,127,0.15); }
+  .param-table th { opacity: 0.6; font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em; }
+  .param-table td.ad { font-family: monospace; opacity: 0.5; font-size: 11px; }
+  .section-group { margin-bottom: 14px; }
+  .section-group h5 { margin: 0 0 4px; opacity: 0.75; font-size: 12px; text-transform: uppercase; letter-spacing: 0.03em; }
+  .badge { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 10.5px; font-weight: 600; }
+  .badge.sync { background: #1e3a2a; color: #7ee0a0; }
+  .badge.drift { background: #3a2a1e; color: #e0a87e; }
+  .badge.pending { background: #2a2a3a; color: #a0a0e0; }
+  .badge.applied { background: #1e3a2a; color: #7ee0a0; }
+  .badge.enabled { background: #1e3a2a; color: #7ee0a0; }
+  .badge.locked { background: #3a1e1e; color: #e07e7e; }
+  .override-btn { font-size: 11px; padding: 2px 8px; border-radius: 4px; border: 1px solid var(--border, #555); background: transparent; opacity: 0.5; cursor: not-allowed; }
+  .override-btn.enabled-perm { opacity: 1; cursor: pointer; border-color: #4f7cff; color: #4f7cff; }
+  .perm-note { font-size: 11px; opacity: 0.6; margin-top: 8px; font-style: italic; }
+  .entity-block { margin-bottom: 40px; }
+  .entity-block > h4 { margin: 0 0 8px; font-size: 16px; }
+</style>
+
+<div class="entity-block">
+  <h4>🖥️ Computer — dev-laptop-001</h4>
+  <div class="hero-mock">
+    <div class="hero-left">
+      <h3>dev-laptop-001</h3>
+      <div class="id">comp.acme.hq.0001</div>
+      <dl class="hero-defs">
+        <dt>Site</dt><dd>Headquarters, Floor 1</dd>
+        <dt>Owner</dt><dd>Jane Doe</dd>
+        <dt>OS</dt><dd>Ubuntu 24.04 LTS</dd>
+        <dt>Last seen</dt><dd>2 minutes ago</dd>
+      </dl>
+    </div>
+    <div class="hero-right">🐧</div>
+  </div>
+
+  <div class="tabs-accordion">
+    <details open>
+      <summary>General <span class="hint">identity, hardware, enrollment, lifecycle</span></summary>
+      <div class="tab-content">
+        <div class="section-group"><h5>Identity</h5>
+          <table class="param-table">
+            <tr><th>Field</th><th>AD equivalent</th><th>Value</th></tr>
+            <tr><td>Name</td><td class="ad">cn / sAMAccountName</td><td>dev-laptop-001</td></tr>
+            <tr><td>Asset ID</td><td class="ad">—</td><td>comp.acme.hq.0001</td></tr>
+            <tr><td>UUID</td><td class="ad">objectGUID</td><td>550e8400-e29b-...</td></tr>
+            <tr><td>Description</td><td class="ad">description</td><td>Engineering laptop</td></tr>
+            <tr><td>Managed By</td><td class="ad">managedBy</td><td>Jane Doe</td></tr>
+            <tr><td>Distinguished path</td><td class="ad">distinguishedName</td><td>Acme / Headquarters / Engineering</td></tr>
+            <tr><td>Tenant</td><td class="ad">domain</td><td>Acme</td></tr>
+            <tr><td>Site</td><td class="ad">site (AD Sites &amp; Services)</td><td>Headquarters</td></tr>
+            <tr><td>Owner</td><td class="ad">— (Pluris CMDB extension)</td><td>Jane Doe</td></tr>
+            <tr><td>Labels</td><td class="ad">— (tags)</td><td>env=dev, team=engineering</td></tr>
+          </table>
+        </div>
+        <div class="section-group"><h5>Hardware</h5>
+          <table class="param-table">
+            <tr><td>Hostname</td><td class="ad">dNSHostName (short)</td><td>dev-laptop-001</td></tr>
+            <tr><td>FQDN</td><td class="ad">dNSHostName</td><td>dev-laptop-001.acme.local</td></tr>
+            <tr><td>OS family</td><td class="ad">operatingSystem (category)</td><td>Linux</td></tr>
+            <tr><td>OS distribution</td><td class="ad">operatingSystem</td><td>Ubuntu</td></tr>
+            <tr><td>OS version</td><td class="ad">operatingSystemVersion</td><td>24.04 LTS</td></tr>
+            <tr><td>Kernel version</td><td class="ad">—</td><td>6.8.0-45-generic</td></tr>
+            <tr><td>Architecture</td><td class="ad">—</td><td>x86_64</td></tr>
+            <tr><td>CPU</td><td class="ad">—</td><td>Intel Core i7-1265U</td></tr>
+            <tr><td>RAM</td><td class="ad">—</td><td>16384 MB</td></tr>
+            <tr><td>Serial number</td><td class="ad">serialNumber</td><td>5CD1234ABC</td></tr>
+            <tr><td>Storage</td><td class="ad">—</td><td>512000 MB</td></tr>
+          </table>
+        </div>
+        <div class="section-group"><h5>Enrollment</h5>
+          <table class="param-table">
+            <tr><td>Enrollment state</td><td class="ad">— (Pluris)</td><td>Enrolled</td></tr>
+            <tr><td>Enrolled at</td><td class="ad">whenCreated</td><td>2025-12-01</td></tr>
+            <tr><td>Last seen</td><td class="ad">lastLogonTimestamp</td><td>2 minutes ago</td></tr>
+            <tr><td>Agent version</td><td class="ad">—</td><td>1.2.0</td></tr>
+            <tr><td>Trust level</td><td class="ad">userAccountControl (trust flags)</td><td>Workstation Trust Account</td></tr>
+          </table>
+        </div>
+        <div class="section-group"><h5>Lifecycle (CMDB)</h5>
+          <table class="param-table">
+            <tr><td>Lifecycle state</td><td class="ad">— (Pluris)</td><td>Active</td></tr>
+            <tr><td>Vendor</td><td class="ad">—</td><td>Dell</td></tr>
+            <tr><td>Location</td><td class="ad">location (AD)</td><td>Headquarters, Floor 1</td></tr>
+            <tr><td>Purchase date</td><td class="ad">—</td><td>2025-12-01</td></tr>
+            <tr><td>Warranty expires</td><td class="ad">—</td><td>2029-06-01</td></tr>
+          </table>
+        </div>
+      </div>
+    </details>
+
+    <details>
+      <summary>Groups <span class="hint">AD "Member Of" equivalent</span></summary>
+      <div class="tab-content">
+        <table class="param-table">
+          <tr><th>Group</th><th>Category</th><th>Scope</th><th>Source</th></tr>
+          <tr><td>Engineering-Laptops</td><td>Security</td><td>Global</td><td>Direct</td></tr>
+          <tr><td>HQ-Site-Devices</td><td>Security</td><td>Domain Local</td><td>Inherited (Site)</td></tr>
+          <tr><td>VPN-Required</td><td>Security</td><td>Universal</td><td>Direct</td></tr>
+        </table>
+        <p class="perm-note">Add/remove group membership — requires Assets → Edit permission.</p>
+      </div>
+    </details>
+
+    <details>
+      <summary>Applied Policies <span class="hint">Resultant Set of Policy equivalent</span></summary>
+      <div class="tab-content">
+        <table class="param-table">
+          <tr><th>Policy (GP equivalent)</th><th>Source</th><th>Scope</th><th>Value</th><th>Status</th></tr>
+          <tr><td>Audit system events</td><td>HQ-Baseline</td><td>Computer</td><td>Success + Failure</td><td><span class="badge applied">Applied</span></td></tr>
+          <tr><td>Password minimum length</td><td>Engineering-Laptops</td><td>Computer</td><td>14 chars</td><td><span class="badge applied">Applied</span></td></tr>
+          <tr><td>Firewall: block inbound</td><td>HQ-Baseline</td><td>Computer</td><td>Enabled</td><td><span class="badge applied">Applied</span></td></tr>
+          <tr><td>Screen lock timeout</td><td>VPN-Required</td><td>Computer</td><td>10 min</td><td><span class="badge pending">Pending</span></td></tr>
+        </table>
+      </div>
+    </details>
+
+    <details>
+      <summary>Configuration <span class="hint">policy-set values vs. current device state — override-gated</span></summary>
+      <div class="tab-content">
+        <p style="opacity:0.7; margin-top:0;">Fields below reflect what policy has assigned to this device. Grey = matches policy. Amber = drift or not-yet-applied. Override requires the <strong>Assets → Override Configuration</strong> permission (see Roles tab).</p>
+        <table class="param-table">
+          <tr><th>Setting</th><th>Policy value</th><th>Current device value</th><th>Status</th><th>Action</th></tr>
+          <tr><td>Screen lock timeout</td><td>10 min</td><td>15 min</td><td><span class="badge drift">Drift</span></td>
+            <td><button class="override-btn" title="Viewing as: Admin (no override permission)">Override</button></td></tr>
+          <tr><td>Firewall: block inbound</td><td>Enabled</td><td>Enabled</td><td><span class="badge sync">In sync</span></td>
+            <td><button class="override-btn" disabled>Override</button></td></tr>
+          <tr><td>USB storage</td><td>Blocked</td><td>Allowed</td><td><span class="badge drift">Drift</span></td>
+            <td><button class="override-btn enabled-perm" title="Viewing as: Super Admin (has override permission)">Override</button></td></tr>
+        </table>
+        <p class="perm-note">Toggle in top-right of this mockup (not built yet) would show how the Override button looks with/without permission — here shown as both states side by side for review.</p>
+      </div>
+    </details>
+
+    <details>
+      <summary>Installed Software</summary>
+      <div class="tab-content">
+        <table class="param-table">
+          <tr><th>Name</th><th>Version</th><th>Publisher</th><th>Type</th><th>Installed</th><th>Size</th></tr>
+          <tr><td>Firefox</td><td>128.0</td><td>Mozilla</td><td>deb</td><td>2025-12-02</td><td>210 MB</td></tr>
+          <tr><td>Slack</td><td>4.36.0</td><td>Slack Technologies</td><td>appimage</td><td>2025-12-03</td><td>180 MB</td></tr>
+          <tr><td>Microsoft Office 365</td><td>2024</td><td>Microsoft</td><td>wine</td><td>2025-12-05</td><td>3.1 GB</td></tr>
+          <tr><td>Docker</td><td>27.3</td><td>Docker Inc.</td><td>native</td><td>2025-12-01</td><td>450 MB</td></tr>
+        </table>
+      </div>
+    </details>
+
+    <details>
+      <summary>Wine Groups</summary>
+      <div class="tab-content">
+        <table class="param-table">
+          <tr><th>Wine Config Group</th><th>Wine version</th><th>Arch</th><th>Applications</th><th>Assigned</th></tr>
+          <tr><td>Office-Prefix-Standard</td><td>staging</td><td>win64</td><td>Microsoft Office 365</td><td>2025-12-05</td></tr>
+        </table>
+        <p class="perm-note">Wine Config Group fields (full editor, separate page): wine_version, arch, registry_keys, file_overrides, path_mappings, environment, dll_overrides, tricks — per docs/UX_INVARIANTS.md.</p>
+      </div>
+    </details>
+
+    <details>
+      <summary>Assigned Scripts</summary>
+      <div class="tab-content">
+        <table class="param-table">
+          <tr><th>Script</th><th>Trigger</th><th>Last run</th><th>Status</th><th>Next run</th></tr>
+          <tr><td>disk-cleanup.sh</td><td>Logon</td><td>2026-07-05 08:12</td><td><span class="badge applied">Success</span></td><td>—</td></tr>
+          <tr><td>compliance-check.sh</td><td>Scheduled (daily)</td><td>2026-07-05 03:00</td><td><span class="badge applied">Success</span></td><td>2026-07-06 03:00</td></tr>
+        </table>
+      </div>
+    </details>
+
+    <details>
+      <summary>Logs</summary>
+      <div class="tab-content">
+        <table class="param-table">
+          <tr><th>Time</th><th>Event</th><th>Detail</th><th>Actor</th></tr>
+          <tr><td>2026-07-05 08:12</td><td>Script executed</td><td>disk-cleanup.sh — success</td><td>System</td></tr>
+          <tr><td>2026-07-05 03:00</td><td>Policy applied</td><td>HQ-Baseline (3 settings)</td><td>System</td></tr>
+          <tr><td>2026-07-04 14:30</td><td>Owner changed</td><td>Unassigned → Jane Doe</td><td>Admin</td></tr>
+        </table>
+      </div>
+    </details>
+  </div>
+</div>
+
+<div class="entity-block">
+  <h4>👤 User — Jane Doe</h4>
+  <div class="hero-mock">
+    <div class="hero-left">
+      <h3>Jane Doe</h3>
+      <div class="id">jane@acme.test</div>
+      <dl class="hero-defs">
+        <dt>Role</dt><dd>Admin</dd>
+        <dt>Department</dt><dd>IT Operations</dd>
+        <dt>Site</dt><dd>Headquarters</dd>
+        <dt>Status</dt><dd><span class="badge enabled">Enabled</span></dd>
+      </dl>
+    </div>
+    <div class="hero-right">🙂</div>
+  </div>
+
+  <div class="tabs-accordion">
+    <details open>
+      <summary>General <span class="hint">every AD-familiar identity field</span></summary>
+      <div class="tab-content">
+        <div class="section-group"><h5>Identity</h5>
+          <table class="param-table">
+            <tr><th>Field</th><th>AD equivalent</th><th>Value</th></tr>
+            <tr><td>Display name</td><td class="ad">displayName</td><td>Jane Doe</td></tr>
+            <tr><td>Username</td><td class="ad">sAMAccountName</td><td>jdoe</td></tr>
+            <tr><td>UPN</td><td class="ad">userPrincipalName</td><td>jane@acme.test</td></tr>
+            <tr><td>Email</td><td class="ad">mail</td><td>jane@acme.test</td></tr>
+            <tr><td>Given name</td><td class="ad">givenName</td><td>Jane</td></tr>
+            <tr><td>Surname</td><td class="ad">sn</td><td>Doe</td></tr>
+            <tr><td>Initials</td><td class="ad">initials</td><td>J.D.</td></tr>
+            <tr><td>Role</td><td class="ad">— (Pluris RBAC)</td><td>Admin</td></tr>
+          </table>
+        </div>
+        <div class="section-group"><h5>Organization</h5>
+          <table class="param-table">
+            <tr><td>Title</td><td class="ad">title</td><td>IT Manager</td></tr>
+            <tr><td>Department</td><td class="ad">department</td><td>IT Operations</td></tr>
+            <tr><td>Company</td><td class="ad">company</td><td>Acme Corp</td></tr>
+            <tr><td>Employee ID</td><td class="ad">employeeID</td><td>E-10432</td></tr>
+            <tr><td>Employee type</td><td class="ad">employeeType</td><td>Full-time</td></tr>
+            <tr><td>Manager</td><td class="ad">manager</td><td>Bob Smith</td></tr>
+          </table>
+        </div>
+        <div class="section-group"><h5>Contact</h5>
+          <table class="param-table">
+            <tr><td>Office phone</td><td class="ad">telephoneNumber</td><td>+1 555-0100</td></tr>
+            <tr><td>Mobile phone</td><td class="ad">mobile</td><td>+1 555-0199</td></tr>
+            <tr><td>Home phone</td><td class="ad">homePhone</td><td>—</td></tr>
+            <tr><td>Fax</td><td class="ad">facsimileTelephoneNumber</td><td>—</td></tr>
+          </table>
+        </div>
+        <div class="section-group"><h5>Location</h5>
+          <table class="param-table">
+            <tr><td>Office</td><td class="ad">physicalDeliveryOfficeName</td><td>HQ-3F-12</td></tr>
+            <tr><td>Street address</td><td class="ad">streetAddress</td><td>123 Main St</td></tr>
+            <tr><td>City</td><td class="ad">l</td><td>Springfield</td></tr>
+            <tr><td>State/Province</td><td class="ad">st</td><td>IL</td></tr>
+            <tr><td>Postal code</td><td class="ad">postalCode</td><td>62701</td></tr>
+            <tr><td>Country</td><td class="ad">co</td><td>United States</td></tr>
+            <tr><td>Country code</td><td class="ad">c</td><td>US</td></tr>
+          </table>
+        </div>
+        <div class="section-group"><h5>Profile &amp; Scripts (Windows-familiar)</h5>
+          <table class="param-table">
+            <tr><td>Home directory</td><td class="ad">homeDirectory</td><td>\\fs01\home\jdoe</td></tr>
+            <tr><td>Home drive</td><td class="ad">homeDrive</td><td>H:</td></tr>
+            <tr><td>Profile path</td><td class="ad">profilePath</td><td>\\fs01\profiles\jdoe</td></tr>
+            <tr><td>Logon script</td><td class="ad">scriptPath</td><td>map-drives.bat</td></tr>
+          </table>
+        </div>
+        <div class="section-group"><h5>Security</h5>
+          <table class="param-table">
+            <tr><td>Account enabled</td><td class="ad">userAccountControl</td><td><span class="badge enabled">Yes</span></td></tr>
+            <tr><td>Account locked</td><td class="ad">lockoutTime</td><td>No</td></tr>
+            <tr><td>Account expires</td><td class="ad">accountExpires</td><td>Never</td></tr>
+            <tr><td>Password last set</td><td class="ad">pwdLastSet</td><td>2026-06-01</td></tr>
+            <tr><td>Password never expires</td><td class="ad">userAccountControl flag</td><td>No</td></tr>
+            <tr><td>Must change password</td><td class="ad">pwdLastSet=0</td><td>No</td></tr>
+            <tr><td>Last logon</td><td class="ad">lastLogonTimestamp</td><td>2026-07-05 08:00</td></tr>
+            <tr><td>Logon count</td><td class="ad">logonCount</td><td>412</td></tr>
+            <tr><td>Failed logins</td><td class="ad">badPwdCount</td><td>0</td></tr>
+          </table>
+        </div>
+        <div class="section-group"><h5>Preferences</h5>
+          <table class="param-table">
+            <tr><td>Locale</td><td class="ad">—</td><td>en-US</td></tr>
+            <tr><td>Timezone</td><td class="ad">—</td><td>America/Chicago</td></tr>
+            <tr><td>Avatar</td><td class="ad">thumbnailPhoto</td><td>(image)</td></tr>
+          </table>
+        </div>
+        <div class="section-group"><h5>Metadata</h5>
+          <table class="param-table">
+            <tr><td>Description</td><td class="ad">description</td><td>IT department lead</td></tr>
+            <tr><td>Notes</td><td class="ad">info</td><td>—</td></tr>
+          </table>
+        </div>
+      </div>
+    </details>
+
+    <details>
+      <summary>Groups <span class="hint">AD "Member Of" equivalent</span></summary>
+      <div class="tab-content">
+        <table class="param-table">
+          <tr><th>Group</th><th>Category</th><th>Scope</th><th>Source</th></tr>
+          <tr><td>IT-Admins</td><td>Security</td><td>Global</td><td>Direct</td></tr>
+          <tr><td>HQ-All-Staff</td><td>Distribution</td><td>Domain Local</td><td>Inherited (Site)</td></tr>
+        </table>
+      </div>
+    </details>
+
+    <details>
+      <summary>Applied Policies</summary>
+      <div class="tab-content">
+        <table class="param-table">
+          <tr><th>Policy (GP equivalent)</th><th>Source</th><th>Scope</th><th>Value</th><th>Status</th></tr>
+          <tr><td>Desktop lockdown level</td><td>IT-Admins</td><td>User</td><td>Relaxed</td><td><span class="badge applied">Applied</span></td></tr>
+          <tr><td>Browser homepage policy</td><td>HQ-All-Staff</td><td>User</td><td>intranet.acme.local</td><td><span class="badge applied">Applied</span></td></tr>
+        </table>
+      </div>
+    </details>
+
+    <details>
+      <summary>Roles <span class="hint">zero-trust permission tree — every capability, individually toggleable</span></summary>
+      <div class="tab-content">
+        <p style="opacity:0.7; margin-top:0;">Presets fill in common combinations; every checkbox remains individually adjustable underneath for zero-trust, least-privilege control.</p>
+        <div style="display:flex; gap:8px; margin-bottom:14px;">
+          <button class="mock-button">Apply preset: Super Admin</button>
+          <button class="mock-button">Apply preset: Admin</button>
+          <button class="mock-button">Apply preset: Self-Service</button>
+          <button class="mock-button">Clear all</button>
+        </div>
+
+        <details open style="border:1px solid rgba(127,127,127,0.2); border-radius:6px; margin-bottom:8px;">
+          <summary style="padding:8px 12px; background:rgba(127,127,127,0.05); cursor:pointer;">Dashboard</summary>
+          <div style="padding:10px 16px;">
+            <label><input type="checkbox" checked/> View own dashboard</label><br/>
+            <label><input type="checkbox" checked/> View cross-tenant dashboard (super_admin only)</label>
+          </div>
+        </details>
+
+        <details style="border:1px solid rgba(127,127,127,0.2); border-radius:6px; margin-bottom:8px;">
+          <summary style="padding:8px 12px; background:rgba(127,127,127,0.05); cursor:pointer;">Users</summary>
+          <div style="padding:10px 16px;">
+            <label><input type="checkbox" checked/> View users</label><br/>
+            <label><input type="checkbox" checked/> Create users</label><br/>
+            <label><input type="checkbox" checked/> Edit users</label><br/>
+            <label><input type="checkbox"/> Delete users</label><br/>
+            <label><input type="checkbox"/> Assign/change roles</label><br/>
+            <label><input type="checkbox" checked/> Reset password / unlock account</label>
+          </div>
+        </details>
+
+        <details style="border:1px solid rgba(127,127,127,0.2); border-radius:6px; margin-bottom:8px;">
+          <summary style="padding:8px 12px; background:rgba(127,127,127,0.05); cursor:pointer;">Assets</summary>
+          <div style="padding:10px 16px;">
+            <label><input type="checkbox" checked/> View assets</label><br/>
+            <label><input type="checkbox" checked/> Create/enroll assets</label><br/>
+            <label><input type="checkbox" checked/> Edit assets</label><br/>
+            <label><input type="checkbox"/> Delete/decommission assets</label><br/>
+            <label><input type="checkbox" checked/> Assign owner</label><br/>
+            <label><input type="checkbox"/><strong> Override policy-set configuration</strong> (the gated capability from the Configuration tab)</label>
+          </div>
+        </details>
+
+        <details style="border:1px solid rgba(127,127,127,0.2); border-radius:6px; margin-bottom:8px;">
+          <summary style="padding:8px 12px; background:rgba(127,127,127,0.05); cursor:pointer;">Policy</summary>
+          <div style="padding:10px 16px;">
+            <label><input type="checkbox" checked/> View policy catalog</label><br/>
+            <label><input type="checkbox" checked/> Create/edit Configuration Groups</label><br/>
+            <label><input type="checkbox"/> Manage Policy Modules (create/edit/publish)</label><br/>
+            <label><input type="checkbox"/> Import GPO backups</label>
+          </div>
+        </details>
+
+        <details style="border:1px solid rgba(127,127,127,0.2); border-radius:6px; margin-bottom:8px;">
+          <summary style="padding:8px 12px; background:rgba(127,127,127,0.05); cursor:pointer;">Profiles</summary>
+          <div style="padding:10px 16px;">
+            <label><input type="checkbox" checked/> View profiles</label><br/>
+            <label><input type="checkbox" checked/> Create/edit profiles</label><br/>
+            <label><input type="checkbox"/> Delete profiles</label>
+          </div>
+        </details>
+
+        <details style="border:1px solid rgba(127,127,127,0.2); border-radius:6px; margin-bottom:8px;">
+          <summary style="padding:8px 12px; background:rgba(127,127,127,0.05); cursor:pointer;">Scripts</summary>
+          <div style="padding:10px 16px;">
+            <label><input type="checkbox" checked/> View scripts</label><br/>
+            <label><input type="checkbox" checked/> Create/edit scripts</label><br/>
+            <label><input type="checkbox"/> Delete scripts</label><br/>
+            <label><input type="checkbox"/> Run script manually (ad-hoc execute)</label>
+          </div>
+        </details>
+
+        <details style="border:1px solid rgba(127,127,127,0.2); border-radius:6px; margin-bottom:8px;">
+          <summary style="padding:8px 12px; background:rgba(127,127,127,0.05); cursor:pointer;">Wine</summary>
+          <div style="padding:10px 16px;">
+            <label><input type="checkbox" checked/> View Wine Config Groups &amp; Applications</label><br/>
+            <label><input type="checkbox"/> Create/edit Wine Config Groups</label><br/>
+            <label><input type="checkbox"/> Create/edit Wine Applications</label><br/>
+            <label><input type="checkbox"/> Assign Wine Groups to computers</label>
+          </div>
+        </details>
+
+        <details style="border:1px solid rgba(127,127,127,0.2); border-radius:6px; margin-bottom:8px;">
+          <summary style="padding:8px 12px; background:rgba(127,127,127,0.05); cursor:pointer;">Package Management</summary>
+          <div style="padding:10px 16px;">
+            <label><input type="checkbox" checked/> View packages &amp; managers</label><br/>
+            <label><input type="checkbox"/> Manage package managers</label><br/>
+            <label><input type="checkbox"/> Approve/schedule update cycles</label>
+          </div>
+        </details>
+
+        <details style="border:1px solid rgba(127,127,127,0.2); border-radius:6px; margin-bottom:8px;">
+          <summary style="padding:8px 12px; background:rgba(127,127,127,0.05); cursor:pointer;">Server Administration</summary>
+          <div style="padding:10px 16px;">
+            <label><input type="checkbox"/> View server admin</label><br/>
+            <label><input type="checkbox"/> Manage tenants &amp; sites</label><br/>
+            <label><input type="checkbox"/> Manage AD/GP import</label><br/>
+            <label><input type="checkbox"/> System settings</label><br/>
+            <label><input type="checkbox"/> Switch active tenant (super_admin only)</label>
+          </div>
+        </details>
+
+        <details style="border:1px solid rgba(127,127,127,0.2); border-radius:6px;">
+          <summary style="padding:8px 12px; background:rgba(127,127,127,0.05); cursor:pointer;">Preferences</summary>
+          <div style="padding:10px 16px;">
+            <label><input type="checkbox" checked/> Manage own preferences</label><br/>
+            <label><input type="checkbox"/> Manage admin-section preferences (branding, defaults)</label>
+          </div>
+        </details>
+      </div>
+    </details>
+  </div>
+</div>
+
+<div class="section">
+  <p class="label">Review checklist — click all that apply</p>
+</div>
+<div class="options" data-multiselect>
+  <div class="option" data-choice="computer-fields-ok" onclick="toggleSelect(this)">
+    <div class="letter">✓</div>
+    <div class="content"><h3>Computer field set looks complete</h3></div>
+  </div>
+  <div class="option" data-choice="user-fields-ok" onclick="toggleSelect(this)">
+    <div class="letter">✓</div>
+    <div class="content"><h3>User field set looks complete</h3></div>
+  </div>
+  <div class="option" data-choice="roles-tree-ok" onclick="toggleSelect(this)">
+    <div class="letter">✓</div>
+    <div class="content"><h3>Roles/permission tree structure looks right</h3></div>
+  </div>
+  <div class="option" data-choice="need-changes" onclick="toggleSelect(this)">
+    <div class="letter">✎</div>
+    <div class="content"><h3>I have changes — will describe in terminal</h3></div>
+  </div>
+</div>

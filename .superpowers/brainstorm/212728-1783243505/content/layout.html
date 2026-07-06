@@ -1,0 +1,125 @@
+<h2>Standardized detail-page layout</h2>
+<p class="subtitle">This is what your ASCII sketch turns into with real content — one Computer example, one User example. Confirm the shell before we lock down tab content per entity.</p>
+
+<style>
+  .hero-mock {
+    border: 1px solid var(--border, #333);
+    border-radius: 10px;
+    padding: 20px;
+    display: flex;
+    justify-content: space-between;
+    gap: 24px;
+    margin-bottom: 0;
+  }
+  .hero-left { flex: 1; min-width: 0; }
+  .hero-left h3 { margin: 0 0 4px; font-size: 20px; }
+  .hero-left .id { font-family: monospace; font-size: 12px; opacity: 0.6; margin-bottom: 10px; }
+  .hero-defs { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 13px; }
+  .hero-defs dt { opacity: 0.6; }
+  .hero-defs dd { margin: 0; }
+  .hero-right {
+    width: 120px; height: 120px; flex-shrink: 0;
+    border: 1px dashed var(--border, #555);
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 40px;
+  }
+  .tabbar {
+    display: flex; gap: 2px; margin-top: 16px;
+    border-bottom: 1px solid var(--border, #333);
+  }
+  .tabbar .tab {
+    padding: 8px 16px; font-size: 13px; cursor: default;
+    border-bottom: 2px solid transparent;
+    opacity: 0.55;
+  }
+  .tabbar .tab.active {
+    opacity: 1;
+    border-bottom-color: #4f7cff;
+    font-weight: 600;
+  }
+  .tab-body {
+    border: 1px solid var(--border, #333);
+    border-top: none;
+    border-radius: 0 0 10px 10px;
+    padding: 20px;
+    min-height: 80px;
+    font-size: 13px;
+    opacity: 0.7;
+  }
+  .entity-block { margin-bottom: 36px; }
+  .entity-block h4 { margin: 0 0 8px; opacity: 0.8; }
+</style>
+
+<div class="entity-block">
+  <h4>Computer — dev-laptop-001</h4>
+  <div class="hero-mock">
+    <div class="hero-left">
+      <h3>dev-laptop-001</h3>
+      <div class="id">comp.acme.hq.0001</div>
+      <dl class="hero-defs">
+        <dt>Site</dt><dd>Headquarters, Floor 1</dd>
+        <dt>Owner</dt><dd>Jane Doe</dd>
+        <dt>OS</dt><dd>Ubuntu 24.04 LTS</dd>
+        <dt>Last seen</dt><dd>2 minutes ago</dd>
+      </dl>
+    </div>
+    <div class="hero-right">🐧</div>
+  </div>
+  <div class="tabbar">
+    <div class="tab active">General</div>
+    <div class="tab">Groups</div>
+    <div class="tab">Applied Policies</div>
+    <div class="tab">Configuration</div>
+    <div class="tab">Installed Software</div>
+    <div class="tab">Wine Groups</div>
+    <div class="tab">Assigned Scripts</div>
+    <div class="tab">Logs</div>
+  </div>
+  <div class="tab-body">General tab content — full parameter set (hardware, enrollment, lifecycle) currently shown flat on the page today.</div>
+</div>
+
+<div class="entity-block">
+  <h4>User — Jane Doe</h4>
+  <div class="hero-mock">
+    <div class="hero-left">
+      <h3>Jane Doe</h3>
+      <div class="id">jane@acme.test</div>
+      <dl class="hero-defs">
+        <dt>Role</dt><dd>Admin</dd>
+        <dt>Department</dt><dd>IT Operations</dd>
+        <dt>Site</dt><dd>Headquarters</dd>
+        <dt>Status</dt><dd>Enabled</dd>
+      </dl>
+    </div>
+    <div class="hero-right">🙂</div>
+  </div>
+  <div class="tabbar">
+    <div class="tab active">General</div>
+    <div class="tab">Groups</div>
+    <div class="tab">Applied Policies</div>
+    <div class="tab">Roles</div>
+  </div>
+  <div class="tab-body">General tab content — identity/organization/contact/location/profile fields, currently shown flat on the page today.</div>
+</div>
+
+<div class="section">
+  <p class="label">Does this shell match what you had in mind?</p>
+</div>
+
+<div class="options">
+  <div class="option" data-choice="matches" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Yes, this is the shape</h3>
+      <p>Hero (key facts + image) on top, tab bar below, tab content in a bordered panel — matches my sketch.</p>
+    </div>
+  </div>
+  <div class="option" data-choice="adjust" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Close, but needs adjustment</h3>
+      <p>I'll describe what to change in the terminal (e.g. image position, hero field choices, tab order).</p>
+    </div>
+  </div>
+</div>

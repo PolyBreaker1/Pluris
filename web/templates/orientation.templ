@@ -1,0 +1,45 @@
+// Package templates — orientation surfaces.
+//
+// Pluris is built for Windows admins migrating from AD + GP + Intune.
+// Earlier iterations of this file added an always-visible orientation
+// banner and sidebar subtitles; both were removed after review — the
+// sidebar items and page titles are self-explanatory, and the AD/GP
+// equivalence belongs in contextual surfaces (cell tooltips, detail
+// dialogs, docs), not as permanent chrome.
+//
+// What remains: ConceptEmptyState — only visible when a list has zero
+// matching rows. Empty states are contextual, not chrome, so a tailored
+// "No X yet" + CTA + Windows-admin-friendly framing is appropriate
+// there.
+package templates
+
+import "github.com/pluris/pluris/web/orientation"
+
+// ConceptEmptyState — the contents of a list's [data-pluris-empty]
+// element. The lists.js engine (INV-L9) toggles visibility via the
+// `data-pluris-empty="<listId>"` attribute; this component supplies
+// the *content*.
+//
+// Three lines: a noun-led title ("No profiles yet"), one helpful
+// paragraph framed against the Windows admin's mental model, and a
+// single primary CTA. No secondary actions — empty states should not
+// branch.
+templ ConceptEmptyState(conceptKey string, listID string) {
+	if orientation.Found(conceptKey) {
+		{{ c := orientation.Lookup(conceptKey) }}
+		if c.EmptyTitle != "" {
+			<div class="concept-empty" data-pluris-empty={ listID } hidden>
+				<div class="concept-empty-inner">
+					<h3 class="concept-empty-title">{ c.EmptyTitle }</h3>
+					<p class="concept-empty-help">{ c.EmptyHelp }</p>
+					if c.CreateLabel != "" && c.CreateHref != "" {
+						<a class="btn btn-primary concept-empty-cta" href={ templ.SafeURL(c.CreateHref) }>
+							@iconSVG("plus")
+							<span>{ c.CreateLabel }</span>
+						</a>
+					}
+				</div>
+			</div>
+		}
+	}
+}

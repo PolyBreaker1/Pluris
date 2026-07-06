@@ -1,0 +1,59 @@
+package templates
+
+import (
+	"strings"
+
+	"github.com/pluris/pluris/catalog/policies"
+)
+
+// PolicyPickerPage — the add-from-catalog flow (Task 13). One page, two
+// states: no selection renders the catalog list with Select links;
+// a selected policy renders the confirm form. Policies do not declare a
+// parameter schema yet, so the form states that and binds no values.
+templ PolicyPickerPage(entityName string, backHref string, postHref string, selected *policies.Policy, csrfToken string) {
+	@Layout("policy", "Add policy — "+entityName) {
+		<div class="page-content" data-testid="page-policy-picker">
+			@PageHeader("Policy", "Add policy to "+entityName, "Pick a policy from the catalog; it will be bound in a direct configuration group for this entity.", "")
+			if selected == nil {
+				<section class="pm-table-wrap">
+					<table class="pm-table">
+						<thead>
+							<tr>
+								<th>Policy</th>
+								<th>Category</th>
+								<th>Scope</th>
+								<th>Description</th>
+								<th></th>
+							</tr>
+						</thead>
+						<tbody>
+							for _, p := range policies.Catalog() {
+								<tr>
+									<td>{ p.Name }</td>
+									<td>{ strings.Join(p.Category, " / ") }</td>
+									<td>{ policies.ScopeLabel(p.Scope) }</td>
+									<td>{ p.Description }</td>
+									<td><a class="btn btn-primary" href={ templ.SafeURL(postHref + "?policy=" + p.ID) }>Select</a></td>
+								</tr>
+							}
+						</tbody>
+					</table>
+				</section>
+				<div style="margin-top:12px;"><a href={ templ.SafeURL(backHref) } class="btn">Cancel</a></div>
+			} else {
+				<section class="card">
+					<h4>{ selected.Name }</h4>
+					<p class="font-mono">{ selected.ID }</p>
+					<p>{ selected.Description }</p>
+					<p class="cg-muted">This policy has no parameters.</p>
+					<form method="POST" action={ templ.SafeURL(postHref) } style="display:flex; gap:8px;">
+						<input type="hidden" name="_csrf" value={ csrfToken }/>
+						<input type="hidden" name="policy" value={ selected.ID }/>
+						<button type="submit" class="btn btn-primary">Assign policy</button>
+						<a href={ templ.SafeURL(backHref) } class="btn">Cancel</a>
+					</form>
+				</section>
+			}
+		</div>
+	}
+}
