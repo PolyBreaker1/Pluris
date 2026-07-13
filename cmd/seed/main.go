@@ -127,26 +127,28 @@ func run(dbPath, tenantSlug string) error {
 		vendor          string
 		siteSlug        string
 		site            db.Site
+		packageFamily   string
+		diskEncryption  string
 	}{
 		// HQ - Development team
-		{"dev-laptop-001", "linux", "Ubuntu", "24.04 LTS", "6.8.0-40-generic", "x86_64", "Intel Core i7-12700K @ 3.6 GHz (8 cores)", 16384, 512000, "enrolled", "Dell", "hq", hqSite},
-		{"dev-laptop-002", "linux", "Fedora", "40", "6.9.5-200.fc40.x86_64", "x86_64", "AMD Ryzen 7 5800X @ 3.8 GHz (8 cores)", 32768, 1024000, "enrolled", "Lenovo", "hq", hqSite},
-		{"dev-workstation-001", "linux", "Arch Linux", "rolling", "6.9.7-arch1-1", "x86_64", "AMD Ryzen 9 7950X @ 4.5 GHz (16 cores)", 65536, 2048000, "enrolled", "Custom Build", "hq", hqSite},
-		{"dev-laptop-003", "linux", "Pop!_OS", "22.04 LTS", "6.6.10-76060610-generic", "x86_64", "Intel Core i7-1365U @ 1.8 GHz (10 cores)", 32768, 512000, "enrolled", "System76", "hq", hqSite},
-		{"dev-laptop-004", "linux", "Linux Mint", "21.3", "6.5.0-44-generic", "x86_64", "AMD Ryzen 5 7640U @ 4.3 GHz (6 cores)", 16384, 512000, "enrolled", "Framework", "hq", hqSite},
+		{"dev-laptop-001", "linux", "Ubuntu", "24.04 LTS", "6.8.0-40-generic", "x86_64", "Intel Core i7-12700K @ 3.6 GHz (8 cores)", 16384, 512000, "enrolled", "Dell", "hq", hqSite, "deb", "luks"},
+		{"dev-laptop-002", "linux", "Fedora", "40", "6.9.5-200.fc40.x86_64", "x86_64", "AMD Ryzen 7 5800X @ 3.8 GHz (8 cores)", 32768, 1024000, "enrolled", "Lenovo", "hq", hqSite, "rpm", "luks"},
+		{"dev-workstation-001", "linux", "Arch Linux", "rolling", "6.9.7-arch1-1", "x86_64", "AMD Ryzen 9 7950X @ 4.5 GHz (16 cores)", 65536, 2048000, "enrolled", "Custom Build", "hq", hqSite, "arch", "none"},
+		{"dev-laptop-003", "linux", "Pop!_OS", "22.04 LTS", "6.6.10-76060610-generic", "x86_64", "Intel Core i7-1365U @ 1.8 GHz (10 cores)", 32768, 512000, "enrolled", "System76", "hq", hqSite, "deb", "luks"},
+		{"dev-laptop-004", "linux", "Linux Mint", "21.3", "6.5.0-44-generic", "x86_64", "AMD Ryzen 5 7640U @ 4.3 GHz (6 cores)", 16384, 512000, "enrolled", "Framework", "hq", hqSite, "deb", "none"},
 		// HQ - QA and Management
-		{"qa-laptop-001", "windows", "Windows 11 Pro", "23H2", "10.0.22631.3880", "x86_64", "Intel Core i5-13500 @ 2.5 GHz (6 cores)", 16384, 512000, "enrolled", "HP", "hq", hqSite},
-		{"qa-laptop-002", "windows", "Windows 11 Pro", "23H2", "10.0.22631.3880", "x86_64", "Intel Core i5-1335U @ 1.3 GHz (10 cores)", 16384, 256000, "enrolled", "Dell", "hq", hqSite},
-		{"admin-macbook-001", "macos", "macOS Sonoma", "14.5", "23.5.0", "arm64", "Apple M3 Pro (12 cores)", 36864, 512000, "enrolled", "Apple", "hq", hqSite},
-		{"exec-macbook-001", "macos", "macOS Sonoma", "14.5", "23.5.0", "arm64", "Apple M3 Max (16 cores)", 65536, 1024000, "enrolled", "Apple", "hq", hqSite},
+		{"qa-laptop-001", "windows", "Windows 11 Pro", "23H2", "10.0.22631.3880", "x86_64", "Intel Core i5-13500 @ 2.5 GHz (6 cores)", 16384, 512000, "enrolled", "HP", "hq", hqSite, "other", "bitlocker"},
+		{"qa-laptop-002", "windows", "Windows 11 Pro", "23H2", "10.0.22631.3880", "x86_64", "Intel Core i5-1335U @ 1.3 GHz (10 cores)", 16384, 256000, "enrolled", "Dell", "hq", hqSite, "other", "bitlocker"},
+		{"admin-macbook-001", "macos", "macOS Sonoma", "14.5", "23.5.0", "arm64", "Apple M3 Pro (12 cores)", 36864, 512000, "enrolled", "Apple", "hq", hqSite, "other", "filevault"},
+		{"exec-macbook-001", "macos", "macOS Sonoma", "14.5", "23.5.0", "arm64", "Apple M3 Max (16 cores)", 65536, 1024000, "enrolled", "Apple", "hq", hqSite, "other", "filevault"},
 		// HQ - Pending/Approved devices
-		{"new-laptop-001", "linux", "Ubuntu", "24.04 LTS", "6.8.0-40-generic", "x86_64", "Intel Core i5-1340P @ 1.9 GHz (12 cores)", 16384, 512000, "pending", "Dell", "hq", hqSite},
-		{"new-laptop-002", "windows", "Windows 11 Pro", "23H2", "10.0.22631.3880", "x86_64", "AMD Ryzen 7 7840U @ 3.3 GHz (8 cores)", 32768, 512000, "approved", "Lenovo", "hq", hqSite},
+		{"new-laptop-001", "linux", "Ubuntu", "24.04 LTS", "6.8.0-40-generic", "x86_64", "Intel Core i5-1340P @ 1.9 GHz (12 cores)", 16384, 512000, "pending", "Dell", "hq", hqSite, "deb", "none"},
+		{"new-laptop-002", "windows", "Windows 11 Pro", "23H2", "10.0.22631.3880", "x86_64", "AMD Ryzen 7 7840U @ 3.3 GHz (8 cores)", 32768, 512000, "approved", "Lenovo", "hq", hqSite, "other", "bitlocker"},
 		// Remote Office
-		{"remote-laptop-001", "linux", "Ubuntu", "22.04 LTS", "5.15.0-113-generic", "x86_64", "Intel Core i7-1265U @ 1.8 GHz (10 cores)", 16384, 512000, "enrolled", "Dell", "remote", remoteSite},
-		{"remote-laptop-002", "windows", "Windows 11 Pro", "23H2", "10.0.22631.3880", "x86_64", "Intel Core i5-1235U @ 1.3 GHz (10 cores)", 16384, 256000, "enrolled", "HP", "remote", remoteSite},
-		{"remote-macbook-001", "macos", "macOS Ventura", "13.6", "22.6.0", "arm64", "Apple M2 (8 cores)", 16384, 512000, "enrolled", "Apple", "remote", remoteSite},
-		{"remote-desktop-001", "linux", "Debian", "12", "6.1.0-21-amd64", "x86_64", "Intel Core i5-12400 @ 2.5 GHz (6 cores)", 32768, 1024000, "enrolled", "Custom Build", "remote", remoteSite},
+		{"remote-laptop-001", "linux", "Ubuntu", "22.04 LTS", "5.15.0-113-generic", "x86_64", "Intel Core i7-1265U @ 1.8 GHz (10 cores)", 16384, 512000, "enrolled", "Dell", "remote", remoteSite, "deb", "luks"},
+		{"remote-laptop-002", "windows", "Windows 11 Pro", "23H2", "10.0.22631.3880", "x86_64", "Intel Core i5-1235U @ 1.3 GHz (10 cores)", 16384, 256000, "enrolled", "HP", "remote", remoteSite, "other", "bitlocker"},
+		{"remote-macbook-001", "macos", "macOS Ventura", "13.6", "22.6.0", "arm64", "Apple M2 (8 cores)", 16384, 512000, "enrolled", "Apple", "remote", remoteSite, "other", "filevault"},
+		{"remote-desktop-001", "linux", "Debian", "12", "6.1.0-21-amd64", "x86_64", "Intel Core i5-12400 @ 2.5 GHz (6 cores)", 32768, 1024000, "enrolled", "Custom Build", "remote", remoteSite, "deb", "luks"},
 	}
 
 	computerCount := 0
@@ -155,6 +157,8 @@ func run(dbPath, tenantSlug string) error {
 			"hostname": "%s",
 			"fqdn": "%s.%s.local",
 			"os_family": "%s",
+			"os_package_family": "%s",
+			"disk_encryption": "%s",
 			"os_distribution": "%s",
 			"os_version": "%s",
 			"kernel_version": "%s",
@@ -163,7 +167,7 @@ func run(dbPath, tenantSlug string) error {
 			"ram_mb": %d,
 			"serial_number": "SN-%s-%04d",
 			"storage_mb": %d
-		}`, comp.hostname, comp.hostname, tenant.Slug, comp.osFamily, comp.osDistribution,
+		}`, comp.hostname, comp.hostname, tenant.Slug, comp.osFamily, comp.packageFamily, comp.diskEncryption, comp.osDistribution,
 			comp.osVersion, comp.kernelVersion, comp.architecture, comp.cpuSummary, comp.ramMB,
 			strings.ToUpper(comp.hostname[:3]), i+1, comp.storageMB)
 
@@ -218,21 +222,23 @@ func run(dbPath, tenantSlug string) error {
 		services       []string
 		siteSlug       string
 		site           db.Site
+		packageFamily  string
+		diskEncryption string
 	}{
 		// Data Center - Production
-		{"prod-app-01", "Ubuntu Server", "24.04 LTS", "6.8.0-40-generic", 65536, "app", []string{"nginx", "gunicorn", "python3"}, "dc", dcSite},
-		{"prod-app-02", "Ubuntu Server", "24.04 LTS", "6.8.0-40-generic", 65536, "app", []string{"nginx", "gunicorn", "python3"}, "dc", dcSite},
-		{"prod-db-01", "Ubuntu Server", "24.04 LTS", "6.8.0-40-generic", 131072, "db", []string{"postgresql-16", "pgbouncer"}, "dc", dcSite},
-		{"prod-db-02", "Ubuntu Server", "24.04 LTS", "6.8.0-40-generic", 131072, "db", []string{"postgresql-16", "patroni"}, "dc", dcSite},
-		{"prod-web-01", "Rocky Linux", "9.4", "5.14.0-427.22.1.el9_4.x86_64", 32768, "web", []string{"nginx", "certbot", "haproxy"}, "dc", dcSite},
-		{"prod-web-02", "Rocky Linux", "9.4", "5.14.0-427.22.1.el9_4.x86_64", 32768, "web", []string{"nginx", "certbot", "haproxy"}, "dc", dcSite},
-		{"prod-cache-01", "Alpine Linux", "3.20", "6.6.32-0-lts", 65536, "other", []string{"redis", "sentinel"}, "dc", dcSite},
-		{"prod-queue-01", "Debian", "12", "6.1.0-21-amd64", 32768, "other", []string{"rabbitmq", "erlang"}, "dc", dcSite},
+		{"prod-app-01", "Ubuntu Server", "24.04 LTS", "6.8.0-40-generic", 65536, "app", []string{"nginx", "gunicorn", "python3"}, "dc", dcSite, "deb", "luks"},
+		{"prod-app-02", "Ubuntu Server", "24.04 LTS", "6.8.0-40-generic", 65536, "app", []string{"nginx", "gunicorn", "python3"}, "dc", dcSite, "deb", "luks"},
+		{"prod-db-01", "Ubuntu Server", "24.04 LTS", "6.8.0-40-generic", 131072, "db", []string{"postgresql-16", "pgbouncer"}, "dc", dcSite, "deb", "luks"},
+		{"prod-db-02", "Ubuntu Server", "24.04 LTS", "6.8.0-40-generic", 131072, "db", []string{"postgresql-16", "patroni"}, "dc", dcSite, "deb", "none"},
+		{"prod-web-01", "Rocky Linux", "9.4", "5.14.0-427.22.1.el9_4.x86_64", 32768, "web", []string{"nginx", "certbot", "haproxy"}, "dc", dcSite, "rpm", "luks"},
+		{"prod-web-02", "Rocky Linux", "9.4", "5.14.0-427.22.1.el9_4.x86_64", 32768, "web", []string{"nginx", "certbot", "haproxy"}, "dc", dcSite, "rpm", "none"},
+		{"prod-cache-01", "Alpine Linux", "3.20", "6.6.32-0-lts", 65536, "other", []string{"redis", "sentinel"}, "dc", dcSite, "apk", "none"},
+		{"prod-queue-01", "Debian", "12", "6.1.0-21-amd64", 32768, "other", []string{"rabbitmq", "erlang"}, "dc", dcSite, "deb", "luks"},
 		// HQ - Development/Staging
-		{"dev-all-in-one", "Ubuntu Server", "24.04 LTS", "6.8.0-40-generic", 65536, "app", []string{"docker", "postgresql", "redis", "nginx"}, "hq", hqSite},
-		{"staging-app-01", "Ubuntu Server", "22.04 LTS", "5.15.0-113-generic", 32768, "app", []string{"docker", "nginx"}, "hq", hqSite},
-		{"monitoring-01", "Debian", "12", "6.1.0-21-amd64", 16384, "other", []string{"prometheus", "grafana", "alertmanager"}, "hq", hqSite},
-		{"ci-runner-01", "Ubuntu Server", "24.04 LTS", "6.8.0-40-generic", 32768, "other", []string{"gitlab-runner", "docker"}, "hq", hqSite},
+		{"dev-all-in-one", "Ubuntu Server", "24.04 LTS", "6.8.0-40-generic", 65536, "app", []string{"docker", "postgresql", "redis", "nginx"}, "hq", hqSite, "deb", "none"},
+		{"staging-app-01", "Ubuntu Server", "22.04 LTS", "5.15.0-113-generic", 32768, "app", []string{"docker", "nginx"}, "hq", hqSite, "deb", "none"},
+		{"monitoring-01", "Debian", "12", "6.1.0-21-amd64", 16384, "other", []string{"prometheus", "grafana", "alertmanager"}, "hq", hqSite, "deb", "luks"},
+		{"ci-runner-01", "Ubuntu Server", "24.04 LTS", "6.8.0-40-generic", 32768, "other", []string{"gitlab-runner", "docker"}, "hq", hqSite, "deb", "none"},
 	}
 
 	serverCount := 0
@@ -247,6 +253,8 @@ func run(dbPath, tenantSlug string) error {
 			"hostname": "%s",
 			"fqdn": "%s.%s.local",
 			"os_family": "linux",
+			"os_package_family": "%s",
+			"disk_encryption": "%s",
 			"os_distribution": "%s",
 			"os_version": "%s",
 			"kernel_version": "%s",
@@ -258,7 +266,7 @@ func run(dbPath, tenantSlug string) error {
 			"server_role": "%s",
 			"services": %s,
 			"uptime_since": "2026-04-15T08:30:00Z"
-		}`, srv.hostname, srv.hostname, tenant.Slug, srv.osDistribution,
+		}`, srv.hostname, srv.hostname, tenant.Slug, srv.packageFamily, srv.diskEncryption, srv.osDistribution,
 			srv.osVersion, srv.kernelVersion, srv.ramMB, strings.ToUpper(srv.role), i+1, srv.role, servicesJSON)
 
 		asset, err := database.Queries.CreateAsset(ctx, db.CreateAssetParams{

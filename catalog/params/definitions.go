@@ -108,6 +108,8 @@ var allDefs = []ParamDef{
 	{Key: "hostname", Label: "Hostname", Description: "Network hostname.", Category: "hardware", Type: TypeString, Filter: FilterContains, Sort: SortAlpha},
 	{Key: "fqdn", Label: "FQDN", Description: "Fully qualified domain name.", Category: "hardware", Type: TypeString, Filter: FilterContains, Sort: SortAlpha, Mono: true},
 	{Key: "os_family", Label: "OS family", Description: "Operating system family (linux/windows/macos).", Category: "hardware", Type: TypeEnum, EnumValues: []string{"linux", "windows", "macos"}, Filter: FilterEquals, Sort: SortAlpha},
+	{Key: "os_package_family", Label: "Package format", Description: "OS package family (rpm/deb/arch/apk).", Category: "hardware", Type: TypeEnum, EnumValues: []string{"rpm", "deb", "arch", "apk", "other"}, Filter: FilterEquals, Sort: SortAlpha},
+	{Key: "disk_encryption", Label: "Disk encryption", Description: "Primary disk encryption mechanism.", Category: "hardware", Type: TypeEnum, EnumValues: []string{"none", "bitlocker", "luks", "filevault", "other"}, Filter: FilterEquals, Sort: SortAlpha},
 	{Key: "os_distribution", Label: "OS distribution", Description: "Distribution name (Ubuntu, Fedora, Windows 11 Pro, ...).", Category: "hardware", Type: TypeString, Filter: FilterContains, Sort: SortAlpha},
 	{Key: "os_version", Label: "OS version", Description: "Distribution version string.", Category: "hardware", Type: TypeString, Filter: FilterContains, Sort: SortAlpha},
 	{Key: "kernel_version", Label: "Kernel", Description: "Kernel version string (e.g., 6.8.0-40-generic).", Category: "hardware", Type: TypeString, Filter: FilterContains, Sort: SortAlpha, Mono: true},
@@ -144,6 +146,8 @@ var allDefs = []ParamDef{
 	{Key: "user_principal_name", Label: "UPN", Description: "user@domain-style principal name.", Category: "identity", Type: TypeString, Filter: FilterContains, Sort: SortAlpha, Mono: true},
 	{Key: "email", Label: "Email", Description: "Primary email address.", Category: "identity", Type: TypeString, Filter: FilterContains, Sort: SortAlpha},
 	{Key: "display_name", Label: "Name", Description: "Primary display name shown across the console.", Category: "identity", Type: TypeString, Filter: FilterContains, Sort: SortAlpha},
+	{Key: "given_name", Label: "First name", Description: "Given name (AD: givenName).", Category: "identity", Type: TypeString, Filter: FilterContains, Sort: SortAlpha},
+	{Key: "surname", Label: "Last name", Description: "Surname (AD: sn).", Category: "identity", Type: TypeString, Filter: FilterContains, Sort: SortAlpha},
 	{Key: "role", Label: "Role", Description: "Console access role (super_admin/admin/technician/user).", Category: "identity", Type: TypeEnum, EnumValues: []string{"super_admin", "admin", "technician", "user"}, Filter: FilterEquals, Sort: SortAlpha},
 
 	// --- Organization ---

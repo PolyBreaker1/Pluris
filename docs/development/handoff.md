@@ -1,0 +1,65 @@
+# Handoff — Current State
+
+**What:** a living, current-state-only snapshot of what's shipped, what's in flight, known accepted caveats, and next planned work — read this to pick up the project without wading through history.
+**Related:** [[workflow]] [[setup]] [[invariants]]
+
+> This file describes **only the present**. It is rewritten as state changes, not appended to. For how a given piece of shipped work got built, read its spec/plan under `docs/history/{specs,plans}/` — those are the permanent record; this file is not.
+
+[[roadmap]] holds the dated timeline; this file is current state only.
+
+## How to resume work
+
+1. Read `AGENTS.md` (repo root) — the hard rules.
+2. Read `docs/INDEX.md` — the doc map.
+3. Read this file — current state.
+4. If picking up in-flight work, read the relevant plan under `docs/history/plans/`.
+
+## What is shipped
+
+- **Auth & sessions**: login, CSRF protection, first-run setup wizard, session-based auth (`pkg/auth`).
+- **Multi-tenant data model**: tenants, sites, groups on SQLite (WAL, zero-config, auto-migrated, migrations embedded in the binary — 9 migrations as of this writing).
+- **Asset management**: Computers, Servers, Printers, Desks — unified list + `DetailShell`-based detail pages (8 tabs on Computer detail), canonical `AssetEditor` mount enforced by test across every subtype route.
+- **Identity/user management**: AD-familiar fields, 4-tab `DetailShell` user detail, full-page `/users/new` create flow.
+- **Groups (real, unified)**: migration 009 — `member_kind` (asset/identity/mixed), `membership` (static/dynamic), dynamic membership authored via the SAME condition builder + eval engine as Dependency Groups (`pkg/services.EvaluateDynamicMembership`, reconciles `source='rule'` members without ever touching `source='direct'` ones; a group with zero rules resolves to zero rule-sourced members, never a vacuous mass-add). One canonical `/groups` list, surfaced twice in the sidebar (Users▸User Groups, Assets▸Groups) via the `?kind=` query param. New `group` permission domain (`catalog/permissions`).
+- **Canonical Parameter Paths (INV-CPP) + single-source parameter registry (INV-PS)**: `catalog/params/` is THE registry for entity/tenant params — `ParamDef.Permission`/schema `DefaultPermission`, `FilterByGrants`/`VisibleDefs`/`EffectiveDefs` for permission-filtered visibility, `GET /api/params` (permission-filtered, entity→section→param with the full operator set) as the one JSON contract every consumer (filters, condition builder, module editor param tree) reads. Module inputs are exposed dynamically as `module/input/<key>` via `ModuleInputDefs` + `/api/params?module_id=<urn>` — `policy_module_versions.parameters_schema` is the one editable definition of a module's inputs.
+- **Endpoint policy catalog**: ~170 curated entries with Windows GP equivalents, `/policy/catalog` detail pages.
+- **Configuration Groups — real, DB-backed** (Task 5.2, replacing the retired dialog + mock): full `DetailShell` pages (list/create/detail with General/Assignments/Policy Bindings tabs), `pkg/services/configgroups.go`, real `TargetPicker` data (`pkg/services/targets.go`), binding `parameter_values` validated against the bound module's `parameters_schema`.
+- **Policy Modules — real, DB-backed** (Task 4.2–4.4): migration 008 (`policy_module_versions` reconciled — `runtime` dropped/derived, per-phase scripts in `policy_module_scripts`, `sandbox_profile`/`report_schema`; `manifest_yaml` is now a derived export artifact, not the source of truth), `pkg/services/policymodules.go` draft/publish/supersede/revoke state machine (published versions immutable, publish requires an apply script, all state transitions transactional/race-safe), bundled modules seeded at boot (`SeedBundled`). Module detail/create editor (`DetailShell`, `/policy/modules/new`, `/policy/modules/:id`) with a parameter tree + `{{ param "<path>" }}` click-to-insert/CodeMirror-autocomplete injection contract (resolved by the agent at execution time — not the console). **The Custom Policy Wizard was deleted** (was a pure stub, zero listeners on its save event — nothing it produced was ever persisted); the module editor is the canonical module-authoring surface.
+- **Module permissions**: migration 007 — `policy_modules.owner_identity_id` + `module_grants` table (subject: identity/group/role, level: view/edit/admin). `pkg/authz/modules.go`'s `ModuleCanView/Edit/Admin` (bundled modules are never editable except the super_admin break-glass bypass; owner + explicit grants; default-deny). The module editor's parameter tree is filtered by the creating user's grants. **Known gap**: `ModuleAccessInput.RoleIDs` covers only directly-assigned roles, not group-inherited ones — must close before a per-module grant-sharing UI ships (see `docs/history/specs/2026-07-12-module-grants-and-ownership.md`).
+- **Condition builder — the sole rule-authoring UI**: `ConditionBuilderDialog` (`web/templates/condition_builder.templ` + `web/static/condition-builder.js`), a widened operator set (`in`/`not_in`/`exists` + `equals`/`not_equals`/`contains`/`not_contains`/`starts_with`/`ends_with`/`gt`/`gte`/`lt`/`lte`/`matches`), and a script-condition kind with an explicit agent execution contract (console eval reports "unknown" until an agent reports `script_result/<id>`; group `match_mode` all/any). Used by Dependency Group conditions AND dynamic Group membership rules — one condition model, one eval engine (`catalog/dependencygroups.EvalGroup`), never two. See `docs/history/specs/2026-07-12-condition-builder-and-script-conditions.md`.
+- **Code editor**: self-hosted CodeMirror 6 (`web/static/vendor/codemirror/`, no CDN at runtime) + `PlurisCodeEditor` wrapper (`web/static/code-editor.js`) — `mount()`/`upgradeTextareas(root, opts)` with `completionSource` support, used by the module editor's Scripts tab and the condition builder's script-condition source.
+- **Dependency Groups**: WMI-filter analog — typed, evaluable platform/requirement conditions gating which modules apply to which assets (`catalog/dependencygroups`, `/policy/dependency-groups`); conditions now authored through the shared condition builder (flat add-form removed).
+- **Pluris Policy (console authz)**: zero-trust, GLPI-style `domain.action` permission registry (`catalog/permissions/`) replacing hardcoded route RBAC; 4 builtin role templates (super_admin/admin/technician/user) with parent-chain inheritance, diff-only override storage, and group-assignable roles; full matrix UI at `/policy/pluris`.
+- **Inline field editing**: per-section pencil → dirty-only save → real `POST /api/{users,assets}/.../fields` backend (`console/handlers/field_api.go`), gated by `identity.update`/`asset.update` scoped grants; the same `detail.js` mechanism now supports a per-section `data-save-url` override so one page (e.g. the module editor) can mix multiple field-update endpoints.
+- **Avatar upload**: drag-drop/file-picker on the user detail hero, `POST /api/users/:id/avatar`, content-sniffed, served at `/avatars/...` behind auth.
+- **Standardized lists**: `/policy/pluris`, `/policy/dependency-groups`, `/policy/groups`, `/groups`, and the Modules Library all carry the shared `data-pluris-filter` toolbar (search + quick filters) per INV-L9 — the pattern for any new list page.
+- **Navigation**: sidebar active-key matching is boundary-prefix (`keyMatches` in `web/templates/menu.go`, INV-AK) so sub-view pages highlight/expand correctly without a hardcoded key list. Redundant in-page tab bars (`PolicyTabs`/`AssetSubtypeTabs`/`PackagesTabs`) were removed — the sidebar's own `Children` are the one navigation; `PageHeader` no longer renders a section crumb. `policyModulesSubTabs` (a genuine sub-view strip, not sidebar duplication) was kept.
+- **Full Go test suite**: handlers, services, DB layer, and templates; `go build -buildvcs=false ./...` and `go test -buildvcs=false -count=1 ./...` both green, `gofmt -l .` clean.
+
+**Not built yet**: the Linux endpoint agent, and any policy enforcement on a real device. Do not treat this console as capable of managing a live fleet today. This is also why the `{{ param "<path>" }}` module-input injection syntax and script-condition results are resolved/reported by "the agent" throughout this doc set — that resolution does not happen in the console; the console only stores the unresolved template and displays "unknown" until an agent checks in.
+
+## What is in-flight
+
+Nothing beyond the documentation rebuild this file itself is part of. No feature branch is mid-implementation right now. See the dated specs under `docs/history/specs/2026-07-12-*.md` for the design record of everything summarized above.
+
+## Known accepted caveats
+
+- **Raise-your-own-grants guard deferred.** A custom role granting `console_access.manage_permissions` (or, in RBAC v2, `console_access.manage_role_assignments`) confers de-facto full tenant power — admin-is-omnipotent-in-tenant is accepted by design for now; a symmetric guard against a role holder raising their own grants is future hardening, not a current bug.
+- **Avatar reads are not tenant-scoped.** `/avatars/<id>.<ext>` is behind auth but any authenticated session can request any avatar path — low sensitivity (profile pictures), documented, not yet fixed.
+- **Module route-gate granularity.** All `/policy/modules/*` and `/api/modules/*` routes require `endpoint_policy.manage_modules` at the route level; a session with only an explicit per-module `module_grants` row (or plain ownership, no `manage_modules`) cannot reach the module editor UI at all today even though `pkg/authz.ModuleCanView/Edit/Admin`'s finer matrix would allow it. The matrix is correct and unit-tested; it's just unreachable end-to-end for that narrower case. Needs a route-table redesign (open the route, push all authz into handlers, the way `/api/params` already works) to close.
+- **`ModuleAccessInput.RoleIDs` is direct-roles-only**, not group-inherited — see the module permissions bullet above.
+- **`RemoveRule` of a dynamic group's last rule mass-recalculates.** Fixed to correctly clear rule-sourced members to zero (not mass-add everyone) rather than leaving the vacuous-AND hazard live — see `docs/history/specs/2026-07-12-dynamic-groups.md`. No scheduler re-evaluates dynamic groups on a timer or on asset/identity field changes — only on rule save/delete or an explicit "Recalculate" click. A scheduled-refresh follow-up is deferred, not scheduled.
+- **`custom_policies.parameters_schema` is dead schema.** No Go code (service, handler, or seed) reads or writes it — it was the deleted Custom Policy Wizard's intended persistence target and died with the wizard's stub save path. The column is left in place (dropping is a migration, not worth it for an unreachable column); do not build new code against it without first checking that this note is still accurate.
+- **Groups' dynamic-membership recalculation is manual only** (no cron/scheduler) — see the dated spec.
+- **Policy Module Picker dialog is still v1/stub.** The Library list's row actions now link to real routes, but the picker's own Save path toasts and closes rather than wiring a pick into a Configuration Group binding row.
+- **Drag-and-drop param insertion into the module editor's script CodeMirror was implemented but not verified in a live browser** (click-to-insert was, end to end). Flag for a manual check before relying on it.
+- **Small test-coverage gaps carried forward from RBAC v2** (2026-07-10): no dedicated test for a custom-role-granted-via-group cache-ranking scenario, and `console/handlers/group_roles.go`'s `groupRoleRedirectTarget` uses the raw `Referer` header without the same-origin guard used elsewhere in `pkg/auth/middleware.go`.
+
+## Next planned work
+
+1. **Endpoint agent MVP planning** — the beta-defining feature (policy engine application on real Linux devices, resolving `{{ param "<path>" }}` module-input injection and script-condition results). Needs a strong-model brainstorm → spec → plan session; do not let a small model architect this.
+2. **Close the module route-gate / RoleIDs gaps** above before shipping a per-module grant-sharing UI.
+3. **Scheduled dynamic-group refresh** — currently manual-only ("Recalculate" button); a background scheduler is deferred.
+4. **Test backfills** — the RBAC v2 gaps above (via-group cache ranking test, `Referer` same-origin guard).
+5. **ITSM foundation** — requirements are gathered (`docs/product/itsm.md`) but implementation hasn't started.
+6. **Owner tasks** (not code): manual browser walkthrough + screenshots into `docs/media/`, publish-readiness checklist items in `docs/funding/03-tasks-peter.md`.

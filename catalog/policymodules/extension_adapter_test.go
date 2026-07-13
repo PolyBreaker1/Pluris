@@ -12,9 +12,9 @@ import (
 // loudly rather than the kind silently disappearing from cross-kind
 // surfaces (Sources page, audit log, registry).
 func TestModuleSatisfiesExtension(t *testing.T) {
-	mods := AllModules()
+	mods := testCatalog()
 	if len(mods) == 0 {
-		t.Fatalf("AllModules() returned 0 — the rest of the test cannot run")
+		t.Fatalf("testCatalog() returned 0 — the rest of the test cannot run")
 	}
 	var _ extension.Extension = mods[0].AsExtension() // compile-time
 }
@@ -33,14 +33,18 @@ func TestKindRegistration(t *testing.T) {
 }
 
 func TestLoaderReturnsAllModulesAsExtensions(t *testing.T) {
+	prev := catalogProvider
+	SetCatalogProvider(testCatalog)
+	defer func() { catalogProvider = prev }()
+
 	spec, ok := extension.LookupKind(extension.KindPolicyModule)
 	if !ok {
 		t.Fatal("kind not registered")
 	}
 	exts := spec.Loader()
-	if len(exts) != len(AllModules()) {
+	if len(exts) != len(testCatalog()) {
 		t.Errorf("Loader returned %d extensions, want %d (one per Module)",
-			len(exts), len(AllModules()))
+			len(exts), len(testCatalog()))
 	}
 	for _, ext := range exts {
 		if ext.Manifest().Kind != extension.KindPolicyModule {
@@ -124,6 +128,10 @@ func TestLatestVersionNilWhenNothingPublished(t *testing.T) {
 // in the mock without policymodules-specific knowledge leaking into
 // pkg/extension.
 func TestCountBySourceMatchesMockOrigins(t *testing.T) {
+	prev := catalogProvider
+	SetCatalogProvider(testCatalog)
+	defer func() { catalogProvider = prev }()
+
 	got := extension.CountBySource(extension.KindPolicyModule)
 
 	want := map[extension.Source]int{
@@ -132,7 +140,7 @@ func TestCountBySourceMatchesMockOrigins(t *testing.T) {
 		extension.SourceImported:  0,
 		extension.SourceCommunity: 0,
 	}
-	for _, m := range AllModules() {
+	for _, m := range testCatalog() {
 		ext := m.AsExtension()
 		if ext.LatestVersion() == nil {
 			continue

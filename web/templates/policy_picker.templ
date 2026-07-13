@@ -1,9 +1,8 @@
 package templates
 
 import (
-	"strings"
-
 	"github.com/pluris/pluris/catalog/policies"
+	"strings"
 )
 
 // PolicyPickerPage — the add-from-catalog flow (Task 13). One page, two
@@ -13,7 +12,7 @@ import (
 templ PolicyPickerPage(entityName string, backHref string, postHref string, selected *policies.Policy, csrfToken string) {
 	@Layout("policy", "Add policy — "+entityName) {
 		<div class="page-content" data-testid="page-policy-picker">
-			@PageHeader("Policy", "Add policy to "+entityName, "Pick a policy from the catalog; it will be bound in a direct configuration group for this entity.", "")
+			@PageHeader("Add policy to "+entityName, "Pick a policy from the catalog; it will be bound in a direct configuration group for this entity.", "", "")
 			if selected == nil {
 				<section class="pm-table-wrap">
 					<table class="pm-table">

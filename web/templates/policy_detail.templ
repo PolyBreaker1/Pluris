@@ -1,0 +1,106 @@
+package templates
+
+import (
+	"strconv"
+	"strings"
+
+	"github.com/pluris/pluris/catalog/policies"
+	"github.com/pluris/pluris/catalog/policymodules"
+	"github.com/pluris/pluris/db"
+	"github.com/pluris/pluris/web/lists"
+)
+
+// PolicyDetailPage — full-page policy catalog entry on the standardized
+// DetailShell (Task 15), replacing the old PolicyDetailDialog popup.
+templ PolicyDetailPage(p policies.Policy, modules []policymodules.Module, assignments []db.ListAssignmentsByPolicyRow) {
+	@DetailShell(
+		"policy-catalog",
+		p.Name+" — Policy",
+		templ.Attributes{"data-testid": "page-policy-detail", "data-policy-id": p.ID},
+		policyDetailHero(p),
+		policyDetailTabs(p, modules, assignments),
+	)
+}
+
+// policyEditAction — hero action for custom policies only: the wizard
+// lives on the catalog list page, so link back with the edit fragment.
+templ policyEditAction(p policies.Policy) {
+	<a href={ templ.SafeURL("/policy/catalog#edit=" + p.ID) } class="btn btn-primary" style="margin-top:8px; display:inline-block;">Edit custom policy</a>
+}
+
+// policyGeneralTab — the definition fields, addressed for display as
+// policy_param/<policy-id>/<field> (policies are not in the params
+// registry yet; display-only).
+templ policyGeneralTab(p policies.Policy) {
+	<div class="asset-detail-grid">
+		<section class="asset-detail-section card">
+			<h4 class="asset-detail-section-title">Definition</h4>
+			<dl class="asset-detail-defs">
+				<dt>Name</dt>
+				<dd><span class="field-value" data-path={ "policy_param/" + p.ID + "/name" }>{ p.Name }</span></dd>
+				<dt>ID</dt>
+				<dd><span class="field-value font-mono" data-path={ "policy_param/" + p.ID + "/id" }>{ p.ID }</span></dd>
+				<dt>Category</dt>
+				<dd>{ strings.Join(p.Category, " / ") }</dd>
+				<dt>Scope</dt>
+				<dd>{ policies.ScopeLabel(p.Scope) }</dd>
+				<dt>Description</dt>
+				<dd>{ p.Description }</dd>
+			</dl>
+		</section>
+		<section class="asset-detail-section card">
+			<h4 class="asset-detail-section-title">Windows Group Policy equivalent</h4>
+			<dl class="asset-detail-defs">
+				<dt>GP setting</dt>
+				<dd>{ stringOrDash(p.WinGPName) }</dd>
+				<dt>GP path</dt>
+				<dd><span class="font-mono">{ stringOrDash(p.WinGPPath) }</span></dd>
+				<dt>Linux mechanism</dt>
+				<dd><span class="font-mono">{ stringOrDash(p.LinuxImpl) }</span></dd>
+			</dl>
+		</section>
+	</div>
+}
+
+// policyModulesTab — candidate policy modules for this policy.
+templ policyModulesTab(p policies.Policy, modules []policymodules.Module) {
+	@DetailTableFrame(lists.ListIDPolicyModulesForPolicy, nil) {
+		if len(modules) == 0 {
+			@DetailEmptyRow(5, "No candidate modules ship for this policy yet.")
+		} else {
+			for _, m := range modules {
+				<tr>
+					<td>{ m.Title }</td>
+					<td>{ m.Origin }</td>
+					<td class="font-mono">{ moduleLatestVersionLabel(m) }</td>
+					<td>{ m.Scope }</td>
+					<td>{ moduleTargetOSLabel(m) }</td>
+				</tr>
+			}
+		}
+	}
+}
+
+// policyAssignmentsTab — where this policy is currently assigned.
+templ policyAssignmentsTab(assignments []db.ListAssignmentsByPolicyRow) {
+	@DetailTableFrame(lists.ListIDPolicyAssignments, nil) {
+		if len(assignments) == 0 {
+			@DetailEmptyRow(4, "This policy is not assigned anywhere yet.")
+		} else {
+			for _, a := range assignments {
+				<tr>
+					<td>{ a.GroupName }</td>
+					<td>{ a.TargetType + " #" + strconv.FormatInt(a.TargetID, 10) }</td>
+					<td>{ a.GroupScope }</td>
+					<td>
+						if a.GroupDisabled {
+							<span class="asset-chip asset-chip-enroll-retired">Disabled</span>
+						} else {
+							<span class="asset-chip asset-chip-enroll-enrolled">Assigned</span>
+						}
+					</td>
+				</tr>
+			}
+		}
+	}
+}

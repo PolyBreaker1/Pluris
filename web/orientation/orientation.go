@@ -4,7 +4,7 @@
 // It powers two surfaces today:
 //   - Empty-state copy for every list (templates.ConceptEmptyState reads
 //     EmptyTitle / EmptyHelp / CreateLabel / CreateHref).
-//   - The auto-generated docs/for-windows-admins/concepts.md (run
+//   - The auto-generated docs/endpoint-management/windows-admins/concepts.md (run
 //     `go run ./cmd/gendocs` to regenerate).
 //
 // Earlier iterations also drove a permanent orientation banner and
@@ -76,7 +76,7 @@ type Concept struct {
 	CreateLabel string
 	CreateHref  string
 
-	// DocsAnchor — fragment under docs/for-windows-admins/concepts.md
+	// DocsAnchor — fragment under docs/endpoint-management/windows-admins/concepts.md
 	// the "Learn more" link points to. Defaults to the Key when blank.
 	DocsAnchor string
 }
@@ -98,10 +98,10 @@ var All = []Concept{
 		Title:          "Users",
 		SidebarHint:    "Identities + role assignment",
 		ADEquivalent:   "AD Users and Computers (the user side)",
-		Summary:        "Identity directory synced from Kanidm or added manually. Assign console roles, pair identities to assets, view per-user policy resolution.",
-		LinuxMechanism: "Kanidm IDM (LDAP-compatible) + system PAM/SSSD on enrolled Linux hosts.",
+		Summary:        "Identity directory that will sync from Kanidm (planned identity backend) or added manually. Assign console roles, pair identities to assets, view per-user policy resolution.",
+		LinuxMechanism: "Planned: Kanidm IDM (LDAP-compatible) + system PAM/SSSD on enrolled Linux hosts.",
 		EmptyTitle:     "No users yet",
-		EmptyHelp:      "Connect Kanidm or add a user manually. Once present, users can be targeted by policies and bound to assets.",
+		EmptyHelp:      "Connect Kanidm (planned) or add a user manually. Once present, users can be targeted by policies and bound to assets.",
 		CreateLabel:    "Add user",
 		CreateHref:     "/users?new=1",
 	},
@@ -148,7 +148,7 @@ var All = []Concept{
 		EmptyTitle:     "No configuration groups yet",
 		EmptyHelp:      "Create one to bind catalog settings to a computer, user, or group. Equivalent of authoring a GPO and linking it.",
 		CreateLabel:    "New configuration group",
-		CreateHref:     "/policy/groups?new=1",
+		CreateHref:     "/policy/groups/new",
 	},
 	{
 		Key:            "policy-modules",
@@ -159,8 +159,8 @@ var All = []Concept{
 		LinuxMechanism: "module.yaml + enforce/validate/rollback scripts. Agent verifies the signature, runs the lifecycle phase, reports the result.",
 		EmptyTitle:     "No tenant modules yet",
 		EmptyHelp:      "Bundled modules cover the common settings out of the box. Add a tenant module only when you need a setting Pluris doesn't ship.",
-		CreateLabel:    "New module from policy wizard",
-		CreateHref:     "/policy/modules?new=1",
+		CreateLabel:    "New module",
+		CreateHref:     "/policy/modules/new",
 	},
 
 	{
@@ -269,7 +269,7 @@ var All = []Concept{
 		Title:        "Server Administration",
 		SidebarHint:  "Tenant + console settings",
 		ADEquivalent: "AD Sites & Services + Intune tenant settings",
-		Summary:      "Tenant-wide configuration of the Pluris console itself: Kanidm connection, NATS endpoints, certificate authority, console roles, audit log retention.",
+		Summary:      "Tenant-wide configuration of the Pluris console itself: planned Kanidm connection, NATS endpoints, certificate authority, console roles, audit log retention.",
 	},
 
 	{

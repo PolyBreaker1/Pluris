@@ -1,9 +1,0 @@
-{"type":"server-started","port":62947,"host":"127.0.0.1","url_host":"localhost","url":"http://localhost:62947","screen_dir":"/home/peter/AI Builds/Pluris/Pluris-main/.superpowers/brainstorm/212728-1783243505/content","state_dir":"/home/peter/AI Builds/Pluris/Pluris-main/.superpowers/brainstorm/212728-1783243505/state"}
-{"type":"screen-added","file":"/home/peter/AI Builds/Pluris/Pluris-main/.superpowers/brainstorm/212728-1783243505/content/layout.html"}
-{"source":"user-event","type":"click","text":"B\n    \n      Close, but needs adjustment\n      I'll describe what to change in the terminal (e.g. image position, hero field choices, tab order).","choice":"adjust","id":null,"timestamp":1783243627457}
-{"type":"screen-added","file":"/home/peter/AI Builds/Pluris/Pluris-main/.superpowers/brainstorm/212728-1783243505/content/complete-mockup.html"}
-{"source":"user-event","type":"click","text":"✓\n    Computer field set looks complete","choice":"computer-fields-ok","id":null,"timestamp":1783244111338}
-{"source":"user-event","type":"click","text":"✓\n    Computer field set looks complete","choice":"computer-fields-ok","id":null,"timestamp":1783244112056}
-{"type":"screen-added","file":"/home/peter/AI Builds/Pluris/Pluris-main/.superpowers/brainstorm/212728-1783243505/content/computer-detail.html"}
-{"type":"screen-added","file":"/home/peter/AI Builds/Pluris/Pluris-main/.superpowers/brainstorm/212728-1783243505/content/user-detail.html"}
-{"type":"server-stopped","reason":"owner process exited"}

@@ -1,11 +1,13 @@
 package auth
 
 import (
+	"log"
 	"net/http"
 
 	"github.com/labstack/echo/v4"
 
 	"github.com/pluris/pluris/catalog/identities"
+	"github.com/pluris/pluris/pkg/authz"
 	"github.com/pluris/pluris/pkg/database"
 )
 
@@ -55,6 +57,7 @@ func SetupGate(dbase *database.Database) echo.MiddlewareFunc {
 // without a valid session are redirected to /login, except for the
 // exempt paths above.
 func RequireAuth(dbase *database.Database, sessions *SessionManager) echo.MiddlewareFunc {
+	authzSvc := authz.NewService(dbase)
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			path := c.Request().URL.Path
@@ -91,6 +94,8 @@ func RequireAuth(dbase *database.Database, sessions *SessionManager) echo.Middle
 			}
 
 			if userSess.Role == identities.RoleSuperAdmin {
+				userSess.Grants = authz.Grants{authz.BypassKey: "yes"}
+
 				tenants, err := dbase.Queries.ListTenants(c.Request().Context())
 				if err == nil {
 					opts := make([]TenantOption, 0, len(tenants))
@@ -98,6 +103,14 @@ func RequireAuth(dbase *database.Database, sessions *SessionManager) echo.Middle
 						opts = append(opts, TenantOption{ID: t.ID, Name: t.Name})
 					}
 					userSess.AvailableTenants = opts
+				}
+			} else {
+				grants, err := authzSvc.EffectiveGrants(c.Request().Context(), identity.ID)
+				if err != nil {
+					log.Printf("auth: resolve effective grants for identity %d failed: %v", identity.ID, err)
+					userSess.Grants = authz.Grants{}
+				} else {
+					userSess.Grants = grants
 				}
 			}
 
@@ -107,10 +120,13 @@ func RequireAuth(dbase *database.Database, sessions *SessionManager) echo.Middle
 	}
 }
 
-// RequireRole enforces the RBAC matrix (CanAccess) against the session
-// stashed by RequireAuth. Must run after RequireAuth in the middleware
-// chain. Renders a plain 403 — page-level styling of this response is a
-// follow-up, not required for the auth system to be correct.
+// RequireRole enforces route access against the session's Pluris Policy
+// grants (CanAccessGrants), stashed by RequireAuth. Must run after
+// RequireAuth in the middleware chain. The name is kept for now to avoid
+// unrelated churn in server.go's middleware wiring, even though it no
+// longer checks a role -- it checks RoutePermissionKey(path) against
+// sess.Grants. Renders a plain 403 — page-level styling of this response
+// is a follow-up, not required for the auth system to be correct.
 func RequireRole() echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
@@ -122,7 +138,7 @@ func RequireRole() echo.MiddlewareFunc {
 			if sess == nil {
 				return echo.NewHTTPError(http.StatusForbidden, "no active session")
 			}
-			if !CanAccess(sess.Role, path) {
+			if !CanAccessGrants(sess.Grants, path) {
 				return echo.NewHTTPError(http.StatusForbidden, "not permitted for your role")
 			}
 			return next(c)

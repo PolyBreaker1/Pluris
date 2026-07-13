@@ -1,10 +1,9 @@
 package templates
 
 import (
-	"strconv"
-
 	"github.com/pluris/pluris/db"
 	"github.com/pluris/pluris/pkg/services"
+	"strconv"
 )
 
 // Shared Groups-tab building blocks (Task 9), used by both the asset and
@@ -32,7 +31,7 @@ templ groupAddAction(postBase string, options []db.Group, csrfToken string) {
 templ groupMembershipRows(postBase string, rows []services.GroupRow, csrfToken string) {
 	for _, g := range rows {
 		<tr>
-			<td>{ g.Name }</td>
+			<td><a href={ templ.SafeURL("/groups/" + strconv.FormatInt(g.ID, 10)) }>{ g.Name }</a></td>
 			<td>{ g.Category }</td>
 			<td>{ g.Scope }</td>
 			<td>{ g.Source }</td>

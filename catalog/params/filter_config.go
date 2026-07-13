@@ -7,8 +7,8 @@ import "encoding/json"
 // a given subtype: available parameters (grouped by section), their
 // types, valid operators, enum values, and units.
 type FilterConfig struct {
-	Subtype  string              `json:"subtype"`
-	Sections []FilterSection     `json:"sections"`
+	Subtype  string                 `json:"subtype"`
+	Sections []FilterSection        `json:"sections"`
 	Params   map[string]FilterParam `json:"params"`
 }
 

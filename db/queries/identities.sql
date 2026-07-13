@@ -54,10 +54,18 @@ ORDER BY display_name
 LIMIT @limit;
 
 -- name: UpdateIdentity :one
+-- Writes every field the Users UI (detail-page editor + inline-edit field
+-- API, see console/handlers/field_api.go) can set on an identity. Kept as
+-- one wide UPDATE (rather than narrow SetIdentityX statements per field)
+-- so IdentityService.Update stays the single write path callers use --
+-- ID/AccountEnabled/AccountLocked/Role/password fields have their own
+-- narrower statements below for flows that must not clobber unrelated
+-- columns.
 UPDATE identities SET
     display_name = @display_name,
     given_name = @given_name,
     surname = @surname,
+    initials = @initials,
     email = @email,
     title = @title,
     department = @department,
@@ -67,7 +75,30 @@ UPDATE identities SET
     manager_id = @manager_id,
     phone_office = @phone_office,
     phone_mobile = @phone_mobile,
+    phone_home = @phone_home,
+    fax = @fax,
+    office = @office,
+    street_address = @street_address,
+    city = @city,
+    state = @state,
+    postal_code = @postal_code,
+    country = @country,
+    country_code = @country_code,
+    home_directory = @home_directory,
+    home_drive = @home_drive,
+    profile_path = @profile_path,
+    logon_script = @logon_script,
+    account_enabled = @account_enabled,
+    account_locked = @account_locked,
+    account_expires_at = @account_expires_at,
+    password_never_expires = @password_never_expires,
+    must_change_password = @must_change_password,
+    locale = @locale,
+    timezone = @timezone,
+    description = @description,
+    notes = @notes,
     site_id = @site_id,
+    avatar_url = @avatar_url,
     updated_at = CURRENT_TIMESTAMP
 WHERE id = @id
 RETURNING *;

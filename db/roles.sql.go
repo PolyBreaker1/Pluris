@@ -8,7 +8,24 @@ package db
 import (
 	"context"
 	"database/sql"
+	"time"
 )
+
+const AssignRoleToGroup = `-- name: AssignRoleToGroup :exec
+INSERT OR IGNORE INTO group_roles (group_id, role_id, assigned_by)
+VALUES (?1, ?2, ?3)
+`
+
+type AssignRoleToGroupParams struct {
+	GroupID    int64         `json:"group_id"`
+	RoleID     int64         `json:"role_id"`
+	AssignedBy sql.NullInt64 `json:"assigned_by"`
+}
+
+func (q *Queries) AssignRoleToGroup(ctx context.Context, arg AssignRoleToGroupParams) error {
+	_, err := q.db.ExecContext(ctx, AssignRoleToGroup, arg.GroupID, arg.RoleID, arg.AssignedBy)
+	return err
+}
 
 const AssignRoleToIdentity = `-- name: AssignRoleToIdentity :exec
 INSERT OR IGNORE INTO identity_roles (identity_id, role_id, assigned_by)
@@ -30,7 +47,7 @@ const CreateRole = `-- name: CreateRole :one
 
 INSERT INTO roles (tenant_id, slug, name, description, is_builtin, template_slug)
 VALUES (?1, ?2, ?3, ?4, ?5, ?6)
-RETURNING id, tenant_id, slug, name, description, is_builtin, template_slug, permissions, created_at, updated_at
+RETURNING id, tenant_id, slug, name, description, is_builtin, template_slug, permissions, created_at, updated_at, parent_role_id
 `
 
 type CreateRoleParams struct {
@@ -67,12 +84,24 @@ func (q *Queries) CreateRole(ctx context.Context, arg CreateRoleParams) (Role, e
 		&i.Permissions,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ParentRoleID,
 	)
 	return i, err
 }
 
+const DeleteRole = `-- name: DeleteRole :exec
+DELETE FROM roles WHERE id = ?1
+`
+
+// Deletes a custom role. Callers must guard against deleting builtin
+// roles and roles that still have members (Task 6, Pluris Policy delete).
+func (q *Queries) DeleteRole(ctx context.Context, id int64) error {
+	_, err := q.db.ExecContext(ctx, DeleteRole, id)
+	return err
+}
+
 const GetRole = `-- name: GetRole :one
-SELECT id, tenant_id, slug, name, description, is_builtin, template_slug, permissions, created_at, updated_at FROM roles WHERE id = ?1
+SELECT id, tenant_id, slug, name, description, is_builtin, template_slug, permissions, created_at, updated_at, parent_role_id FROM roles WHERE id = ?1
 `
 
 func (q *Queries) GetRole(ctx context.Context, id int64) (Role, error) {
@@ -89,12 +118,13 @@ func (q *Queries) GetRole(ctx context.Context, id int64) (Role, error) {
 		&i.Permissions,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ParentRoleID,
 	)
 	return i, err
 }
 
 const GetRoleBySlug = `-- name: GetRoleBySlug :one
-SELECT id, tenant_id, slug, name, description, is_builtin, template_slug, permissions, created_at, updated_at FROM roles
+SELECT id, tenant_id, slug, name, description, is_builtin, template_slug, permissions, created_at, updated_at, parent_role_id FROM roles
 WHERE tenant_id = ?1 AND slug = ?2
 LIMIT 1
 `
@@ -118,12 +148,246 @@ func (q *Queries) GetRoleBySlug(ctx context.Context, arg GetRoleBySlugParams) (R
 		&i.Permissions,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ParentRoleID,
 	)
 	return i, err
 }
 
+const ListGroupRolesForIdentity = `-- name: ListGroupRolesForIdentity :many
+SELECT DISTINCT r.id, r.tenant_id, r.slug, r.name, r.description, r.is_builtin, r.template_slug, r.permissions, r.created_at, r.updated_at, r.parent_role_id FROM roles r
+JOIN group_roles gr ON gr.role_id = r.id
+JOIN group_memberships gm ON gm.group_id = gr.group_id
+WHERE gm.identity_id = ?1
+ORDER BY r.name
+`
+
+// Roles an identity inherits via group membership (distinct across
+// however many groups grant the same role).
+func (q *Queries) ListGroupRolesForIdentity(ctx context.Context, identityID sql.NullInt64) ([]Role, error) {
+	rows, err := q.db.QueryContext(ctx, ListGroupRolesForIdentity, identityID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Role{}
+	for rows.Next() {
+		var i Role
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.Slug,
+			&i.Name,
+			&i.Description,
+			&i.IsBuiltin,
+			&i.TemplateSlug,
+			&i.Permissions,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ParentRoleID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ListGroupRolesForIdentityDetail = `-- name: ListGroupRolesForIdentityDetail :many
+SELECT r.id, r.tenant_id, r.slug, r.name, r.description, r.is_builtin, r.template_slug, r.permissions, r.created_at, r.updated_at, r.parent_role_id, g.id AS group_id, g.name AS group_name
+FROM roles r
+JOIN group_roles gr ON gr.role_id = r.id
+JOIN group_memberships gm ON gm.group_id = gr.group_id
+JOIN groups g ON g.id = gr.group_id
+WHERE gm.identity_id = ?1
+ORDER BY r.name, g.name
+`
+
+type ListGroupRolesForIdentityDetailRow struct {
+	ID           int64          `json:"id"`
+	TenantID     int64          `json:"tenant_id"`
+	Slug         string         `json:"slug"`
+	Name         string         `json:"name"`
+	Description  sql.NullString `json:"description"`
+	IsBuiltin    bool           `json:"is_builtin"`
+	TemplateSlug sql.NullString `json:"template_slug"`
+	Permissions  string         `json:"permissions"`
+	CreatedAt    time.Time      `json:"created_at"`
+	UpdatedAt    time.Time      `json:"updated_at"`
+	ParentRoleID sql.NullInt64  `json:"parent_role_id"`
+	GroupID      int64          `json:"group_id"`
+	GroupName    string         `json:"group_name"`
+}
+
+// Roles an identity inherits via group membership, WITH the group each
+// one comes from (Task 7 user detail Roles tab "via <group>" rows). One
+// row per (role, group) pair -- an identity in two groups that both
+// grant the same role gets two rows, one per group, unlike the
+// DISTINCT-collapsed ListGroupRolesForIdentity above.
+func (q *Queries) ListGroupRolesForIdentityDetail(ctx context.Context, identityID sql.NullInt64) ([]ListGroupRolesForIdentityDetailRow, error) {
+	rows, err := q.db.QueryContext(ctx, ListGroupRolesForIdentityDetail, identityID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListGroupRolesForIdentityDetailRow{}
+	for rows.Next() {
+		var i ListGroupRolesForIdentityDetailRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.Slug,
+			&i.Name,
+			&i.Description,
+			&i.IsBuiltin,
+			&i.TemplateSlug,
+			&i.Permissions,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ParentRoleID,
+			&i.GroupID,
+			&i.GroupName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ListGroupsForRole = `-- name: ListGroupsForRole :many
+SELECT g.id, g.name FROM groups g
+JOIN group_roles gr ON gr.group_id = g.id
+WHERE gr.role_id = ?1
+ORDER BY g.name
+`
+
+type ListGroupsForRoleRow struct {
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
+}
+
+// Groups holding a given role, for the role detail Members tab.
+func (q *Queries) ListGroupsForRole(ctx context.Context, roleID int64) ([]ListGroupsForRoleRow, error) {
+	rows, err := q.db.QueryContext(ctx, ListGroupsForRole, roleID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListGroupsForRoleRow{}
+	for rows.Next() {
+		var i ListGroupsForRoleRow
+		if err := rows.Scan(&i.ID, &i.Name); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ListIdentitiesForRole = `-- name: ListIdentitiesForRole :many
+SELECT i.id, i.username, i.display_name, i.email
+FROM identities i
+JOIN identity_roles ir ON ir.identity_id = i.id
+WHERE ir.role_id = ?1
+ORDER BY i.display_name
+`
+
+type ListIdentitiesForRoleRow struct {
+	ID          int64  `json:"id"`
+	Username    string `json:"username"`
+	DisplayName string `json:"display_name"`
+	Email       string `json:"email"`
+}
+
+// Identities assigned to a given role, for the role detail page.
+func (q *Queries) ListIdentitiesForRole(ctx context.Context, roleID int64) ([]ListIdentitiesForRoleRow, error) {
+	rows, err := q.db.QueryContext(ctx, ListIdentitiesForRole, roleID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListIdentitiesForRoleRow{}
+	for rows.Next() {
+		var i ListIdentitiesForRoleRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Username,
+			&i.DisplayName,
+			&i.Email,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ListRoleChildren = `-- name: ListRoleChildren :many
+SELECT id, tenant_id, slug, name, description, is_builtin, template_slug, permissions, created_at, updated_at, parent_role_id FROM roles WHERE parent_role_id = ?1 ORDER BY name
+`
+
+// Direct children of a role in the inheritance chain.
+func (q *Queries) ListRoleChildren(ctx context.Context, id sql.NullInt64) ([]Role, error) {
+	rows, err := q.db.QueryContext(ctx, ListRoleChildren, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Role{}
+	for rows.Next() {
+		var i Role
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.Slug,
+			&i.Name,
+			&i.Description,
+			&i.IsBuiltin,
+			&i.TemplateSlug,
+			&i.Permissions,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ParentRoleID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const ListRolesByTenant = `-- name: ListRolesByTenant :many
-SELECT id, tenant_id, slug, name, description, is_builtin, template_slug, permissions, created_at, updated_at FROM roles
+SELECT id, tenant_id, slug, name, description, is_builtin, template_slug, permissions, created_at, updated_at, parent_role_id FROM roles
 WHERE tenant_id = ?1
 ORDER BY is_builtin DESC, name
 `
@@ -148,6 +412,111 @@ func (q *Queries) ListRolesByTenant(ctx context.Context, tenantID int64) ([]Role
 			&i.Permissions,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ParentRoleID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ListRolesForGroup = `-- name: ListRolesForGroup :many
+SELECT r.id, r.tenant_id, r.slug, r.name, r.description, r.is_builtin, r.template_slug, r.permissions, r.created_at, r.updated_at, r.parent_role_id FROM roles r
+JOIN group_roles gr ON gr.role_id = r.id
+WHERE gr.group_id = ?1
+ORDER BY r.name
+`
+
+// Roles assigned directly to a group, for the group detail Roles tab.
+func (q *Queries) ListRolesForGroup(ctx context.Context, groupID int64) ([]Role, error) {
+	rows, err := q.db.QueryContext(ctx, ListRolesForGroup, groupID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Role{}
+	for rows.Next() {
+		var i Role
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.Slug,
+			&i.Name,
+			&i.Description,
+			&i.IsBuiltin,
+			&i.TemplateSlug,
+			&i.Permissions,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ParentRoleID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ListRolesForGroupDetail = `-- name: ListRolesForGroupDetail :many
+SELECT r.id, r.tenant_id, r.slug, r.name, r.description, r.is_builtin, r.template_slug, r.permissions, r.created_at, r.updated_at, r.parent_role_id, gr.assigned_at FROM roles r
+JOIN group_roles gr ON gr.role_id = r.id
+WHERE gr.group_id = ?1
+ORDER BY r.name
+`
+
+type ListRolesForGroupDetailRow struct {
+	ID           int64          `json:"id"`
+	TenantID     int64          `json:"tenant_id"`
+	Slug         string         `json:"slug"`
+	Name         string         `json:"name"`
+	Description  sql.NullString `json:"description"`
+	IsBuiltin    bool           `json:"is_builtin"`
+	TemplateSlug sql.NullString `json:"template_slug"`
+	Permissions  string         `json:"permissions"`
+	CreatedAt    time.Time      `json:"created_at"`
+	UpdatedAt    time.Time      `json:"updated_at"`
+	ParentRoleID sql.NullInt64  `json:"parent_role_id"`
+	AssignedAt   time.Time      `json:"assigned_at"`
+}
+
+// Same as ListRolesForGroup but carries the assignment time (Task 7
+// group detail Roles tab "Assigned" column). Mirrors
+// ListRolesForIdentityDetail's relationship to ListRolesForIdentity.
+func (q *Queries) ListRolesForGroupDetail(ctx context.Context, groupID int64) ([]ListRolesForGroupDetailRow, error) {
+	rows, err := q.db.QueryContext(ctx, ListRolesForGroupDetail, groupID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListRolesForGroupDetailRow{}
+	for rows.Next() {
+		var i ListRolesForGroupDetailRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.Slug,
+			&i.Name,
+			&i.Description,
+			&i.IsBuiltin,
+			&i.TemplateSlug,
+			&i.Permissions,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ParentRoleID,
+			&i.AssignedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -163,7 +532,7 @@ func (q *Queries) ListRolesByTenant(ctx context.Context, tenantID int64) ([]Role
 }
 
 const ListRolesForIdentity = `-- name: ListRolesForIdentity :many
-SELECT r.id, r.tenant_id, r.slug, r.name, r.description, r.is_builtin, r.template_slug, r.permissions, r.created_at, r.updated_at FROM roles r
+SELECT r.id, r.tenant_id, r.slug, r.name, r.description, r.is_builtin, r.template_slug, r.permissions, r.created_at, r.updated_at, r.parent_role_id FROM roles r
 JOIN identity_roles ir ON ir.role_id = r.id
 WHERE ir.identity_id = ?1
 ORDER BY r.name
@@ -189,6 +558,7 @@ func (q *Queries) ListRolesForIdentity(ctx context.Context, identityID int64) ([
 			&i.Permissions,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ParentRoleID,
 		); err != nil {
 			return nil, err
 		}
@@ -203,6 +573,21 @@ func (q *Queries) ListRolesForIdentity(ctx context.Context, identityID int64) ([
 	return items, nil
 }
 
+const RemoveRoleFromGroup = `-- name: RemoveRoleFromGroup :exec
+DELETE FROM group_roles
+WHERE group_id = ?1 AND role_id = ?2
+`
+
+type RemoveRoleFromGroupParams struct {
+	GroupID int64 `json:"group_id"`
+	RoleID  int64 `json:"role_id"`
+}
+
+func (q *Queries) RemoveRoleFromGroup(ctx context.Context, arg RemoveRoleFromGroupParams) error {
+	_, err := q.db.ExecContext(ctx, RemoveRoleFromGroup, arg.GroupID, arg.RoleID)
+	return err
+}
+
 const RemoveRoleFromIdentity = `-- name: RemoveRoleFromIdentity :exec
 DELETE FROM identity_roles
 WHERE identity_id = ?1 AND role_id = ?2
@@ -215,5 +600,55 @@ type RemoveRoleFromIdentityParams struct {
 
 func (q *Queries) RemoveRoleFromIdentity(ctx context.Context, arg RemoveRoleFromIdentityParams) error {
 	_, err := q.db.ExecContext(ctx, RemoveRoleFromIdentity, arg.IdentityID, arg.RoleID)
+	return err
+}
+
+const UpdateRoleParent = `-- name: UpdateRoleParent :exec
+UPDATE roles SET parent_role_id = ?1, updated_at = CURRENT_TIMESTAMP
+WHERE id = ?2
+`
+
+type UpdateRoleParentParams struct {
+	ParentRoleID sql.NullInt64 `json:"parent_role_id"`
+	ID           int64         `json:"id"`
+}
+
+// Sets (or clears, if parent_role_id is NULL) a role's parent for
+// inheritance. Callers must guard cycles and max depth (service layer).
+func (q *Queries) UpdateRoleParent(ctx context.Context, arg UpdateRoleParentParams) error {
+	_, err := q.db.ExecContext(ctx, UpdateRoleParent, arg.ParentRoleID, arg.ID)
+	return err
+}
+
+const UpdateRolePermissions = `-- name: UpdateRolePermissions :exec
+UPDATE roles SET permissions = ?1, updated_at = CURRENT_TIMESTAMP
+WHERE id = ?2
+`
+
+type UpdateRolePermissionsParams struct {
+	Permissions string `json:"permissions"`
+	ID          int64  `json:"id"`
+}
+
+func (q *Queries) UpdateRolePermissions(ctx context.Context, arg UpdateRolePermissionsParams) error {
+	_, err := q.db.ExecContext(ctx, UpdateRolePermissions, arg.Permissions, arg.ID)
+	return err
+}
+
+const UpdateRoleSettings = `-- name: UpdateRoleSettings :exec
+UPDATE roles SET name = ?1, description = ?2, updated_at = CURRENT_TIMESTAMP
+WHERE id = ?3
+`
+
+type UpdateRoleSettingsParams struct {
+	Name        string         `json:"name"`
+	Description sql.NullString `json:"description"`
+	ID          int64          `json:"id"`
+}
+
+// Updates a custom role's name/description (Task 6 Settings tab rename).
+// Callers must guard builtin roles -- this query has no such check.
+func (q *Queries) UpdateRoleSettings(ctx context.Context, arg UpdateRoleSettingsParams) error {
+	_, err := q.db.ExecContext(ctx, UpdateRoleSettings, arg.Name, arg.Description, arg.ID)
 	return err
 }

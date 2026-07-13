@@ -23,25 +23,25 @@
 // Rule alignment:
 //   - R1: One definition per parameter concept. No duplication.
 //   - R2: All surfaces (list columns, detail pages, filters, future APIs)
-//         read from this registry. No parallel field declarations.
+//     read from this registry. No parallel field declarations.
 //   - R3: Hierarchy parity maintained — links resolve through the shared
-//         Tenant → Site → Group → (Asset | Identity) model.
+//     Tenant → Site → Group → (Asset | Identity) model.
 package params
 
 // ParamType classifies the value type of a parameter definition.
 type ParamType string
 
 const (
-	TypeString  ParamType = "string"  // Free-text string
-	TypeInt     ParamType = "int"     // Integer (may have Unit)
-	TypeFloat   ParamType = "float"   // Floating point (may have Unit)
-	TypeEnum    ParamType = "enum"    // Constrained set of values
-	TypeBool    ParamType = "bool"    // True/false
-	TypeTime    ParamType = "time"    // Timestamp (RFC3339)
-	TypeDate    ParamType = "date"    // Date only (YYYY-MM-DD)
-	TypeList    ParamType = "list"    // Ordered list of strings
-	TypeMap     ParamType = "map"     // Key-value map (labels)
-	TypeLink    ParamType = "link"    // Reference to another entity (see LinkDef)
+	TypeString   ParamType = "string"   // Free-text string
+	TypeInt      ParamType = "int"      // Integer (may have Unit)
+	TypeFloat    ParamType = "float"    // Floating point (may have Unit)
+	TypeEnum     ParamType = "enum"     // Constrained set of values
+	TypeBool     ParamType = "bool"     // True/false
+	TypeTime     ParamType = "time"     // Timestamp (RFC3339)
+	TypeDate     ParamType = "date"     // Date only (YYYY-MM-DD)
+	TypeList     ParamType = "list"     // Ordered list of strings
+	TypeMap      ParamType = "map"      // Key-value map (labels)
+	TypeLink     ParamType = "link"     // Reference to another entity (see LinkDef)
 	TypeCompound ParamType = "compound" // Structured sub-fields (e.g. consumable: {kind, level})
 )
 
@@ -64,10 +64,10 @@ const (
 type SortType string
 
 const (
-	SortNone    SortType = ""      // Not sortable
-	SortAlpha   SortType = "alpha" // Case-insensitive string, default asc
-	SortNum     SortType = "num"   // Numeric, default desc
-	SortDate    SortType = "date"  // Chronological, default desc
+	SortNone  SortType = ""      // Not sortable
+	SortAlpha SortType = "alpha" // Case-insensitive string, default asc
+	SortNum   SortType = "num"   // Numeric, default desc
+	SortDate  SortType = "date"  // Chronological, default desc
 )
 
 // ParamDef is a single canonical parameter definition. Defined once,
@@ -115,6 +115,15 @@ type ParamDef struct {
 	// CompoundFields lists sub-field keys when Type == TypeCompound.
 	// Each sub-field is itself a registered ParamDef (compound nesting is flat).
 	CompoundFields []string
+
+	// Permission is the canonical "domain.action" key (see
+	// catalog/permissions) required to view this parameter. Empty means
+	// "no per-param override" — the owning schema's DefaultPermission
+	// applies instead (see SubtypeSchema.DefaultPermission and
+	// EffectivePermission). Only set this when a parameter needs a
+	// permission stricter or different from its schema's default; do not
+	// hand-annotate every definition.
+	Permission string
 }
 
 // SubtypeSchema declares which parameters a given asset subtype mounts,
@@ -143,6 +152,13 @@ type SubtypeSchema struct {
 	// DefaultColumns lists param keys shown by default in the list view.
 	// Order determines column order.
 	DefaultColumns []string
+
+	// DefaultPermission is the canonical "domain.action" key (see
+	// catalog/permissions) that gates visibility of every parameter this
+	// schema mounts, unless a ParamDef overrides it with its own
+	// Permission. Empty means visible to any authenticated user. See
+	// EffectivePermission for the resolution rule.
+	DefaultPermission string
 }
 
 // SchemaSection groups parameters within a subtype schema for display.

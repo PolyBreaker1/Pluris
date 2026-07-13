@@ -1,8 +1,6 @@
 package templates
 
 import (
-	"strconv"
-
 	"github.com/a-h/templ"
 
 	"github.com/pluris/pluris/catalog/assets"
@@ -35,9 +33,13 @@ func userInitials(user identities.Identity) string {
 }
 
 // userDetailHero builds the HeroSpec for a user detail page: name, UPN
-// mono line, account-state chips, quick-fact defs, initials avatar and
-// the Edit link as the single hero action.
-func userDetailHero(user identities.Identity) HeroSpec {
+// mono line, account-state chips, key detail defs, initials avatar,
+// Edit action and Delete in the ⋮ dropdown. warn, when non-empty, is a
+// message surfaced from the full-page create flow (Task 8): a field
+// could not be applied via UpdateFields after the identity was already
+// created (see console/handlers/handlers.go's UserCreateSubmit); it
+// renders as a dismissible banner reusing hero.Action's slot.
+func userDetailHero(user identities.Identity, csrfToken string, warn string) HeroSpec {
 	chips := []Chip{{Label: user.Role.Label(), Class: "asset-chip-role"}}
 	if user.AccountEnabled {
 		chips = append(chips, Chip{Label: "Enabled", Class: "asset-chip-enroll-enrolled"})
@@ -48,18 +50,19 @@ func userDetailHero(user identities.Identity) HeroSpec {
 		chips = append(chips, Chip{Label: "Locked", Class: "asset-chip-enroll-pending"})
 	}
 
-	var defs []HeroDef
+	// Key details: always show Username, Email; add others when present
+	defs := []HeroDef{
+		{Label: "Username", Value: user.Username, IconSVG: heroIconUser},
+		{Label: "Email", Value: user.Email, IconSVG: heroIconMail},
+	}
 	if user.Department != "" {
-		defs = append(defs, HeroDef{Label: "Department", Value: user.Department})
+		defs = append(defs, HeroDef{Label: "Department", Value: user.Department, IconSVG: heroIconBuilding})
 	}
 	if user.Title != "" {
-		defs = append(defs, HeroDef{Label: "Title", Value: user.Title})
+		defs = append(defs, HeroDef{Label: "Title", Value: user.Title, IconSVG: heroIconBadge})
 	}
-	if user.Company != "" {
-		defs = append(defs, HeroDef{Label: "Company", Value: user.Company})
-	}
-	if user.ManagerID != 0 {
-		defs = append(defs, HeroDef{Label: "Manager", Value: "#" + strconv.FormatInt(user.ManagerID, 10)})
+	if user.Office != "" {
+		defs = append(defs, HeroDef{Label: "Office", Value: user.Office, IconSVG: heroIconMapPin})
 	}
 
 	id := user.UserPrincipalName
@@ -67,28 +70,34 @@ func userDetailHero(user identities.Identity) HeroSpec {
 		id = user.Email
 	}
 
+	var action templ.Component
+	if warn != "" {
+		action = userWarnBanner(warn)
+	}
+
 	return HeroSpec{
 		Crumbs: []Crumb{
 			{Label: "Users", Href: "/users"},
 			{Label: user.ResolvedDisplayName()},
 		},
-		Name:   user.ResolvedDisplayName(),
-		ID:     id,
-		Chips:  chips,
-		Defs:   defs,
-		Visual: userAvatar(user),
-		Action: userEditAction(user),
+		Name:       user.ResolvedDisplayName(),
+		ID:         id,
+		Chips:      chips,
+		Defs:       defs,
+		Visual:     userAvatar(user),
+		Action:     action,
+		DeleteForm: userDeleteDropdownItem(user, csrfToken),
 	}
 }
 
 // userDetailTabs wires the 4 standardized tabs (spec §4). Slugs are
 // stable API for detail.js hash deep-links and the server test.
-func userDetailTabs(user identities.Identity, assigned []assets.Asset, csrfToken string, groups []services.GroupRow, allGroups []db.Group, roles []db.ListRolesForIdentityDetailRow, allRoles []db.Role, applied []services.AppliedPolicy) []TabSpec {
+func userDetailTabs(user identities.Identity, assigned []assets.Asset, csrfToken string, groups []services.GroupRow, allGroups []db.Group, roles []db.ListRolesForIdentityDetailRow, allRoles []db.Role, viaGroupRoles []db.ListGroupRolesForIdentityDetailRow, applied []services.AppliedPolicy) []TabSpec {
 	return []TabSpec{
 		{Slug: "general", Label: "General", Body: userGeneralTab(user, assigned, csrfToken)},
 		{Slug: "groups", Label: "Groups", Body: userGroupsTab(user, groups, allGroups, csrfToken)},
 		{Slug: "policies", Label: "Applied Policies", Body: userPoliciesTab(user, applied)},
-		{Slug: "roles", Label: "Roles", Body: userRolesTab(user, roles, allRoles, csrfToken)},
+		{Slug: "roles", Label: "Roles", Body: userRolesTab(user, roles, allRoles, viaGroupRoles, csrfToken)},
 	}
 }
 
@@ -138,4 +147,12 @@ func appliedStatusChipClass(status string) string {
 		return "asset-chip-enroll-retired"
 	}
 	return "asset-chip-enroll-enrolled"
+}
+
+// stringOrDash renders a possibly-empty string with a dash fallback.
+func stringOrDash(s string) string {
+	if s == "" {
+		return "—"
+	}
+	return s
 }

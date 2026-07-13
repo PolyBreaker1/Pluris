@@ -17,6 +17,7 @@ import (
 	"github.com/pluris/pluris/catalog/identities"
 	"github.com/pluris/pluris/db"
 	"github.com/pluris/pluris/pkg/auth"
+	"github.com/pluris/pluris/pkg/authz"
 	"github.com/pluris/pluris/pkg/services"
 	"github.com/pluris/pluris/web/templates"
 )
@@ -84,6 +85,20 @@ func (h *Handler) SetupSubmit(c echo.Context) error {
 		if err := roleSvc.Assign(ctx, created.ID, sa.ID, created.ID); err != nil {
 			log.Printf("setup: assign super_admin failed: %v", err)
 		}
+	}
+
+	// Seed the Pluris Policy builtin role permission templates. Best-effort:
+	// a failure here must not block setup (the identities.role cache above
+	// already grants the first admin access).
+	if err := authz.NewService(h.db).EnsureBuiltinGrants(ctx, tenant.ID); err != nil {
+		log.Printf("setup: ensure builtin grants failed: %v", err)
+	}
+
+	// Seed the builtin dependency groups (module applicability templates)
+	// for the new tenant. Best-effort: a failure here must not block setup.
+	depGroupSvc := services.NewDependencyGroupService(h.db)
+	if err := depGroupSvc.EnsureBuiltins(ctx, tenant.ID); err != nil {
+		log.Printf("setup: ensure builtin dependency groups failed: %v", err)
 	}
 
 	if err := h.db.Queries.SetIdentityPasswordHash(ctx, db.SetIdentityPasswordHashParams{

@@ -1,0 +1,529 @@
+package templates
+
+import (
+	"strconv"
+
+	"github.com/pluris/pluris/db"
+	"github.com/pluris/pluris/web/lists"
+)
+
+// group_detail.templ — the standardized group detail page. Task 7
+// shipped the minimal General/Members/Roles page; Task 6.2 upgrades it:
+// inline-editable General (fields API + guarded member-kind/membership
+// selects), a source-aware Members tab fed by the shared
+// TargetPickerDialog, and a Rules tab that reuses the
+// ConditionBuilderDialog popup for dynamic-membership rules. The Roles
+// tab is unchanged from Task 7.
+
+// GroupDetailPage — DetailShell hero + General/Members/Rules/Roles tabs.
+// d.Active is "users-groups" or "assets-groups" (see groupDetailActiveKey)
+// so the sidebar tree highlights the surface the group belongs to.
+templ GroupDetailPage(d GroupDetailData) {
+	@DetailShell(
+		d.Active,
+		d.Group.Name+" — Group",
+		templ.Attributes{"data-testid": "page-group-detail", "data-group-id": strconv.FormatInt(d.Group.ID, 10), "data-csrf": d.CSRF},
+		groupDetailHero(d),
+		groupDetailTabs(d),
+	)
+	@TargetPickerDialog(groupAllowedTargetKinds(d.Group.MemberKind), d.Targets)
+	@groupDetailPageScript()
+}
+
+// groupDeleteAction — delete form in the hero ⋮ dropdown. The handler
+// rejects deletion with a 409 while Configuration Group assignments
+// still target this group (services.ErrGroupReferenced).
+templ groupDeleteAction(d GroupDetailData) {
+	<form class="hero-dropdown-form" method="post" action={ templ.SafeURL(groupDetailPath(d.Group.ID) + "/delete") } onsubmit="return confirm('Delete this group? Its memberships, rules and role assignments are removed with it.')">
+		<input type="hidden" name="_csrf" value={ d.CSRF }/>
+		<button type="submit" class="hero-dropdown-item">
+			<svg class="hero-dropdown-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+			Delete
+		</button>
+	</form>
+}
+
+// ---- General tab -----------------------------------------------------
+
+// groupGeneralTab — two sections: "Definition" is the standard detail.js
+// per-section inline edit (name/description via the fields API);
+// "Type & membership" holds the guarded member_kind/membership selects,
+// which save through the SAME fields endpoint but with their own Apply
+// button + inline error surface (a select can't ride detail.js's
+// text-input edit swap, and member-kind changes can fail with a
+// conflict the user must see in place).
+templ groupGeneralTab(d GroupDetailData) {
+	<div class="asset-detail-grid">
+		<section class="asset-detail-section card" data-section="general" data-save-url={ groupFieldsPath(d.Group.ID) }>
+			<div class="section-header">
+				<h4 class="asset-detail-section-title">Definition</h4>
+				<div class="section-actions">
+					<button type="button" class="section-edit-btn" onclick="toggleSectionEdit(this)" title="Edit section">
+						<svg class="section-edit-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"></path><path d="m15 5 4 4"></path></svg>
+					</button>
+					<button type="button" class="section-cancel-btn" style="display:none" onclick="cancelSectionEdit(this)">Cancel</button>
+					<button type="button" class="section-save-btn btn-primary" style="display:none" onclick="saveSectionEdit(this)">Save</button>
+				</div>
+			</div>
+			<dl class="asset-detail-defs">
+				<dt>Name</dt>
+				<dd><span class="field-value" data-editable="true" data-field-key="name" data-copy={ d.Group.Name }>{ d.Group.Name }</span></dd>
+				<dt>Description</dt>
+				<dd><span class="field-value" data-editable="true" data-field-key="description" data-copy={ d.Group.Description }>{ d.Group.Description }</span></dd>
+				<dt>Category</dt>
+				<dd>{ d.Group.GroupCategory }</dd>
+				<dt>Scope</dt>
+				<dd>{ d.Group.GroupScope }</dd>
+				<dt>Created</dt>
+				<dd>{ d.Group.CreatedAt.Format("2006-01-02") }</dd>
+			</dl>
+		</section>
+		<section class="asset-detail-section card">
+			<h4 class="asset-detail-section-title">Type &amp; membership</h4>
+			<div id="grp-meta-error" class="cb-param-error" hidden role="alert"></div>
+			<div class="cg-field">
+				<label for="grp-member-kind">Member kind</label>
+				<select id="grp-member-kind" class="input" data-grp-meta-select="member_kind" data-grp-current={ d.Group.MemberKind }>
+					<option value="identity" selected?={ d.Group.MemberKind == "identity" }>Users</option>
+					<option value="asset" selected?={ d.Group.MemberKind == "asset" }>Assets</option>
+					<option value="mixed" selected?={ d.Group.MemberKind == "mixed" }>Mixed (users and assets)</option>
+				</select>
+				<p class="cg-hint">Narrowing the kind is rejected while the group still has members of the excluded kind.</p>
+			</div>
+			<div class="cg-field">
+				<label for="grp-membership">Membership</label>
+				<select id="grp-membership" class="input" data-grp-meta-select="membership" data-grp-current={ d.Group.Membership }>
+					<option value="static" selected?={ d.Group.Membership != "dynamic" }>Static (members added by hand)</option>
+					<option value="dynamic" selected?={ d.Group.Membership == "dynamic" }>Dynamic (members computed from rules)</option>
+				</select>
+				<p class="cg-hint">Switching a dynamic group to static keeps its rule rows but stops applying them; rule-sourced members stay until removed.</p>
+			</div>
+			<button type="button" class="btn btn-primary" id="grp-meta-apply">Apply</button>
+		</section>
+	</div>
+}
+
+// ---- Members tab ------------------------------------------------------
+
+// groupMembersTab — mixed asset+identity member rows with a source chip
+// (Direct / Dynamic). "Add member" opens the shared TargetPickerDialog
+// (allowed kinds derived from the group's member_kind — see
+// groupAllowedTargetKinds); a pick POSTs straight to the members route.
+// Remove renders ONLY on direct rows: rule-sourced members are managed
+// by the group's rules and would just be re-added on the next
+// recalculation (the service enforces the same rule with
+// ErrMemberNotDirect).
+templ groupMembersTab(d GroupDetailData) {
+	@DetailTableFrame(lists.ListIDGroupMembers, groupAddMemberAction()) {
+		if len(d.Members) == 0 {
+			@DetailEmptyRow(5, "No members yet. Use “Add member” to add one.")
+		} else {
+			for _, m := range d.Members {
+				<tr data-testid="group-member-row" data-member-kind={ m.Kind } data-member-source={ m.Source }>
+					<td>
+						<a href={ templ.SafeURL(m.Href) }>{ m.Label }</a>
+						if m.Detail != "" {
+							<div class="cg-muted">{ m.Detail }</div>
+						}
+					</td>
+					<td><span class={ groupKindChipClass(m.Kind) }>{ groupMemberKindLabel(m.Kind) }</span></td>
+					<td><span class={ groupSourceChipClass(m.Source) }>{ m.Source }</span></td>
+					<td>{ m.AddedAt.Format("2006-01-02") }</td>
+					<td class="pm-row-actions">
+						if m.Direct {
+							<form method="post" action={ templ.SafeURL(groupDetailPath(d.Group.ID) + "/members/" + strconv.FormatInt(m.ID, 10) + "/remove") } onsubmit="return confirm('Remove this member from the group?')">
+								<input type="hidden" name="_csrf" value={ d.CSRF }/>
+								<input type="hidden" name="kind" value={ m.Kind }/>
+								<button type="submit" class="btn btn-sm">Remove</button>
+							</form>
+						} else {
+							<span class="cg-hint" title="Managed by rules — edit the group's rules to change this membership.">Managed by rules</span>
+						}
+					</td>
+				</tr>
+			}
+		}
+	}
+}
+
+// groupAddMemberAction — the Members table's header action: opens the
+// shared TargetPickerDialog (allowed kinds already restricted at mount).
+templ groupAddMemberAction() {
+	<button type="button" class="btn btn-primary" data-target-picker-open>
+		@iconSVG("plus")
+		<span>Add member</span>
+	</button>
+}
+
+// ---- Rules tab --------------------------------------------------------
+
+// groupRulesTab — dynamic-membership rules. Static groups render an
+// explainer instead (rules only apply to dynamic groups; the service
+// fails rule writes on static groups with ErrGroupNotDynamic). Dynamic
+// groups get: the zero-rules warning banner (a dynamic group with no
+// rules vacuously matches EVERY tenant candidate on recalculation), the
+// match-mode toggle, the ConditionBuilderDialog-driven add/edit/remove
+// rows (mirroring dependencyGroupConditionsTab), and the Recalculate
+// action — disabled at zero rules, because a zero-rules recalculation
+// has no legitimate outcome (it can only mass-add every candidate).
+templ groupRulesTab(d GroupDetailData) {
+	if d.Group.Membership != "dynamic" {
+		<div class="asset-detail-grid">
+			<section class="asset-detail-section card" data-testid="group-rules-static-explainer">
+				<h4 class="asset-detail-section-title">Rules</h4>
+				<p>This is a static group: members are added and removed by hand on the Members tab.</p>
+				<p>To compute members from rules instead, switch <strong>Membership</strong> to <em>Dynamic</em> on the <a href="#general">General tab</a>.</p>
+			</section>
+		</div>
+	} else {
+		if d.Recalc != nil {
+			<div class="card" data-testid="group-recalc-result" style="padding:12px 16px; margin-bottom:12px;" role="status">
+				Recalculated: { strconv.Itoa(d.Recalc.Added) } added, { strconv.Itoa(d.Recalc.Removed) } removed, { strconv.Itoa(d.Recalc.Total) } total members.
+			</div>
+		}
+		if len(d.Rules) == 0 {
+			<div class="cb-param-error" data-testid="group-zero-rules-warning" role="alert" style="margin-bottom:12px;">
+				This dynamic group has no rules yet. With zero rules, a recalculation would match <strong>every</strong> eligible user/asset in the tenant — add at least one rule before recalculating.
+			</div>
+		}
+		@DetailTableFrame(lists.ListIDGroupRules, groupRulesHeaderActions(d)) {
+			if len(d.Rules) == 0 {
+				@DetailEmptyRow(2, "No rules yet. Use “Add rule” to define one.")
+			} else {
+				for _, rule := range d.Rules {
+					<tr data-testid="group-rule-row">
+						<td>
+							{ groupRuleRowSummary(rule) }
+							if rule.Kind == "script" {
+								<div class="font-mono cg-hint" style="margin:2px 0 0;">{ conditionScriptExcerpt(rule.ScriptSource) }</div>
+							}
+						</td>
+						<td style="display:flex; gap:6px; flex-wrap:wrap;">
+							<button
+								type="button"
+								class="btn"
+								data-condition-builder-open
+								data-cb-prefill={ groupRulePrefillJSON(rule) }
+								data-cb-rule-id={ strconv.FormatInt(rule.ID, 10) }
+							>Edit</button>
+							<form method="post" action={ templ.SafeURL(groupDetailPath(d.Group.ID) + "/rules/" + strconv.FormatInt(rule.ID, 10) + "/remove") } onsubmit="return confirm('Remove this rule and re-evaluate membership? Rule-sourced members are recomputed against the remaining rules (removing the last rule clears all rule-sourced members).')">
+								<input type="hidden" name="_csrf" value={ d.CSRF }/>
+								<button type="submit" class="btn">Remove</button>
+							</form>
+						</td>
+					</tr>
+				}
+			}
+		}
+		<div id="grp-rule-error" class="cb-param-error" hidden role="alert"></div>
+		@ConditionBuilderDialog()
+		@groupRulesScript()
+	}
+}
+
+// groupRulesHeaderActions — match-mode toggle + Add rule + Recalculate.
+templ groupRulesHeaderActions(d GroupDetailData) {
+	<div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+		<form method="post" action={ templ.SafeURL(groupDetailPath(d.Group.ID) + "/match-mode") } style="display:flex; gap:6px; align-items:center;">
+			<input type="hidden" name="_csrf" value={ d.CSRF }/>
+			<label for="grp-match-mode" class="cg-hint" style="margin:0;">Match mode</label>
+			<select id="grp-match-mode" name="match_mode" class="input" onchange="this.form.submit()">
+				<option value="all" selected?={ d.Group.RulesMatchMode != "any" }>Match all rules (AND)</option>
+				<option value="any" selected?={ d.Group.RulesMatchMode == "any" }>Match any rule (OR)</option>
+			</select>
+		</form>
+		<button type="button" class="btn btn-primary" data-condition-builder-open>Add rule</button>
+		<form method="post" action={ templ.SafeURL(groupDetailPath(d.Group.ID) + "/recalculate") } style="display:inline;">
+			<input type="hidden" name="_csrf" value={ d.CSRF }/>
+			if len(d.Rules) == 0 {
+				<button type="submit" class="btn" disabled title="Add at least one rule first — with zero rules, recalculating would add every eligible member in the tenant." data-testid="group-recalculate">Recalculate</button>
+			} else {
+				<button type="submit" class="btn" data-testid="group-recalculate">Recalculate</button>
+			}
+		</form>
+	</div>
+}
+
+// groupRulesScript — wires @ConditionBuilderDialog's `condition:save` to
+// the group rules routes. Same contract (repeated values= form keys) and
+// same non-atomic edit flow (remove-then-add with a sessionStorage-
+// stashed error across the reload) as dependencyGroupConditionScript —
+// see that templ's doc comment for the full failure-mode rationale.
+templ groupRulesScript() {
+	@templ.Raw(`<script>
+(function () {
+	var root = document.querySelector('[data-testid="page-group-detail"]');
+	var errEl = document.getElementById('grp-rule-error');
+	if (!root || !errEl) return;
+	var groupID = root.dataset.groupId;
+	var csrf = root.dataset.csrf;
+
+	var pendingEditRuleID = null;
+
+	function showError(msg) {
+		errEl.textContent = msg;
+		errEl.hidden = false;
+	}
+
+	try {
+		var stashed = sessionStorage.getItem('grpRuleError');
+		if (stashed) {
+			showError(stashed);
+			sessionStorage.removeItem('grpRuleError');
+		}
+	} catch (e) { /* ignore */ }
+
+	document.addEventListener('click', function (e) {
+		var opener = e.target.closest('[data-condition-builder-open]');
+		if (!opener) return;
+		pendingEditRuleID = opener.dataset.cbRuleId || null;
+	});
+
+	function rulesURL() {
+		return '/groups/' + encodeURIComponent(groupID) + '/rules';
+	}
+
+	function addBody(detail) {
+		var p = new URLSearchParams();
+		p.set('_csrf', csrf);
+		p.set('kind', detail.kind || 'param');
+		p.set('param_path', detail.paramPath || '');
+		p.set('operator', detail.operator || '');
+		(detail.values || []).forEach(function (v) { p.append('values', v); });
+		p.set('script_source', detail.scriptSource || '');
+		p.set('script_expect', detail.scriptExpect || '');
+		return p.toString();
+	}
+
+	function postAdd(detail) {
+		return fetch(rulesURL(), {
+			method: 'POST',
+			credentials: 'same-origin',
+			headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+			body: addBody(detail),
+		});
+	}
+
+	function postRemove(ruleID) {
+		return fetch(rulesURL() + '/' + encodeURIComponent(ruleID) + '/remove', {
+			method: 'POST',
+			credentials: 'same-origin',
+			headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+			body: '_csrf=' + encodeURIComponent(csrf),
+		});
+	}
+
+	function reloadToRules() {
+		window.location.hash = '#rules';
+		window.location.reload();
+	}
+
+	document.addEventListener('condition:save', function (e) {
+		var detail = e.detail || {};
+		var editID = pendingEditRuleID;
+		pendingEditRuleID = null;
+
+		if (editID) {
+			postRemove(editID).then(function (removeResp) {
+				if (!removeResp.ok) {
+					showError('Failed to remove the old rule; edit aborted.');
+					return;
+				}
+				postAdd(detail).then(function (addResp) {
+					if (!addResp.ok) {
+						var msg = 'The old rule was removed, but saving the edited rule failed. Please re-add it.';
+						try { sessionStorage.setItem('grpRuleError', msg); } catch (err) { /* ignore */ }
+						reloadToRules();
+						return;
+					}
+					reloadToRules();
+				}).catch(function () {
+					var msg = 'The old rule was removed, but a network error stopped the edited rule from saving. Please re-add it.';
+					try { sessionStorage.setItem('grpRuleError', msg); } catch (err) { /* ignore */ }
+					reloadToRules();
+				});
+			}).catch(function () {
+				showError('Network error while removing the old rule; edit aborted.');
+			});
+			return;
+		}
+
+		postAdd(detail).then(function (addResp) {
+			if (!addResp.ok) {
+				showError('Failed to add rule.');
+				return;
+			}
+			reloadToRules();
+		}).catch(function () {
+			showError('Network error while adding rule.');
+		});
+	});
+})();
+</script>`)
+}
+
+// ---- Roles tab (unchanged from Task 7) --------------------------------
+
+// groupRolesTab — roles assigned directly to the group (Task 4 backend:
+// GroupRoleAssign/GroupRoleRemove). The add form always renders; the
+// backend gates console_access.manage_role_assignments on both
+// mutations, same as the user detail Roles tab's roleAddAction.
+templ groupRolesTab(g db.Group, roles []db.ListRolesForGroupDetailRow, allRoles []db.Role, csrf string) {
+	{{ postBase := "/groups/" + strconv.FormatInt(g.ID, 10) + "/roles" }}
+	@DetailTableFrame(lists.ListIDGroupRoles, groupRoleAddAction(postBase, groupRolesNotAssigned(allRoles, roles), csrf)) {
+		if len(roles) == 0 {
+			@DetailEmptyRow(4, "No roles assigned to this group.")
+		} else {
+			for _, r := range roles {
+				<tr>
+					<td>{ r.Name }</td>
+					<td>{ roleTypeLabel(r.IsBuiltin) }</td>
+					<td>{ r.AssignedAt.Format("2006-01-02") }</td>
+					<td>
+						<form method="POST" action={ templ.SafeURL(postBase + "/" + strconv.FormatInt(r.ID, 10) + "/remove") } onsubmit="return confirm('Remove this role from the group?')">
+							<input type="hidden" name="_csrf" value={ csrf }/>
+							<button type="submit" class="btn">Remove</button>
+						</form>
+					</td>
+				</tr>
+			}
+		}
+	}
+}
+
+// groupRoleAddAction — the Roles tab's single action: hierarchical
+// picker (Task 5's RolePickerSelect, shared with the user Roles tab)
+// over roles not yet assigned to the group.
+templ groupRoleAddAction(postBase string, options []db.Role, csrf string) {
+	if len(options) > 0 {
+		<form method="POST" action={ templ.SafeURL(postBase) } style="display:flex; gap:8px; align-items:center;">
+			<input type="hidden" name="_csrf" value={ csrf }/>
+			@RolePickerSelect("role_id", options, 0, false)
+			<button type="submit" class="btn btn-primary">Add role</button>
+		</form>
+	}
+}
+
+// groupRolesNotAssigned filters tenant roles down to those not yet
+// assigned to the group (options for the add-role picker), mirroring
+// users.templ's rolesNotAssigned.
+func groupRolesNotAssigned(all []db.Role, assigned []db.ListRolesForGroupDetailRow) []db.Role {
+	have := make(map[int64]bool, len(assigned))
+	for _, r := range assigned {
+		have[r.ID] = true
+	}
+	out := make([]db.Role, 0, len(all))
+	for _, r := range all {
+		if !have[r.ID] {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// ---- Page script -------------------------------------------------------
+
+// groupDetailPageScript — two wires:
+//
+//   - `target:pick` (shared TargetPickerDialog) POSTs the picked member
+//     straight to the members route (form-encoded target_kind+target_ref)
+//     and reloads to the Members tab. No intermediate reveal-a-form step
+//     (config groups needs one for priority/enforced; a group membership
+//     has no extra fields to fill).
+//   - The General tab's "Apply" button saves the member_kind/membership
+//     selects through the fields API, surfacing errors inline
+//     (#grp-meta-error) — member-kind conflicts come back with a human
+//     message. A dynamic→static switch asks for confirmation first
+//     (rules stop applying).
+templ groupDetailPageScript() {
+	@templ.Raw(`<script>
+(function () {
+	'use strict';
+	function ready(fn) {
+		if (document.readyState === 'loading') {
+			document.addEventListener('DOMContentLoaded', fn, { once: true });
+		} else { fn(); }
+	}
+	ready(init);
+
+function init() {
+	var root = document.querySelector('[data-testid="page-group-detail"]');
+	if (!root) return;
+	var groupID = root.dataset.groupId;
+	var csrf = root.dataset.csrf;
+
+	// ---- Add member via target picker --------------------------------
+	document.addEventListener('target:pick', function (e) {
+		var d = e.detail || {};
+		if (!d.kind || !d.ref) return;
+		var p = new URLSearchParams();
+		p.set('_csrf', csrf);
+		p.set('target_kind', d.kind);
+		p.set('target_ref', d.ref);
+		fetch('/groups/' + encodeURIComponent(groupID) + '/members', {
+			method: 'POST',
+			credentials: 'same-origin',
+			headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+			body: p.toString(),
+		}).then(function (resp) {
+			if (!resp.ok) {
+				alert('Failed to add member.');
+				return;
+			}
+			window.location.hash = '#members';
+			window.location.reload();
+		}).catch(function () {
+			alert('Network error while adding member.');
+		});
+	});
+
+	// ---- General tab: guarded member_kind/membership selects ----------
+	var applyBtn = document.getElementById('grp-meta-apply');
+	var errEl = document.getElementById('grp-meta-error');
+	function showMetaError(msg) {
+		if (!errEl) return;
+		errEl.textContent = msg;
+		errEl.hidden = false;
+	}
+	if (applyBtn) applyBtn.addEventListener('click', function () {
+		if (errEl) errEl.hidden = true;
+		var fields = {};
+		var changed = false;
+		var confirmNeeded = false;
+		document.querySelectorAll('[data-grp-meta-select]').forEach(function (sel) {
+			var key = sel.dataset.grpMetaSelect;
+			if (sel.value !== sel.dataset.grpCurrent) {
+				fields[key] = sel.value;
+				changed = true;
+				if (key === 'membership' && sel.dataset.grpCurrent === 'dynamic' && sel.value === 'static') {
+					confirmNeeded = true;
+				}
+			}
+		});
+		if (!changed) return;
+		if (confirmNeeded && !confirm('Switch to static membership? The group\'s rules stop applying: rule rows are kept but inert, and rule-sourced members stay until removed by hand.')) {
+			return;
+		}
+		fetch('/api/groups/' + encodeURIComponent(groupID) + '/fields', {
+			method: 'POST',
+			credentials: 'same-origin',
+			headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+			body: JSON.stringify({ section: 'meta', fields: fields }),
+		}).then(function (resp) {
+			if (resp.ok) {
+				window.location.reload();
+				return;
+			}
+			resp.json().then(function (err) {
+				showMetaError(err.message || err.error || 'Save failed.');
+			}, function () {
+				showMetaError('Save failed.');
+			});
+		}).catch(function () {
+			showMetaError('Network error while saving.');
+		});
+	});
+}
+})();
+</script>`)
+}

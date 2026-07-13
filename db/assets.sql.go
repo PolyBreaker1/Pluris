@@ -1217,6 +1217,51 @@ func (q *Queries) UpdateAssetCMDB(ctx context.Context, arg UpdateAssetCMDBParams
 	return err
 }
 
+const UpdateAssetEditableColumns = `-- name: UpdateAssetEditableColumns :exec
+UPDATE assets
+SET description = ?1,
+    lifecycle_state = ?2,
+    vendor = ?3,
+    location = ?4,
+    purchase_date = ?5,
+    warranty_expires_at = ?6,
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = ?7
+`
+
+type UpdateAssetEditableColumnsParams struct {
+	Description       sql.NullString `json:"description"`
+	LifecycleState    sql.NullString `json:"lifecycle_state"`
+	Vendor            sql.NullString `json:"vendor"`
+	Location          sql.NullString `json:"location"`
+	PurchaseDate      sql.NullTime   `json:"purchase_date"`
+	WarrantyExpiresAt sql.NullTime   `json:"warranty_expires_at"`
+	ID                int64          `json:"id"`
+}
+
+// Column-backed keys editable through the field-update API (Task 8
+// review Finding 2): the "identity" section's description plus the
+// "lifecycle" section's lifecycle_state/vendor/location/purchase_date/
+// warranty_expires_at. Every other assets-table column (uuid, tenant_id,
+// site_id, owner_identity_id, enrollment_state, ...) is either computed,
+// a link resolved through another entity, or agent-controlled, and is
+// NOT touched here. Caller (AssetService.UpdateFields) fetches the
+// current row first and re-supplies every column (fetched-then-mutated,
+// same pattern as IdentityService.UpdateFields), so a request editing
+// only one of these columns cannot clobber the others.
+func (q *Queries) UpdateAssetEditableColumns(ctx context.Context, arg UpdateAssetEditableColumnsParams) error {
+	_, err := q.db.ExecContext(ctx, UpdateAssetEditableColumns,
+		arg.Description,
+		arg.LifecycleState,
+		arg.Vendor,
+		arg.Location,
+		arg.PurchaseDate,
+		arg.WarrantyExpiresAt,
+		arg.ID,
+	)
+	return err
+}
+
 const UpdateAssetEnrollmentState = `-- name: UpdateAssetEnrollmentState :exec
 UPDATE assets
 SET enrollment_state = ?1,

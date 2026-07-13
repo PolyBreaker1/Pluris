@@ -1,0 +1,453 @@
+package templates
+
+import (
+	"strconv"
+
+	"github.com/pluris/pluris/catalog/policymodules"
+)
+
+// PolicyModuleDetailPage — the Task 4.3 module detail/create editor: the
+// flagship full create/edit page for a Policy Module on the
+// standardized DetailShell. See web/templates/policy_module_editor_helpers.go
+// for the ModuleEditorData shape and the plain-Go hero/tab wiring.
+templ PolicyModuleDetailPage(d ModuleEditorData) {
+	@DetailShell(
+		"policy-modules",
+		d.Module.Title+" — Module",
+		templ.Attributes{"data-testid": "page-policy-module-detail", "data-module-urn": d.Row.ModuleUrn, "data-csrf": d.CSRF},
+		moduleEditorHero(d),
+		moduleEditorTabs(d),
+	)
+	@templ.Raw(`<script src="/static/vendor/codemirror/codemirror-pluris.js"></script>`)
+	<script src="/static/code-editor.js"></script>
+	<script src="/static/policy-module-editor.js"></script>
+}
+
+templ moduleDeleteAction(urn string, csrf string) {
+	<form class="hero-dropdown-form" method="post" action={ templ.SafeURL("/policy/modules/" + urn + "/delete") } onsubmit="return confirm('Delete this module? This only works if nothing references it.')">
+		<input type="hidden" name="_csrf" value={ csrf }/>
+		<button type="submit" class="hero-dropdown-item">
+			<svg class="hero-dropdown-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+			Delete
+		</button>
+	</form>
+}
+
+templ moduleCloneAction(urn string, csrf string) {
+	<form method="post" action={ templ.SafeURL("/policy/modules/" + urn + "/clone") }>
+		<input type="hidden" name="_csrf" value={ csrf }/>
+		<button type="submit" class="btn btn-primary">
+			@iconSVG("copy")
+			<span>Clone into my tenant</span>
+		</button>
+	</form>
+}
+
+// moduleWarnBanner — a dismissible-by-navigation banner surfacing errors
+// that can't be shown inline (delete blocked, publish rejected, etc).
+templ moduleWarnBanner(warn string) {
+	if warn != "" {
+		<div class="auth-error" role="alert" style="margin-bottom:12px;">{ warn }</div>
+	}
+}
+
+// ---- General tab ----------------------------------------------------
+
+templ moduleGeneralTab(d ModuleEditorData) {
+	<div class="asset-detail-grid">
+		@moduleWarnBanner(d.Warn)
+		<section class="asset-detail-section card" data-section="meta" data-save-url={ moduleMetaSaveURL(d) }>
+			<div class="section-header">
+				<h4 class="asset-detail-section-title">Metadata</h4>
+				if d.CanEdit {
+					<div class="section-actions">
+						<button type="button" class="section-edit-btn" onclick="toggleSectionEdit(this)" title="Edit section">
+							<svg class="section-edit-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"></path><path d="m15 5 4 4"></path></svg>
+						</button>
+						<button type="button" class="section-cancel-btn" style="display:none" onclick="cancelSectionEdit(this)">Cancel</button>
+						<button type="button" class="section-save-btn btn-primary" style="display:none" onclick="saveSectionEdit(this)">Save</button>
+					</div>
+				}
+			</div>
+			<dl class="asset-detail-defs">
+				<dt>Title</dt>
+				<dd>
+					if d.CanEdit {
+						<span class="field-value" data-editable="true" data-field-key="title" data-copy={ d.Module.Title }>{ d.Module.Title }</span>
+					} else {
+						<span class="field-value" data-readonly="true">{ d.Module.Title }</span>
+					}
+				</dd>
+				<dt>Description</dt>
+				<dd>
+					if d.CanEdit {
+						<span class="field-value" data-editable="true" data-field-key="description" data-copy={ d.Module.Description }>{ d.Module.Description }</span>
+					} else {
+						<span class="field-value" data-readonly="true">{ d.Module.Description }</span>
+					}
+				</dd>
+				<dt>URN</dt>
+				<dd><span class="field-value font-mono" data-readonly="true">{ d.Row.ModuleUrn }</span></dd>
+			</dl>
+		</section>
+		<section class="asset-detail-section card" data-section="general" data-save-url={ moduleVersionFieldsSaveURL(d) }>
+			<div class="section-header">
+				<h4 class="asset-detail-section-title">Version fields</h4>
+				if d.CanEdit && d.IsDraft {
+					<div class="section-actions">
+						<button type="button" class="section-edit-btn" onclick="toggleSectionEdit(this)" title="Edit section">
+							<svg class="section-edit-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"></path><path d="m15 5 4 4"></path></svg>
+						</button>
+						<button type="button" class="section-cancel-btn" style="display:none" onclick="cancelSectionEdit(this)">Cancel</button>
+						<button type="button" class="section-save-btn btn-primary" style="display:none" onclick="saveSectionEdit(this)">Save</button>
+					</div>
+				}
+			</div>
+			if !d.HasSelected {
+				<p class="cg-muted">No version selected. Create a draft on the Versions tab to set these fields.</p>
+			} else {
+				if !d.IsDraft {
+					<p class="cg-muted">Version { d.Selected.Version } is { d.Selected.State } and immutable. Create a draft to edit these fields.</p>
+				}
+				<dl class="asset-detail-defs">
+					<dt>Target OS <span class="cg-hint">(comma-separated: linux, windows, macos, any)</span></dt>
+					<dd>
+						if d.CanEdit && d.IsDraft {
+							<span class="field-value" data-editable="true" data-field-key="target_os" data-copy={ d.TargetOSCSV }>{ d.TargetOSCSV }</span>
+						} else {
+							<span class="field-value" data-readonly="true">{ d.TargetOSCSV }</span>
+						}
+					</dd>
+					<dt>Scope</dt>
+					<dd>
+						if d.CanEdit && d.IsDraft {
+							<span class="field-value" data-editable="true" data-field-key="scope" data-copy={ d.Selected.Scope }>{ d.Selected.Scope }</span>
+						} else {
+							<span class="field-value" data-readonly="true">{ d.Selected.Scope }</span>
+						}
+					</dd>
+					<dt>Satisfies <span class="cg-hint">(comma-separated policy URNs)</span></dt>
+					<dd>
+						if d.CanEdit && d.IsDraft {
+							<span class="field-value" data-editable="true" data-field-key="satisfies" data-copy={ d.SatisfiesCSV }>{ d.SatisfiesCSV }</span>
+						} else {
+							<span class="field-value" data-readonly="true">{ d.SatisfiesCSV }</span>
+						}
+					</dd>
+				</dl>
+			}
+		</section>
+	</div>
+}
+
+// ---- Versions tab -----------------------------------------------------
+
+templ moduleVersionsTab(d ModuleEditorData) {
+	<div class="asset-detail-grid">
+		@moduleWarnBanner(d.Warn)
+		if d.CanEdit {
+			<section class="asset-detail-section card">
+				<h4 class="asset-detail-section-title">New draft</h4>
+				<form method="post" action={ templ.SafeURL("/policy/modules/" + d.Row.ModuleUrn + "/versions") } style="display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap;">
+					<input type="hidden" name="_csrf" value={ d.CSRF }/>
+					<div class="cg-field">
+						<label for="pm-new-version">Version</label>
+						<input id="pm-new-version" name="version" class="input" placeholder="1.0.0" required/>
+					</div>
+					<div class="cg-field">
+						<label for="pm-new-mode">Base</label>
+						<select id="pm-new-mode" name="mode" class="input">
+							<option value="fork">Fork latest published</option>
+							<option value="blank">Blank</option>
+						</select>
+					</div>
+					<button type="submit" class="btn btn-primary">Create draft</button>
+				</form>
+			</section>
+		}
+		<section class="pm-table-wrap card">
+			<table class="pm-table">
+				<thead>
+					<tr>
+						<th>Version</th>
+						<th>State</th>
+						<th>Published</th>
+						<th>Scripts</th>
+						<th></th>
+					</tr>
+				</thead>
+				<tbody>
+					if len(d.Versions) == 0 {
+						<tr><td colspan="5">No versions yet.</td></tr>
+					} else {
+						for _, v := range d.Versions {
+							<tr>
+								<td class="font-mono">{ v.Version }</td>
+								<td><span class={ "pm-status", "pm-status-" + v.State }>{ v.State }</span></td>
+								<td>
+									if v.PublishedAt != "" {
+										{ v.PublishedAt } by { v.PublishedBy }
+									} else {
+										<span class="cg-muted">—</span>
+									}
+								</td>
+								<td>{ strconv.Itoa(v.ScriptCount) }</td>
+								<td class="pm-row-actions">
+									<a href={ templ.SafeURL("/policy/modules/" + d.Row.ModuleUrn + "?version=" + strconv.FormatInt(v.ID, 10) + "#scripts") } class="btn btn-sm">Open in editor</a>
+									if d.CanEdit && v.State == "draft" {
+										<form method="post" action={ templ.SafeURL("/policy/modules/" + d.Row.ModuleUrn + "/versions/" + strconv.FormatInt(v.ID, 10) + "/publish") } style="display:inline;">
+											<input type="hidden" name="_csrf" value={ d.CSRF }/>
+											<button type="submit" class="btn btn-sm btn-primary">Publish</button>
+										</form>
+									}
+									if d.CanEdit && (v.State == "published" || v.State == "superseded") {
+										<form method="post" action={ templ.SafeURL("/policy/modules/" + d.Row.ModuleUrn + "/versions/" + strconv.FormatInt(v.ID, 10) + "/revoke") } style="display:inline;" onsubmit="return confirm('Revoke this version? Agents must not run a revoked version.')">
+											<input type="hidden" name="_csrf" value={ d.CSRF }/>
+											<button type="submit" class="btn btn-sm btn-danger">Revoke</button>
+										</form>
+									}
+								</td>
+							</tr>
+						}
+					}
+				</tbody>
+			</table>
+		</section>
+	</div>
+}
+
+// ---- Scripts tab (centerpiece) ----------------------------------------
+
+templ moduleScriptsTab(d ModuleEditorData) {
+	<div class="pm-editor-layout" data-pm-scripts-root data-module-urn={ d.Row.ModuleUrn } data-version-id={ strconv.FormatInt(d.SelectedID, 10) } data-can-edit={ strconv.FormatBool(d.CanEdit && d.IsDraft) } data-csrf={ d.CSRF }>
+		if !d.HasSelected {
+			<p class="cg-muted">No version selected. Create a draft on the Versions tab first.</p>
+		} else {
+			if !d.IsDraft {
+				<div class="auth-error" role="alert">Published versions are immutable — create a draft to edit scripts.</div>
+			}
+			<div class="pm-editor-split">
+				<aside class="pm-param-tree card" id="pm-param-tree">
+					<div class="pm-param-tree-search">
+						<input type="search" id="pm-param-search" class="input" placeholder="Search parameters…" autocomplete="off"/>
+					</div>
+					<div id="pm-param-tree-body" class="pm-param-tree-body">
+						<p class="cg-muted">Loading parameters…</p>
+					</div>
+				</aside>
+				<div class="pm-script-panes">
+					<div class="pm-phase-strip" id="pm-phase-strip">
+						for _, ph := range policymodules.AllLifecyclePhases {
+							<button type="button" class="pm-phase-tab" data-pm-phase={ string(ph) } data-pm-runtime={ string(ph.Runtime()) } title={ ph.HelpText() }>
+								{ ph.Label() }
+								<span class="pm-phase-runtime">{ string(ph.Runtime()) }</span>
+							</button>
+						}
+					</div>
+					for _, ph := range policymodules.AllLifecyclePhases {
+						<div class="pm-phase-pane" data-pm-phase-pane={ string(ph) }>
+							<div class="cg-field">
+								<label>Filename</label>
+								<input type="text" class="input" data-pm-filename={ string(ph) } value={ scriptFilename(d, ph) } readonly?={ !d.CanEdit || !d.IsDraft }/>
+							</div>
+							<textarea
+								data-code-editor={ scriptLanguage(ph) }
+								data-pm-source={ string(ph) }
+								readonly?={ !d.CanEdit || !d.IsDraft }
+								rows="16"
+							>{ scriptSource(d, ph) }</textarea>
+							if d.CanEdit && d.IsDraft {
+								<button type="button" class="btn btn-primary" data-pm-save-script={ string(ph) } style="margin-top:8px;">Save { ph.Label() }</button>
+							}
+						</div>
+					}
+				</div>
+			</div>
+		}
+	</div>
+}
+
+// ---- Parameters tab -----------------------------------------------------
+
+templ moduleParametersTab(d ModuleEditorData) {
+	<div class="asset-detail-grid">
+		if !d.HasSelected {
+			<p class="cg-muted">No version selected. Create a draft on the Versions tab first.</p>
+		} else {
+			<section class="asset-detail-section card" data-pm-params-root data-can-edit={ strconv.FormatBool(d.CanEdit && d.IsDraft) } data-save-url={ moduleVersionFieldsSaveURL(d) } data-csrf={ d.CSRF }>
+				<h4 class="asset-detail-section-title">Input parameters</h4>
+				<p class="cg-hint">The single source of truth for this module version's input schema. Serializes to JSON Schema on save.</p>
+				<table class="pm-table" id="pm-params-rows">
+					<thead>
+						<tr><th>Key</th><th>Label</th><th>Type</th><th>Default</th><th>Required</th><th>Enum values</th><th></th></tr>
+					</thead>
+					<tbody id="pm-params-tbody"></tbody>
+				</table>
+				if d.CanEdit && d.IsDraft {
+					<button type="button" class="btn" id="pm-params-add-row" style="margin-top:8px;">Add parameter</button>
+					<button type="button" class="btn btn-primary" id="pm-params-save" style="margin-top:8px;">Save schema</button>
+				}
+				<h4 class="asset-detail-section-title" style="margin-top:16px;">Raw JSON Schema (read-only preview)</h4>
+				<textarea data-code-editor="json" id="pm-params-preview" readonly rows="10">{ d.ParametersSchemaRaw }</textarea>
+			</section>
+		}
+	</div>
+}
+
+// ---- Sandbox tab -----------------------------------------------------
+
+templ moduleSandboxTab(d ModuleEditorData) {
+	<div class="asset-detail-grid">
+		if !d.HasSelected {
+			<p class="cg-muted">No version selected. Create a draft on the Versions tab first.</p>
+		} else {
+			<section class="asset-detail-section card" data-section="sandbox" data-save-url={ moduleVersionFieldsSaveURL(d) }>
+				<div class="section-header">
+					<h4 class="asset-detail-section-title">Sandbox profile</h4>
+					if d.CanEdit && d.IsDraft {
+						<div class="section-actions">
+							<button type="button" class="section-edit-btn" onclick="toggleSectionEdit(this)" title="Edit section">
+								<svg class="section-edit-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"></path><path d="m15 5 4 4"></path></svg>
+							</button>
+							<button type="button" class="section-cancel-btn" style="display:none" onclick="cancelSectionEdit(this)">Cancel</button>
+							<button type="button" class="section-save-btn btn-primary" style="display:none" onclick="saveSectionEdit(this)">Save</button>
+						</div>
+					}
+				</div>
+				<dl class="asset-detail-defs">
+					<dt>FS read paths <span class="cg-hint">(comma-separated)</span></dt>
+					<dd>
+						if d.CanEdit && d.IsDraft {
+							<span class="field-value" data-editable="true" data-field-key="fs_read" data-copy={ d.FsReadCSV }>{ d.FsReadCSV }</span>
+						} else {
+							<span class="field-value" data-readonly="true">{ d.FsReadCSV }</span>
+						}
+					</dd>
+					<dt>FS write paths <span class="cg-hint">(comma-separated)</span></dt>
+					<dd>
+						if d.CanEdit && d.IsDraft {
+							<span class="field-value" data-editable="true" data-field-key="fs_write" data-copy={ d.FsWriteCSV }>{ d.FsWriteCSV }</span>
+						} else {
+							<span class="field-value" data-readonly="true">{ d.FsWriteCSV }</span>
+						}
+					</dd>
+					<dt>Network egress <span class="cg-hint">(comma-separated)</span></dt>
+					<dd>
+						if d.CanEdit && d.IsDraft {
+							<span class="field-value" data-editable="true" data-field-key="net_egress" data-copy={ d.NetEgressCSV }>{ d.NetEgressCSV }</span>
+						} else {
+							<span class="field-value" data-readonly="true">{ d.NetEgressCSV }</span>
+						}
+					</dd>
+					<dt>Runs as</dt>
+					<dd>
+						if d.CanEdit && d.IsDraft {
+							<span class="field-value" data-editable="true" data-field-key="sandbox_user" data-copy={ d.SandboxUser }>{ d.SandboxUser }</span>
+						} else {
+							<span class="field-value" data-readonly="true">{ d.SandboxUser }</span>
+						}
+					</dd>
+				</dl>
+			</section>
+		}
+	</div>
+}
+
+// ---- Dependencies tab -----------------------------------------------------
+
+templ moduleDependenciesTab(d ModuleEditorData) {
+	<div class="asset-detail-grid">
+		if !d.HasSelected {
+			<p class="cg-muted">No version selected. Create a draft on the Versions tab first.</p>
+		} else {
+			<section class="asset-detail-section card" data-section="dependencies" data-save-url={ moduleVersionFieldsSaveURL(d) }>
+				<div class="section-header">
+					<h4 class="asset-detail-section-title">Module dependencies (v1 lists)</h4>
+					if d.CanEdit && d.IsDraft {
+						<div class="section-actions">
+							<button type="button" class="section-edit-btn" onclick="toggleSectionEdit(this)" title="Edit section">
+								<svg class="section-edit-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"></path><path d="m15 5 4 4"></path></svg>
+							</button>
+							<button type="button" class="section-cancel-btn" style="display:none" onclick="cancelSectionEdit(this)">Cancel</button>
+							<button type="button" class="section-save-btn btn-primary" style="display:none" onclick="saveSectionEdit(this)">Save</button>
+						</div>
+					}
+				</div>
+				<dl class="asset-detail-defs">
+					<dt>Depends on <span class="cg-hint">(comma-separated module URNs)</span></dt>
+					<dd>
+						if d.CanEdit && d.IsDraft {
+							<span class="field-value" data-editable="true" data-field-key="depends_on" data-copy={ d.DependsOnCSV }>{ d.DependsOnCSV }</span>
+						} else {
+							<span class="field-value" data-readonly="true">{ d.DependsOnCSV }</span>
+						}
+					</dd>
+					<dt>Conflicts with <span class="cg-hint">(comma-separated module URNs)</span></dt>
+					<dd>
+						if d.CanEdit && d.IsDraft {
+							<span class="field-value" data-editable="true" data-field-key="conflicts" data-copy={ d.ConflictsCSV }>{ d.ConflictsCSV }</span>
+						} else {
+							<span class="field-value" data-readonly="true">{ d.ConflictsCSV }</span>
+						}
+					</dd>
+				</dl>
+			</section>
+			<section class="asset-detail-section card">
+				<h4 class="asset-detail-section-title">Dependency groups</h4>
+				<p class="cg-hint">Reused from the Modules library row's expander (Task 7) -- linking a dependency group here has the same effect as linking it from the Library.</p>
+				@moduleDepsDetails(d.Row.ModuleUrn, d.Deps, d.AllDepGroups, d.CSRF, d.CanAdmin)
+			</section>
+		}
+	</div>
+}
+
+func scriptLanguage(ph policymodules.LifecyclePhase) string {
+	if ph.Runtime() == policymodules.RuntimeWASM {
+		return ""
+	}
+	return "bash"
+}
+
+// ---- Create page --------------------------------------------------------
+
+// PolicyModuleNewPage — the standalone create form (Task 4.3). Mirrors
+// DependencyGroupNewPage's plain-form shape: full create/edit capability
+// starts with a minimal module (urn/title/description/scope); everything
+// else (scripts, parameters, sandbox, dependencies) is added on the
+// detail page after creation via its first draft version.
+templ PolicyModuleNewPage(csrf string, errMsg string) {
+	@Layout("policy-modules", "New Policy Module") {
+		@PageHeader("New Policy Module", "Create a tenant-owned policy module. You can add scripts, parameters, and a sandbox profile after creating it.", "", "")
+		<div data-testid="page-policy-module-new">
+			if errMsg != "" {
+				<div class="auth-error" role="alert">{ errMsg }</div>
+			}
+			<section class="asset-detail-section card" style="max-width:640px;">
+				<form method="post" action="/policy/modules/new">
+					<input type="hidden" name="_csrf" value={ csrf }/>
+					<div class="cg-field">
+						<label for="pm-new-urn">URN <span class="cg-hint">(dotted slug, e.g. tenant.acme.my-module)</span></label>
+						<input id="pm-new-urn" name="urn" class="input font-mono" required/>
+					</div>
+					<div class="cg-field">
+						<label for="pm-new-title">Title</label>
+						<input id="pm-new-title" name="title" class="input" required/>
+					</div>
+					<div class="cg-field cg-field-wide">
+						<label for="pm-new-description">Description</label>
+						<textarea id="pm-new-description" name="description" class="input" rows="3"></textarea>
+					</div>
+					<div class="cg-field">
+						<label for="pm-new-scope">Scope</label>
+						<select id="pm-new-scope" name="scope" class="input">
+							<option value="machine">Machine</option>
+							<option value="user">User</option>
+							<option value="both">Both</option>
+						</select>
+					</div>
+					<button type="submit" class="btn btn-primary" style="margin-top:8px;">Create module</button>
+				</form>
+			</section>
+		</div>
+	}
+}

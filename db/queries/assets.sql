@@ -215,6 +215,27 @@ UPDATE assets SET owner_identity_id = NULL, updated_at = CURRENT_TIMESTAMP WHERE
 -- name: SetAssetDescription :exec
 UPDATE assets SET description = @description, updated_at = CURRENT_TIMESTAMP WHERE id = @id;
 
+-- name: UpdateAssetEditableColumns :exec
+-- Column-backed keys editable through the field-update API (Task 8
+-- review Finding 2): the "identity" section's description plus the
+-- "lifecycle" section's lifecycle_state/vendor/location/purchase_date/
+-- warranty_expires_at. Every other assets-table column (uuid, tenant_id,
+-- site_id, owner_identity_id, enrollment_state, ...) is either computed,
+-- a link resolved through another entity, or agent-controlled, and is
+-- NOT touched here. Caller (AssetService.UpdateFields) fetches the
+-- current row first and re-supplies every column (fetched-then-mutated,
+-- same pattern as IdentityService.UpdateFields), so a request editing
+-- only one of these columns cannot clobber the others.
+UPDATE assets
+SET description = @description,
+    lifecycle_state = @lifecycle_state,
+    vendor = @vendor,
+    location = @location,
+    purchase_date = @purchase_date,
+    warranty_expires_at = @warranty_expires_at,
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = @id;
+
 -- name: SetAssetManagedBy :exec
 UPDATE assets SET managed_by_identity_id = @managed_by, updated_at = CURRENT_TIMESTAMP WHERE id = @id;
 

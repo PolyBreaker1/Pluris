@@ -1,0 +1,49 @@
+package templates
+
+// AssetNewPage — minimal "create then edit inline" enrollment form. No
+// wizard: the operator supplies just enough to create a row (Name,
+// optional Hostname), lands on the standard AssetDetailPage, and fills
+// in the rest via the existing inline per-section edit (assetGeneralTab).
+// Mirrors DependencyGroupNewPage's standalone-form shape.
+templ AssetNewPage(subtype string, csrf string, errorMsg string) {
+	@Layout("assets-"+subtype, "New "+assetsSingularLabel(subtype)) {
+		<div class="page-content">
+			@PageHeader("New "+assetsSingularLabel(subtype), "Create a minimal "+assetsSingularLabel(subtype)+" record, then fill in the rest on its detail page.", "", "")
+		</div>
+		<div data-testid="page-asset-new">
+			<section class="asset-detail-section card" style="max-width:640px;">
+				<form method="post" action={ templ.SafeURL("/assets/" + subtype + "/new") }>
+					<input type="hidden" name="_csrf" value={ csrf }/>
+					<div class="cg-field">
+						<label for="asset-new-name">Name</label>
+						<input id="asset-new-name" name="name" class="input" required/>
+					</div>
+					<div class="cg-field">
+						<label for="asset-new-hostname">Hostname</label>
+						<input id="asset-new-hostname" name="hostname" class="input"/>
+					</div>
+					if errorMsg != "" {
+						<div class="auth-error">{ errorMsg }</div>
+					}
+					<button type="submit" class="btn btn-primary" style="margin-top:8px;">Create &amp; continue to details</button>
+				</form>
+			</section>
+		</div>
+	}
+}
+
+// assetsSingularLabel — singular display label for the "New <X>" title,
+// derived from the same plural route slug assetsAddLabel/subtypeLabel use.
+func assetsSingularLabel(subtype string) string {
+	switch subtype {
+	case "computers":
+		return "computer"
+	case "servers":
+		return "server"
+	case "printers":
+		return "printer"
+	case "desks":
+		return "desk"
+	}
+	return subtype
+}

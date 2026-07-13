@@ -7,7 +7,7 @@ import "testing"
 // the conflict pass. The "happy path" test exercises topological order.
 
 func TestResolve_HappyPath(t *testing.T) {
-	plan, err := Resolve([]string{"pluris.sshd.password-auth-disable"}, AllModules())
+	plan, err := Resolve([]string{"pluris.sshd.password-auth-disable"}, testCatalog())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -57,7 +57,7 @@ func TestResolve_Conflict(t *testing.T) {
 	// Pulling both should fail.
 	_, err := Resolve(
 		[]string{"pluris.sshd.password-auth-disable", "pluris.sshd.password-auth-allow"},
-		AllModules(),
+		testCatalog(),
 	)
 	if err == nil || err.Code != "conflict" {
 		t.Fatalf("want conflict error, got %+v", err)

@@ -1,7 +1,7 @@
 package params
 
-// Canonical Parameter Paths (INV-CPP, see docs/UX_INVARIANTS.md and
-// docs/superpowers/specs/2026-07-05-standardized-detail-pages-design.md §0).
+// Canonical Parameter Paths (INV-CPP, see docs/endpoint-management/ui/invariants.md and
+// docs/history/specs/2026-07-05-standardized-detail-pages-design.md §0).
 //
 // Every parameter mounted by a schema is addressable as
 // "<entity>/<section>/<param>" — lowercase snake, forward slashes.
@@ -99,8 +99,30 @@ func ResolvePath(path string) (*SubtypeSchema, *SchemaSection, *ParamDef, error)
 	return t.schema, t.section, t.def, nil
 }
 
-// AllPaths returns every registered canonical path, sorted.
+// AllPaths returns every canonical path known to any registered Source
+// (see sources.go), sorted. Today only the built-in entity source is
+// registered, so behavior is identical to walking Schemas directly; future
+// tenant/module sources are merged in here once they register.
 func AllPaths() []string {
+	seen := map[string]bool{}
+	out := make([]string, 0, len(targetByPath))
+	for _, s := range sources {
+		for _, p := range s.Paths() {
+			if !seen[p] {
+				seen[p] = true
+				out = append(out, p)
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// entityAllPaths returns every canonical path registered by the built-in
+// entity registry (computer/server/printer/desk/identity schemas). This is
+// the pre-Source-abstraction body of AllPaths, preserved verbatim as the
+// entitySource's Paths() implementation.
+func entityAllPaths() []string {
 	pathIndexOnce.Do(buildPathIndex)
 	out := make([]string, 0, len(targetByPath))
 	for p := range targetByPath {
@@ -108,4 +130,58 @@ func AllPaths() []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// EffectivePermission returns the canonical "domain.action" permission key
+// (see catalog/permissions) that gates visibility of the parameter mounted
+// at the given canonical path ("entity/section/param").
+//
+// Resolution rule: the mounting ParamDef's own Permission if non-empty,
+// else the owning schema's DefaultPermission, else "" (visible to any
+// authenticated user). Unknown/malformed paths (including reserved-but-
+// unimplemented namespaces like "tenant/..." and "module/...") return "".
+//
+// Entity paths (the built-in registry) resolve exactly as before via
+// ResolvePath, including the schema-DefaultPermission fallback that only
+// makes sense for schema-mounted params. Paths owned by any OTHER
+// registered Source (see sources.go) fall through to that source's
+// Resolve, using its def's own Permission with no schema-default
+// fallback (non-entity sources have no SubtypeSchema to default from).
+func EffectivePermission(path string) string {
+	if schema, _, def, err := ResolvePath(path); err == nil {
+		if def.Permission != "" {
+			return def.Permission
+		}
+		return schema.DefaultPermission
+	}
+	for _, s := range sources {
+		if _, isEntity := s.(entitySource); isEntity {
+			continue // already tried above via ResolvePath
+		}
+		if def, ok := s.Resolve(path); ok {
+			return def.Permission
+		}
+	}
+	return ""
+}
+
+// ResolveDef resolves path via ANY registered Source, entity or
+// otherwise — the asymmetry-closing counterpart to AllPaths() (see
+// sources.go's Source.Resolve doc). Entity paths are tried first via
+// ResolvePath (preserving its existing error surface for that common
+// case); paths owned by other registered sources are tried next, in
+// registration order.
+func ResolveDef(path string) (ParamDef, bool) {
+	if _, _, def, err := ResolvePath(path); err == nil {
+		return *def, true
+	}
+	for _, s := range sources {
+		if _, isEntity := s.(entitySource); isEntity {
+			continue
+		}
+		if def, ok := s.Resolve(path); ok {
+			return def, true
+		}
+	}
+	return ParamDef{}, false
 }

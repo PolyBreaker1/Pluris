@@ -9,9 +9,8 @@
 package templates
 
 import (
-	"strconv"
-
 	"github.com/pluris/pluris/web/lists"
+	"strconv"
 )
 
 // Crumb is one breadcrumb segment; Href "" renders a plain <span> (current page).
@@ -22,18 +21,25 @@ type Crumb struct{ Label, Href string }
 type Chip struct{ Label, Class string }
 
 // HeroDef is one label/value pair in the hero quick-facts list.
-type HeroDef struct{ Label, Value string }
+// IconSVG is a Feather-style SVG string (24×24) rendered before the label;
+// "" = no icon.
+type HeroDef struct {
+	Label   string
+	Value   string
+	IconSVG string
+}
 
 // HeroSpec describes the standardized detail-page hero (INV: one shell
 // for every entity — see docs/UX_INVARIANTS.md and spec §1).
 type HeroSpec struct {
-	Crumbs []Crumb
-	Name   string
-	ID     string // mono sub-line under the name; "" hides it
-	Chips  []Chip
-	Defs   []HeroDef
-	Visual templ.Component // device icon / avatar / policy icon; nil = omitted
-	Action templ.Component // single optional hero action (picker/button); nil = omitted
+	Crumbs     []Crumb
+	Name       string
+	ID         string // mono sub-line under the name; "" hides it
+	Chips      []Chip
+	Defs       []HeroDef
+	Visual     templ.Component // device icon / avatar / policy icon; nil = omitted
+	Action     templ.Component // single optional hero action (picker/button); nil = omitted
+	DeleteForm templ.Component // delete form rendered in the ⋮ dropdown; nil = no delete option
 }
 
 // TabSpec is one tab: stable slug (used in data-tab/data-panel and the
@@ -52,6 +58,7 @@ templ DetailShell(activeNav string, title string, attrs templ.Attributes, hero H
 	@Layout(activeNav, title) {
 		<div class="page-content">
 			<div class="asset-detail" { attrs... }>
+				<!-- Breadcrumb -->
 				<nav class="asset-detail-crumb">
 					for i, c := range hero.Crumbs {
 						if i > 0 {
@@ -64,34 +71,52 @@ templ DetailShell(activeNav string, title string, attrs templ.Attributes, hero H
 						}
 					}
 				</nav>
+				<!-- Hero: glass card with top-row (visual + name/id/chips + dropdown) and vertical detail table -->
 				<div class="asset-detail-hero">
-					<div class="asset-detail-hero-info">
-						<h2 class="asset-detail-hero-name">{ hero.Name }</h2>
-						if hero.ID != "" {
-							<div class="asset-detail-hero-id font-mono">{ hero.ID }</div>
-						}
-						if len(hero.Chips) > 0 {
-							<div class="asset-detail-hero-chips">
-								for _, ch := range hero.Chips {
-									<span class={ "asset-chip " + ch.Class }>{ ch.Label }</span>
-								}
+					<div class="hero-main-row">
+						if hero.Visual != nil {
+							<div class="asset-detail-hero-visual">
+								@hero.Visual
 							</div>
 						}
-						if len(hero.Defs) > 0 {
-							<dl class="asset-detail-hero-defs">
-								for _, d := range hero.Defs {
-									<dt>{ d.Label }</dt>
-									<dd>{ d.Value }</dd>
-								}
-							</dl>
-						}
-						if hero.Action != nil {
-							@hero.Action
-						}
+						<div class="asset-detail-hero-info">
+							<h2 class="asset-detail-hero-name">{ hero.Name }</h2>
+							if hero.ID != "" {
+								<div class="asset-detail-hero-id font-mono">{ hero.ID }</div>
+							}
+							if len(hero.Chips) > 0 {
+								<div class="asset-detail-hero-chips">
+									for _, ch := range hero.Chips {
+										<span class={ "asset-chip " + ch.Class }>{ ch.Label }</span>
+									}
+								</div>
+							}
+						</div>
+						<div class="hero-actions">
+							if hero.DeleteForm != nil {
+								<button type="button" class="hero-menu-btn" onclick="toggleHeroDropdown(this)" aria-label="Actions" title="More actions">⋯</button>
+								<div class="hero-dropdown" data-dropdown>
+									@hero.DeleteForm
+								</div>
+							}
+						</div>
 					</div>
-					if hero.Visual != nil {
-						<div class="asset-detail-hero-visual">
-							@hero.Visual
+					if len(hero.Defs) > 0 {
+						<div class="hero-detail-table">
+							for _, d := range hero.Defs {
+								<span class="hero-detail-label">
+									if d.IconSVG != "" {
+										@templ.Raw(d.IconSVG)
+									}
+									{ d.Label }
+								</span>
+								<span class="hero-detail-value">{ d.Value }</span>
+							}
+						</div>
+					}
+					if hero.Action != nil {
+						<div class="hero-action-row">
+							@hero.Action
 						</div>
 					}
 				</div>

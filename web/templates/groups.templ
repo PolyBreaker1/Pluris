@@ -1,0 +1,258 @@
+// groups.templ — Task 6.2: the canonical AD-style Groups list page
+// (/groups) and its create form (/groups/new). ONE list serves both
+// sidebar surfaces (Users → "User Groups", Assets → "Groups"); the kind
+// query param picks the server-side member-kind view (identity =
+// identity+mixed, asset = asset+mixed, none = all). Modeled on
+// config_groups.templ's registry-driven list + create pages (Task 5.2).
+package templates
+
+import (
+	"strconv"
+
+	"github.com/pluris/pluris/web/lists"
+)
+
+// GroupListRow is the list-view model for one group.
+type GroupListRow struct {
+	ID          int64
+	Name        string
+	Description string
+	MemberKind  string
+	Membership  string
+	Members     int64
+	Category    string
+	Scope       string
+	Created     string
+}
+
+// groupKindLabel maps a member_kind enum value to its display label.
+func groupKindLabel(kind string) string {
+	switch kind {
+	case "asset":
+		return "Assets"
+	case "identity":
+		return "Users"
+	case "mixed":
+		return "Mixed"
+	}
+	return kind
+}
+
+// groupKindChipClass colors the member-kind chip with the same hue
+// family the target picker uses for computers vs users.
+func groupKindChipClass(kind string) string {
+	switch kind {
+	case "asset":
+		return "asset-chip asset-chip-lifecycle"
+	case "identity":
+		return "asset-chip asset-chip-enroll-enrolled"
+	}
+	return "asset-chip"
+}
+
+// groupMembershipLabel maps a membership enum value to its display label.
+func groupMembershipLabel(m string) string {
+	switch m {
+	case "dynamic":
+		return "Dynamic"
+	}
+	return "Static"
+}
+
+// groupMembershipChipClass — dynamic groups get the "pending" amber so
+// rule-computed membership stands out from plain static groups.
+func groupMembershipChipClass(m string) string {
+	if m == "dynamic" {
+		return "asset-chip asset-chip-enroll-pending"
+	}
+	return "asset-chip"
+}
+
+// groupSearchBlob — lowercase haystack for the list filter.
+func groupSearchBlob(r GroupListRow) string {
+	return lowerJoin(r.Name, r.Description, r.MemberKind, r.Membership, r.Category, r.Scope)
+}
+
+// groupListActiveKey picks the sidebar active key for a kind view:
+// identity → users-groups, asset → assets-groups. The unfiltered view
+// (no kind param) also reads users-groups — some key must light up, and
+// User Groups is the alphabetically-first surface; documented rather
+// than invisible.
+func groupListActiveKey(kind string) string {
+	if kind == "asset" {
+		return "assets-groups"
+	}
+	return "users-groups"
+}
+
+// GroupsPage — the /groups list. kind is the raw ?kind= query value
+// ("identity"/"asset"/""); rows are already server-filtered to that view
+// by the handler, and the toolbar's kind select NAVIGATES (reloads with
+// the new ?kind=) instead of registering as a client-side lists.js
+// filter — a data-pluris-filter select would restore its last value from
+// localStorage and silently fight the URL the sidebar linked to.
+templ GroupsPage(rows []GroupListRow, kind string) {
+	@Layout(groupListActiveKey(kind), "Groups") {
+		@PageHeader("Groups",
+			"AD-style groups of users and assets. Static groups hold hand-picked members; dynamic groups compute their members from rules.",
+			"", "")
+		{{ listID := lists.ListIDGroups }}
+		<div data-testid="page-groups">
+			<section class="pm-toolbar card" data-pluris-list={ listID }>
+				<div class="field field-wide">
+					<label for="grp-search">Search</label>
+					<input
+						id="grp-search"
+						class="input"
+						type="search"
+						autocomplete="off"
+						data-pluris-filter={ listID }
+						data-filter-attr="grp-search"
+						data-filter-mode="contains"
+						data-pluris-highlight="1"
+						placeholder="Filter by name, description…"
+					/>
+				</div>
+				<div class="field">
+					<label for="grp-kind">Member kind</label>
+					<select id="grp-kind" class="select" data-testid="groups-kind-select" onchange="window.location.href = this.value ? '/groups?kind=' + encodeURIComponent(this.value) : '/groups'">
+						<option value="" selected?={ kind != "identity" && kind != "asset" }>All</option>
+						<option value="identity" selected?={ kind == "identity" }>Users (incl. mixed)</option>
+						<option value="asset" selected?={ kind == "asset" }>Assets (incl. mixed)</option>
+					</select>
+				</div>
+				<div class="field">
+					<label for="grp-membership">Membership</label>
+					<select
+						id="grp-membership"
+						class="select"
+						data-pluris-filter={ listID }
+						data-filter-attr="grp-membership"
+						data-filter-mode="equals"
+					>
+						<option value="all">All</option>
+						<option value="static">Static</option>
+						<option value="dynamic">Dynamic</option>
+					</select>
+				</div>
+				<div class="field field-action">
+					<label>&nbsp;</label>
+					<span data-pluris-count={ listID } data-template="{visible} of {total} groups"></span>
+				</div>
+				<div class="field field-action">
+					<label>&nbsp;</label>
+					<a href={ templ.SafeURL(groupNewHref(kind)) } class="btn btn-primary">
+						@iconSVG("plus")
+						<span>New group</span>
+					</a>
+				</div>
+			</section>
+			<section class="pm-table-wrap card" data-pluris-list={ listID }>
+				<table class="policy-table pluris-list" data-list-id={ listID }>
+					<thead>
+						<tr>
+							for _, f := range lists.FieldsFor(listID) {
+								<th title={ f.Description }>{ f.Label }</th>
+							}
+						</tr>
+					</thead>
+					<tbody>
+						for _, r := range rows {
+							<tr data-grp-row-id={ strconv.FormatInt(r.ID, 10) } data-grp-membership={ r.Membership } data-grp-search={ groupSearchBlob(r) }>
+								<td>
+									<div class="cg-name">{ r.Name }</div>
+									if r.Description != "" {
+										<div class="cg-muted">{ r.Description }</div>
+									}
+								</td>
+								<td><span class={ groupKindChipClass(r.MemberKind) }>{ groupKindLabel(r.MemberKind) }</span></td>
+								<td><span class={ groupMembershipChipClass(r.Membership) }>{ groupMembershipLabel(r.Membership) }</span></td>
+								<td class="cg-num">{ strconv.FormatInt(r.Members, 10) }</td>
+								<td>{ r.Category }</td>
+								<td>{ r.Scope }</td>
+								<td>{ r.Created }</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			</section>
+			@groupsNavigationScript()
+		</div>
+	}
+}
+
+// groupNewHref carries the current kind view into the create form so its
+// member-kind select comes preset.
+func groupNewHref(kind string) string {
+	if kind == "identity" || kind == "asset" {
+		return "/groups/new?kind=" + kind
+	}
+	return "/groups/new"
+}
+
+// groupsNavigationScript — row click navigates to the group's detail
+// page. Same pattern as configGroupsNavigationScript.
+templ groupsNavigationScript() {
+	@templ.Raw(`<script>
+(function () {
+	document.addEventListener('click', function (e) {
+		if (e.target.closest('a, button, input, select, form')) return;
+		var row = e.target.closest('tr[data-grp-row-id]');
+		if (!row) return;
+		window.location.href = '/groups/' + encodeURIComponent(row.dataset.grpRowId);
+	});
+})();
+</script>`)
+}
+
+// GroupNewPage — standalone create form. kind presets the member-kind
+// select from the ?kind= the list page linked with; membership defaults
+// to static. category/scope expose 003's columns with their schema
+// defaults prefilled.
+templ GroupNewPage(csrf string, kind string, errMsg string) {
+	@Layout(groupListActiveKey(kind), "New Group") {
+		@PageHeader("New Group", "Create a group, then add members (or dynamic-membership rules) on its detail page.", "", "")
+		<div data-testid="page-group-new">
+			if errMsg != "" {
+				<div class="auth-error" role="alert">{ errMsg }</div>
+			}
+			<section class="asset-detail-section card" style="max-width:640px;">
+				<form method="post" action="/groups/new">
+					<input type="hidden" name="_csrf" value={ csrf }/>
+					<div class="cg-field">
+						<label for="grp-new-name">Name</label>
+						<input id="grp-new-name" name="name" class="input" required/>
+					</div>
+					<div class="cg-field cg-field-wide">
+						<label for="grp-new-description">Description</label>
+						<textarea id="grp-new-description" name="description" class="input" rows="3"></textarea>
+					</div>
+					<div class="cg-field">
+						<label for="grp-new-kind">Member kind</label>
+						<select id="grp-new-kind" name="member_kind" class="input">
+							<option value="identity" selected?={ kind == "identity" }>Users</option>
+							<option value="asset" selected?={ kind == "asset" }>Assets</option>
+							<option value="mixed" selected?={ kind != "identity" && kind != "asset" }>Mixed (users and assets)</option>
+						</select>
+					</div>
+					<div class="cg-field">
+						<label for="grp-new-membership">Membership</label>
+						<select id="grp-new-membership" name="membership" class="input">
+							<option value="static" selected>Static (members added by hand)</option>
+							<option value="dynamic">Dynamic (members computed from rules)</option>
+						</select>
+					</div>
+					<div class="cg-field">
+						<label for="grp-new-category">Category</label>
+						<input id="grp-new-category" name="category" class="input" value="security"/>
+					</div>
+					<div class="cg-field">
+						<label for="grp-new-scope">Scope</label>
+						<input id="grp-new-scope" name="scope" class="input" value="global"/>
+					</div>
+					<button type="submit" class="btn btn-primary" style="margin-top:8px;">Create</button>
+				</form>
+			</section>
+		</div>
+	}
+}

@@ -5,40 +5,58 @@
 package handlers
 
 import (
+	"database/sql"
 	"log"
 	"net/http"
+	"net/url"
 	"strconv"
+	"strings"
 
 	"github.com/a-h/templ"
 	"github.com/labstack/echo/v4"
 
+	"github.com/pluris/pluris/catalog/dependencygroups"
 	"github.com/pluris/pluris/catalog/identities"
+	"github.com/pluris/pluris/catalog/params"
+	"github.com/pluris/pluris/catalog/policymodules"
 	"github.com/pluris/pluris/db"
 	"github.com/pluris/pluris/pkg/auth"
+	"github.com/pluris/pluris/pkg/authz"
 	"github.com/pluris/pluris/pkg/database"
 	"github.com/pluris/pluris/pkg/services"
 	"github.com/pluris/pluris/web/templates"
 )
 
 type Handler struct {
-	db            *database.Database
-	assetSvc      *services.AssetService
-	identitySvc   *services.IdentityService
-	groupSvc      *services.GroupService
-	roleSvc       *services.RoleService
-	assignmentSvc *services.AssignmentService
-	sessions      *auth.SessionManager
+	db             *database.Database
+	assetSvc       *services.AssetService
+	identitySvc    *services.IdentityService
+	groupSvc       *services.GroupService
+	roleSvc        *services.RoleService
+	assignmentSvc  *services.AssignmentService
+	depGroupSvc    *services.DependencyGroupService
+	moduleSvc      *services.PolicyModuleService
+	targetSvc      *services.TargetService
+	configGroupSvc *services.ConfigGroupService
+	authzSvc       *authz.Service
+	sessions       *auth.SessionManager
 }
 
 func New(db *database.Database) *Handler {
+	moduleSvc := services.NewPolicyModuleService(db)
 	return &Handler{
-		db:            db,
-		assetSvc:      services.NewAssetService(db),
-		identitySvc:   services.NewIdentityService(db),
-		groupSvc:      services.NewGroupService(db),
-		roleSvc:       services.NewRoleService(db),
-		assignmentSvc: services.NewAssignmentService(db),
-		sessions:      auth.NewSessionManager(db),
+		db:             db,
+		assetSvc:       services.NewAssetService(db),
+		identitySvc:    services.NewIdentityService(db),
+		groupSvc:       services.NewGroupService(db),
+		roleSvc:        services.NewRoleService(db),
+		assignmentSvc:  services.NewAssignmentService(db),
+		depGroupSvc:    services.NewDependencyGroupService(db),
+		moduleSvc:      moduleSvc,
+		targetSvc:      services.NewTargetService(db),
+		configGroupSvc: services.NewConfigGroupService(db, moduleSvc),
+		authzSvc:       authz.NewService(db),
+		sessions:       auth.NewSessionManager(db),
 	}
 }
 
@@ -108,6 +126,13 @@ func (h *Handler) UserDetail(c echo.Context) error {
 	if err != nil {
 		return err
 	}
+	// Roles reaching this identity via group membership (RBAC v2 Task
+	// 7): rendered as read-only "via <group>" rows on the Roles tab,
+	// distinct from the direct assignments in roles above.
+	viaGroupRoles, err := h.roleSvc.ListGroupRolesForIdentityDetail(ctx, id)
+	if err != nil {
+		return err
+	}
 	groupIDs := make([]int64, 0, len(groups))
 	for _, g := range groups {
 		groupIDs = append(groupIDs, g.ID)
@@ -116,35 +141,150 @@ func (h *Handler) UserDetail(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	return render(c, templates.UserDetailPage(user, assigned, csrfTokenFrom(c), groups, allGroups, roles, allRoles, applied))
+	return render(c, templates.UserDetailPage(user, assigned, csrfTokenFrom(c), groups, allGroups, roles, allRoles, viaGroupRoles, applied, c.QueryParam("warn")))
 }
 
-// UserNewShow renders the empty "add user" form.
+// UserNewShow renders the full-page "add user" form (Task 8, spec §6):
+// the same standardized section-card layout as the detail page's General
+// tab, but every editable field is an open input (create mode has
+// nothing to toggle) and there is one Create button instead of per-
+// section Save.
 func (h *Handler) UserNewShow(c echo.Context) error {
-	return render(c, templates.UserFormPage(identities.Identity{}, csrfTokenFrom(c), "", true))
+	if err := requirePermission(c, "identity.create"); err != nil {
+		return err
+	}
+	return render(c, templates.UserCreatePage(identities.Identity{}, "", csrfTokenFrom(c)))
 }
 
-// UserCreateSubmit creates a new identity from the "add user" form.
+// userCreateCoreKeys are the schema keys populated directly onto the
+// identities.Identity passed to IdentityService.Create -- everything
+// CreateIdentityParams (pkg/services/identities.go) actually writes on
+// insert. Every other submitted, editable schema key is applied in a
+// second pass through UpdateFields (shared coercion/editability rules),
+// so this map doubles as the "already applied, don't reapply" exclusion
+// set for that pass.
+var userCreateCoreKeys = map[string]bool{
+	"username": true, "email": true, "display_name": true,
+	"given_name": true, "surname": true, "user_principal_name": true,
+	"title": true, "department": true, "company": true,
+	"employee_id": true, "employee_type": true,
+	"phone_office": true, "phone_mobile": true,
+}
+
+// identityFromCreateForm reads every text-valued schema field the
+// UserCreatePage form can submit into an identities.Identity, so both the
+// validation-failure re-render (which needs every entered value echoed
+// back) and the Create call (which needs the core subset) share one
+// source of truth. Mirrors pkg/services/identities.go's
+// applyIdentityField field-by-field, restricted to the plain-string
+// fields the create form renders (security section fields never appear
+// in the form, so no bool/time parsing is needed here).
+func identityFromCreateForm(c echo.Context) identities.Identity {
+	return identities.Identity{
+		Username:          c.FormValue("username"),
+		UserPrincipalName: c.FormValue("user_principal_name"),
+		Email:             c.FormValue("email"),
+		DisplayName:       c.FormValue("display_name"),
+		GivenName:         c.FormValue("given_name"),
+		Surname:           c.FormValue("surname"),
+		Initials:          c.FormValue("initials"),
+		Title:             c.FormValue("title"),
+		Department:        c.FormValue("department"),
+		Company:           c.FormValue("company"),
+		EmployeeID:        c.FormValue("employee_id"),
+		EmployeeType:      c.FormValue("employee_type"),
+		PhoneOffice:       c.FormValue("phone_office"),
+		PhoneMobile:       c.FormValue("phone_mobile"),
+		PhoneHome:         c.FormValue("phone_home"),
+		Fax:               c.FormValue("fax"),
+		Office:            c.FormValue("office"),
+		StreetAddress:     c.FormValue("street_address"),
+		City:              c.FormValue("city"),
+		State:             c.FormValue("state"),
+		PostalCode:        c.FormValue("postal_code"),
+		Country:           c.FormValue("country"),
+		CountryCode:       c.FormValue("country_code"),
+		HomeDirectory:     c.FormValue("home_directory"),
+		HomeDrive:         c.FormValue("home_drive"),
+		ProfilePath:       c.FormValue("profile_path"),
+		LogonScript:       c.FormValue("logon_script"),
+		Locale:            c.FormValue("locale"),
+		Timezone:          c.FormValue("timezone"),
+		Description:       c.FormValue("description"),
+		Notes:             c.FormValue("notes"),
+	}
+}
+
+// UserCreateSubmit creates a new identity from the full-page "add user"
+// form (Task 8). Username and email are required; display_name
+// auto-fills from First+Last when blank (AD behavior). Create persists
+// the core identity fields (see userCreateCoreKeys); every other
+// submitted, editable schema field is then applied through
+// IdentityService.UpdateFields -- the same validation/coercion path the
+// detail page's inline editor uses, so this handler never duplicates
+// that logic. Per-section UpdateFields failures after a successful
+// Create do not roll back the new account (it already exists and is
+// otherwise valid); instead the handler redirects to the new user's
+// detail page with a `warn` query param surfaced as a dismissible banner
+// there, naming which fields were dropped.
 func (h *Handler) UserCreateSubmit(c echo.Context) error {
+	if err := requirePermission(c, "identity.create"); err != nil {
+		return err
+	}
 	ctx := c.Request().Context()
 	sess := auth.FromContext(ctx)
-	in := identities.Identity{
-		Username:    c.FormValue("username"),
-		Email:       c.FormValue("email"),
-		DisplayName: c.FormValue("display_name"),
-		Title:       c.FormValue("title"),
-		Department:  c.FormValue("department"),
-		Role:        identities.RoleUser,
+	in := identityFromCreateForm(c)
+	// AD auto-generates displayName from First + Last name when it isn't
+	// set explicitly; mirror that here so admins don't have to type the
+	// same name twice.
+	if in.DisplayName == "" && (in.GivenName != "" || in.Surname != "") {
+		in.DisplayName = strings.TrimSpace(strings.TrimSpace(in.GivenName) + " " + strings.TrimSpace(in.Surname))
 	}
-	if in.Username == "" || in.Email == "" || in.DisplayName == "" {
-		return render(c, templates.UserFormPage(in, csrfTokenFrom(c), "Username, email, and display name are required.", true))
+	if in.Username == "" || in.Email == "" {
+		return render(c, templates.UserCreatePage(in, "Username and email are required.", csrfTokenFrom(c)))
 	}
+	in.Role = identities.RoleUser
+
 	created, err := h.identitySvc.Create(ctx, sess.TenantID, in)
 	if err != nil {
 		log.Printf("user create failed: %v", err)
-		return render(c, templates.UserFormPage(in, csrfTokenFrom(c), "Could not create user. Check the username/email aren't already taken.", true))
+		return render(c, templates.UserCreatePage(in, "Could not create user. Check the username/email aren't already taken.", csrfTokenFrom(c)))
 	}
-	return c.Redirect(http.StatusFound, "/users/"+strconv.FormatInt(created.ID, 10))
+	_ = h.db.Queries.InsertActivity(ctx, db.InsertActivityParams{
+		TenantID: sess.TenantID, EntityType: "identity", EntityID: created.ID,
+		Event: "user_created", Detail: sql.NullString{String: created.Username, Valid: true},
+		ActorIdentityID: sql.NullInt64{Int64: sess.IdentityID, Valid: true},
+	})
+
+	// Second pass: every other submitted, editable schema field, applied
+	// per-section through UpdateFields.
+	var warnings []string
+	for _, sec := range params.SchemaIdentity.Sections {
+		if sec.Key == "security" {
+			continue
+		}
+		fields := make(map[string]string)
+		for _, key := range sec.Params {
+			if key == "avatar_url" || identities.NonEditableFieldKeys[key] || userCreateCoreKeys[key] {
+				continue
+			}
+			if v := c.FormValue(key); v != "" {
+				fields[key] = v
+			}
+		}
+		if len(fields) == 0 {
+			continue
+		}
+		if _, err := h.identitySvc.UpdateFields(ctx, sess.TenantID, created.ID, sec.Key, fields); err != nil {
+			warnings = append(warnings, err.Error())
+		}
+	}
+
+	target := "/users/" + strconv.FormatInt(created.ID, 10)
+	if len(warnings) > 0 {
+		target += "?warn=" + url.QueryEscape("User created, but some fields could not be saved: "+strings.Join(warnings, "; "))
+	}
+	return c.Redirect(http.StatusFound, target)
 }
 
 // UserEditShow renders the edit form pre-filled with the existing user.
@@ -180,6 +320,8 @@ func (h *Handler) UserUpdateSubmit(c echo.Context) error {
 	// than a silently-swallowed write.
 	existing.Email = c.FormValue("email")
 	existing.DisplayName = c.FormValue("display_name")
+	existing.GivenName = c.FormValue("given_name")
+	existing.Surname = c.FormValue("surname")
 	existing.Title = c.FormValue("title")
 	existing.Department = c.FormValue("department")
 
@@ -190,6 +332,13 @@ func (h *Handler) UserUpdateSubmit(c echo.Context) error {
 	if _, err := h.identitySvc.Update(ctx, existing); err != nil {
 		log.Printf("user update failed: %v", err)
 		return render(c, templates.UserFormPage(existing, csrfTokenFrom(c), "Could not save changes.", false))
+	}
+	if sess := auth.FromContext(ctx); sess != nil {
+		_ = h.db.Queries.InsertActivity(ctx, db.InsertActivityParams{
+			TenantID: sess.TenantID, EntityType: "identity", EntityID: id,
+			Event: "user_updated", Detail: sql.NullString{String: existing.Username, Valid: true},
+			ActorIdentityID: sql.NullInt64{Int64: sess.IdentityID, Valid: true},
+		})
 	}
 	return c.Redirect(http.StatusFound, "/users/"+strconv.FormatInt(id, 10))
 }
@@ -207,6 +356,9 @@ func (h *Handler) UserUpdateSubmit(c echo.Context) error {
 // today (super_admin status isn't scoped to the caller's tenant), which is
 // more surface than a single simple check — left as a follow-up.
 func (h *Handler) UserDeleteSubmit(c echo.Context) error {
+	if err := requirePermission(c, "identity.delete"); err != nil {
+		return err
+	}
 	ctx := c.Request().Context()
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -217,6 +369,13 @@ func (h *Handler) UserDeleteSubmit(c echo.Context) error {
 	}
 	if err := h.identitySvc.Delete(ctx, id); err != nil {
 		return err
+	}
+	if sess := auth.FromContext(ctx); sess != nil {
+		_ = h.db.Queries.InsertActivity(ctx, db.InsertActivityParams{
+			TenantID: sess.TenantID, EntityType: "identity", EntityID: id,
+			Event:           "user_deleted",
+			ActorIdentityID: sql.NullInt64{Int64: sess.IdentityID, Valid: true},
+		})
 	}
 	return c.Redirect(http.StatusFound, "/users")
 }
@@ -334,6 +493,9 @@ func (h *Handler) AssetDetail(c echo.Context) error {
 // empty or "0" owner_id form value clears ownership; any other value
 // must resolve to a real identity ID.
 func (h *Handler) AssetSetOwner(c echo.Context) error {
+	if err := requirePermission(c, "asset.set_owner"); err != nil {
+		return err
+	}
 	ctx := c.Request().Context()
 	subtype := c.Param("subtype")
 	humanOrUUID := c.Param("id")
@@ -368,13 +530,43 @@ func (h *Handler) AssetSetOwner(c echo.Context) error {
 		}
 	}
 
+	if sess := auth.FromContext(ctx); sess != nil {
+		_ = h.db.Queries.InsertActivity(ctx, db.InsertActivityParams{
+			TenantID:        sess.TenantID,
+			EntityType:      "asset",
+			EntityID:        dbID,
+			Event:           "owner_changed",
+			Detail:          sql.NullString{String: ownerIDStr, Valid: ownerIDStr != ""},
+			ActorIdentityID: sql.NullInt64{Int64: sess.IdentityID, Valid: true},
+		})
+	}
 	return c.Redirect(http.StatusFound, "/assets/"+subtype+"/"+humanOrUUID)
 }
 
-// Policy — three sub-tabs (Catalog / Configuration Groups / Modules) all
-// live under /policy/* and share PolicyTabs in the page chrome. Modules
-// moved here from /scripts/policy-modules on 2026-05-16: a Policy Module
-// IS a policy concept, not an automation concept.
+// PolicyCatalogDetail renders the full-page view of one catalog policy
+// (Task 15): definition, candidate modules, current assignments.
+func (h *Handler) PolicyCatalogDetail(c echo.Context) error {
+	ctx := c.Request().Context()
+	pol := policyByID(c.Param("id"))
+	if pol == nil {
+		return echo.NewHTTPError(http.StatusNotFound, "unknown policy")
+	}
+	modules := policymodules.CandidatesForPolicy(pol.ID, policymodules.OSAny)
+	sess := auth.FromContext(ctx)
+	assignments, err := h.db.Queries.ListAssignmentsByPolicy(ctx, db.ListAssignmentsByPolicyParams{
+		PolicyUrn: pol.ID,
+		TenantID:  sess.TenantID,
+	})
+	if err != nil {
+		return err
+	}
+	return render(c, templates.PolicyDetailPage(*pol, modules, assignments))
+}
+
+// Policy — Catalog / Configuration Groups / Modules all live under
+// /policy/*, navigated via the sidebar. Modules moved here from
+// /scripts/policy-modules on 2026-05-16: a Policy Module IS a policy
+// concept, not an automation concept.
 
 // PolicyRedirect 302-redirects /policy to /policy/catalog (the default tab).
 func (h *Handler) PolicyRedirect(c echo.Context) error {
@@ -383,21 +575,71 @@ func (h *Handler) PolicyRedirect(c echo.Context) error {
 func (h *Handler) PolicyCatalog(c echo.Context) error {
 	return render(c, templates.PolicyCatalogPage())
 }
-func (h *Handler) PolicyGroups(c echo.Context) error {
-	return render(c, templates.PolicyConfigurationGroupsPage())
-}
+
+// PolicyGroups (list), the create/detail pages, and the Assignments/
+// Bindings tab endpoints live in console/handlers/config_groups.go
+// (Task 5.2 -- retired the popup dialog + catalog/configgroups mock in
+// favor of full standardized pages backed by services.ConfigGroupService).
 
 // PolicyModules — Library view. Three sub-tabs (library / defaults /
 // sources) share the same page chrome; the canonical editor remains
 // editors/PolicyModuleEditor (R1: single source of truth).
 func (h *Handler) PolicyModules(c echo.Context) error {
-	return render(c, templates.PolicyModulesPage("library"))
+	ctx := c.Request().Context()
+	sess := auth.FromContext(ctx)
+	// Best-effort: a fresh tenant may not have builtins seeded yet. Errors
+	// here shouldn't block rendering the page.
+	_ = h.depGroupSvc.EnsureBuiltins(ctx, sess.TenantID)
+	_ = h.moduleSvc.SeedBundled(ctx)
+	groups, err := h.depGroupSvc.ListByTenant(ctx, sess.TenantID)
+	if err != nil {
+		return err
+	}
+	byID := make(map[int64]dependencygroups.Group, len(groups))
+	for _, g := range groups {
+		byID[g.ID] = g
+	}
+	mods, err := h.moduleSvc.ListModules(ctx, sess.TenantID)
+	if err != nil {
+		return err
+	}
+	deps := make(map[string]templates.ModuleDepsView, len(mods))
+	for _, m := range mods {
+		links, err := h.depGroupSvc.ListLinksForModule(ctx, sess.TenantID, m.ID)
+		if err != nil {
+			continue
+		}
+		var dv templates.ModuleDepsView
+		for _, l := range links {
+			g, ok := byID[l.GroupID]
+			if !ok {
+				continue
+			}
+			chip := templates.ModuleDepChip{GroupID: g.ID, Name: g.Name}
+			if l.Role == "platform" {
+				dv.Platforms = append(dv.Platforms, chip)
+			} else {
+				dv.Requirements = append(dv.Requirements, chip)
+			}
+		}
+		deps[m.ID] = dv
+	}
+	isAdmin := sess.Role == identities.RoleAdmin || sess.Role == identities.RoleSuperAdmin
+	return render(c, templates.PolicyModulesPage("library", mods, nil, deps, groups, csrfTokenFrom(c), isAdmin))
 }
 func (h *Handler) PolicyModulesDefaults(c echo.Context) error {
-	return render(c, templates.PolicyModulesPage("defaults"))
+	ctx := c.Request().Context()
+	sess := auth.FromContext(ctx)
+	_ = h.moduleSvc.SeedBundled(ctx)
+	mods, err := h.moduleSvc.ListModules(ctx, sess.TenantID)
+	if err != nil {
+		return err
+	}
+	defaults := policymodules.TenantDefaults("")
+	return render(c, templates.PolicyModulesPage("defaults", mods, defaults, nil, nil, "", false))
 }
 func (h *Handler) PolicyModulesSources(c echo.Context) error {
-	return render(c, templates.PolicyModulesPage("sources"))
+	return render(c, templates.PolicyModulesPage("sources", nil, nil, nil, nil, "", false))
 }
 
 // Profiles renders the profile-list + editor page (item 5 in the sidebar).

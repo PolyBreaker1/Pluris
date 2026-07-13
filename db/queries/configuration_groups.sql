@@ -102,6 +102,12 @@ FROM configuration_group_bindings b
 JOIN configuration_groups g ON g.id = b.configuration_group_id
 WHERE b.module_id = @module_id;
 
+-- name: CountBindingsByModule :one
+-- Used by the module service's DeleteModule guard: a module referenced
+-- by any configuration-group binding may not be deleted (see
+-- pkg/services/policymodules.go).
+SELECT COUNT(*) FROM configuration_group_bindings WHERE module_id = @module_id;
+
 -- name: UpdateConfigurationGroupBinding :one
 UPDATE configuration_group_bindings SET
     state = @state,
@@ -140,6 +146,17 @@ INSERT INTO configuration_group_assignments (
 
 -- name: GetConfigurationGroupAssignment :one
 SELECT * FROM configuration_group_assignments WHERE id = @id LIMIT 1;
+
+-- name: UpdateConfigurationGroupAssignment :one
+-- Updates priority/enforced on an existing assignment. target_type/
+-- target_id/group are immutable after creation (remove + re-add to
+-- retarget); this only covers the fields the detail-page assignments
+-- table lets an admin tweak in place.
+UPDATE configuration_group_assignments SET
+    priority = @priority,
+    enforced = @enforced
+WHERE id = @id
+RETURNING *;
 
 -- name: ListAssignmentsByGroup :many
 SELECT * FROM configuration_group_assignments

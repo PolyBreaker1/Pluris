@@ -102,15 +102,43 @@ type CustomPolicy struct {
 	CreatedAt        time.Time      `json:"created_at"`
 }
 
+type DependencyGroup struct {
+	ID          int64          `json:"id"`
+	TenantID    int64          `json:"tenant_id"`
+	Slug        string         `json:"slug"`
+	Name        string         `json:"name"`
+	Description sql.NullString `json:"description"`
+	IsBuiltin   bool           `json:"is_builtin"`
+	CreatedAt   time.Time      `json:"created_at"`
+	UpdatedAt   time.Time      `json:"updated_at"`
+	MatchMode   string         `json:"match_mode"`
+}
+
+type DependencyGroupCondition struct {
+	ID           int64  `json:"id"`
+	GroupID      int64  `json:"group_id"`
+	ParamPath    string `json:"param_path"`
+	Operator     string `json:"operator"`
+	ValueJson    string `json:"value_json"`
+	Seq          int64  `json:"seq"`
+	Kind         string `json:"kind"`
+	ScriptSource string `json:"script_source"`
+	ScriptExpect string `json:"script_expect"`
+}
+
 type Group struct {
-	ID            int64         `json:"id"`
-	TenantID      int64         `json:"tenant_id"`
-	SiteID        sql.NullInt64 `json:"site_id"`
-	Name          string        `json:"name"`
-	Slug          string        `json:"slug"`
-	CreatedAt     time.Time     `json:"created_at"`
-	GroupCategory string        `json:"group_category"`
-	GroupScope    string        `json:"group_scope"`
+	ID             int64         `json:"id"`
+	TenantID       int64         `json:"tenant_id"`
+	SiteID         sql.NullInt64 `json:"site_id"`
+	Name           string        `json:"name"`
+	Slug           string        `json:"slug"`
+	CreatedAt      time.Time     `json:"created_at"`
+	GroupCategory  string        `json:"group_category"`
+	GroupScope     string        `json:"group_scope"`
+	Description    string        `json:"description"`
+	MemberKind     string        `json:"member_kind"`
+	Membership     string        `json:"membership"`
+	RulesMatchMode string        `json:"rules_match_mode"`
 }
 
 type GroupMembership struct {
@@ -119,6 +147,27 @@ type GroupMembership struct {
 	AssetID    sql.NullInt64 `json:"asset_id"`
 	IdentityID sql.NullInt64 `json:"identity_id"`
 	CreatedAt  time.Time     `json:"created_at"`
+	Source     string        `json:"source"`
+}
+
+type GroupMembershipRule struct {
+	ID           int64  `json:"id"`
+	GroupID      int64  `json:"group_id"`
+	Kind         string `json:"kind"`
+	ParamPath    string `json:"param_path"`
+	Operator     string `json:"operator"`
+	ValueJson    string `json:"value_json"`
+	ScriptSource string `json:"script_source"`
+	ScriptExpect string `json:"script_expect"`
+	Seq          int64  `json:"seq"`
+}
+
+type GroupRole struct {
+	ID         int64         `json:"id"`
+	GroupID    int64         `json:"group_id"`
+	RoleID     int64         `json:"role_id"`
+	AssignedAt time.Time     `json:"assigned_at"`
+	AssignedBy sql.NullInt64 `json:"assigned_by"`
 }
 
 type Identity struct {
@@ -216,6 +265,23 @@ type InstalledSoftware struct {
 	CreatedAt   time.Time      `json:"created_at"`
 }
 
+type ModuleDependencyLink struct {
+	ID       int64  `json:"id"`
+	TenantID int64  `json:"tenant_id"`
+	ModuleID string `json:"module_id"`
+	GroupID  int64  `json:"group_id"`
+	Role     string `json:"role"`
+}
+
+type ModuleGrant struct {
+	ID          int64     `json:"id"`
+	ModuleID    int64     `json:"module_id"`
+	SubjectType string    `json:"subject_type"`
+	SubjectID   int64     `json:"subject_id"`
+	Level       string    `json:"level"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
 type ModuleInstallation struct {
 	ID                  int64          `json:"id"`
 	AssetID             int64          `json:"asset_id"`
@@ -237,13 +303,23 @@ type ModuleInstallationDependency struct {
 }
 
 type PolicyModule struct {
-	ID          int64          `json:"id"`
-	ModuleUrn   string         `json:"module_urn"`
-	TenantID    sql.NullInt64  `json:"tenant_id"`
-	Title       string         `json:"title"`
-	Description sql.NullString `json:"description"`
-	IsBundled   bool           `json:"is_bundled"`
-	CreatedAt   time.Time      `json:"created_at"`
+	ID              int64          `json:"id"`
+	ModuleUrn       string         `json:"module_urn"`
+	TenantID        sql.NullInt64  `json:"tenant_id"`
+	Title           string         `json:"title"`
+	Description     sql.NullString `json:"description"`
+	IsBundled       bool           `json:"is_bundled"`
+	CreatedAt       time.Time      `json:"created_at"`
+	OwnerIdentityID sql.NullInt64  `json:"owner_identity_id"`
+}
+
+type PolicyModuleScript struct {
+	ID        int64  `json:"id"`
+	VersionID int64  `json:"version_id"`
+	Phase     string `json:"phase"`
+	Filename  string `json:"filename"`
+	Source    string `json:"source"`
+	Seq       int64  `json:"seq"`
 }
 
 type PolicyModuleVersion struct {
@@ -251,17 +327,15 @@ type PolicyModuleVersion struct {
 	ModuleID            int64          `json:"module_id"`
 	Version             string         `json:"version"`
 	State               string         `json:"state"`
-	ManifestYaml        string         `json:"manifest_yaml"`
 	TargetOs            string         `json:"target_os"`
 	Scope               string         `json:"scope"`
-	Runtime             string         `json:"runtime"`
 	Satisfies           string         `json:"satisfies"`
 	ParametersSchema    sql.NullString `json:"parameters_schema"`
 	DependsOn           sql.NullString `json:"depends_on"`
 	Conflicts           sql.NullString `json:"conflicts"`
-	EnforceScript       string         `json:"enforce_script"`
-	ValidateScript      sql.NullString `json:"validate_script"`
-	RollbackScript      sql.NullString `json:"rollback_script"`
+	SandboxProfile      string         `json:"sandbox_profile"`
+	ReportSchema        string         `json:"report_schema"`
+	ManifestYaml        string         `json:"manifest_yaml"`
 	SignatureAlgo       sql.NullString `json:"signature_algo"`
 	SignatureData       sql.NullString `json:"signature_data"`
 	SignedBy            sql.NullString `json:"signed_by"`
@@ -282,6 +356,7 @@ type Role struct {
 	Permissions  string         `json:"permissions"`
 	CreatedAt    time.Time      `json:"created_at"`
 	UpdatedAt    time.Time      `json:"updated_at"`
+	ParentRoleID sql.NullInt64  `json:"parent_role_id"`
 }
 
 type Site struct {

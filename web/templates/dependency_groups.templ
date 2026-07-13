@@ -1,0 +1,460 @@
+package templates
+
+import (
+	"strconv"
+	"strings"
+
+	"github.com/pluris/pluris/catalog/dependencygroups"
+	"github.com/pluris/pluris/db"
+	"github.com/pluris/pluris/web/lists"
+)
+
+// DependencyGroupRow is the list-view model for one dependency group.
+type DependencyGroupRow struct {
+	ID               int64
+	Name             string
+	Slug             string
+	Builtin          bool
+	ConditionSummary string
+	UsedBy           int64
+}
+
+// dependencyGroupTypeAttr is the row's data-dg-type value, matched
+// equals-mode by the toolbar's Builtin/Custom quick filter (mirrors
+// pm-origin / the Pluris Policy roles list's pp-type).
+func dependencyGroupTypeAttr(r DependencyGroupRow) string {
+	if r.Builtin {
+		return "builtin"
+	}
+	return "custom"
+}
+
+// dependencyGroupSearchBlob builds the data-dg-search haystack for one
+// row: name + slug + conditions summary + type.
+func dependencyGroupSearchBlob(r DependencyGroupRow) string {
+	return r.Name + " " + r.Slug + " " + r.ConditionSummary + " " + dependencyGroupTypeAttr(r)
+}
+
+// DependencyConditionSummary renders a group's conditions as a short
+// human string, e.g. "Package format is one of rpm".
+func DependencyConditionSummary(g dependencygroups.Group) string {
+	parts := make([]string, 0, len(g.Conditions))
+	for _, c := range g.Conditions {
+		key := c.ParamPath
+		if i := strings.LastIndex(key, "/"); i >= 0 {
+			key = key[i+1:]
+		}
+		verb := "is one of"
+		switch c.Operator {
+		case dependencygroups.OpNotIn:
+			verb = "is not"
+		case dependencygroups.OpExists:
+			verb = "is set"
+		}
+		part := key + " " + verb
+		if c.Operator != dependencygroups.OpExists {
+			part += " " + strings.Join(c.Values, ", ")
+		}
+		parts = append(parts, part)
+	}
+	if len(parts) == 0 {
+		return "No conditions"
+	}
+	return strings.Join(parts, " and ")
+}
+
+// 4c. Policy → Dependency Groups (Task 5).
+//
+// A Dependency Group is a reusable applicability filter — an AND set of
+// device-fact conditions — that decides which policy modules are valid
+// candidates for a device (analogous to a Windows WMI filter). This is
+// the browsable list; the editor/detail view lands in Task 6 and module
+// linking in Task 7, so "New"/row-click only navigate for now.
+templ DependencyGroupsPage(rows []DependencyGroupRow) {
+	@Layout("policy-dependency-groups", "Dependency Groups") {
+		@PageHeader("Dependency Groups",
+			"Reusable applicability filters that decide which policy modules are valid for a device. Similar to Windows WMI filters.",
+			"", "")
+		{{ listID := lists.ListIDDependencyGroups }}
+		<div data-testid="page-dependency-groups">
+			<section class="pm-toolbar card" data-pluris-list={ listID }>
+				<div class="field field-wide">
+					<label for="dg-search">Search</label>
+					<input
+						id="dg-search"
+						class="input"
+						type="search"
+						autocomplete="off"
+						data-pluris-filter={ listID }
+						data-filter-attr="dg-search"
+						data-filter-mode="contains"
+						data-pluris-highlight="1"
+						placeholder="Filter by name, slug, conditions…"
+					/>
+				</div>
+				<div class="field">
+					<label for="dg-type">Type</label>
+					<select
+						id="dg-type"
+						class="select"
+						data-pluris-filter={ listID }
+						data-filter-attr="dg-type"
+						data-filter-mode="equals"
+					>
+						<option value="all">All</option>
+						<option value="builtin">Builtin</option>
+						<option value="custom">Custom</option>
+					</select>
+				</div>
+				<div class="field field-action">
+					<label>&nbsp;</label>
+					<span data-pluris-count={ listID } data-template="{visible} of {total} groups"></span>
+				</div>
+				<div class="field field-action">
+					<label>&nbsp;</label>
+					<a href="/policy/dependency-groups/new" class="btn btn-primary">@iconSVG("plus")
+<span>New dependency group</span></a>
+				</div>
+			</section>
+			<section class="pm-table-wrap card" data-pluris-list={ listID }>
+				@ConceptEmptyState("policy-dependency-groups", listID)
+				<table class="policy-table pluris-list" data-list-id={ listID }>
+					<thead>
+						<tr>
+							for _, f := range lists.FieldsFor(listID) {
+								<th title={ f.Description }>{ f.Label }</th>
+							}
+						</tr>
+					</thead>
+					<tbody>
+						for _, r := range rows {
+							<tr data-policy-id={ strconv.FormatInt(r.ID, 10) } data-dg-type={ dependencyGroupTypeAttr(r) } data-dg-search={ dependencyGroupSearchBlob(r) }>
+								<td>{ r.Name }</td>
+								<td>{ r.ConditionSummary }</td>
+								<td>{ strconv.FormatInt(r.UsedBy, 10) } modules</td>
+								<td>
+									if r.Builtin {
+										<span class="asset-chip">Builtin</span>
+									} else {
+										<span class="asset-chip">Custom</span>
+									}
+								</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			</section>
+			@dependencyGroupsNavigationScript()
+		</div>
+	}
+}
+
+// dependencyGroupsNavigationScript — row click navigates to the group's
+// detail page. Modeled on policyCatalogNavigationScript.
+templ dependencyGroupsNavigationScript() {
+	@templ.Raw(`<script>
+(function () {
+	document.addEventListener('click', function (e) {
+		if (e.target.closest('a, button, input, select, form')) return;
+		var row = e.target.closest('tr[data-policy-id]');
+		if (!row) return;
+		window.location.href = '/policy/dependency-groups/' + encodeURIComponent(row.dataset.policyId);
+	});
+})();
+</script>`)
+}
+
+// DependencyGroupDetailPage (Task 6) — the standardized DetailShell for a
+// single dependency group. conds carries the raw DB rows (not the pure
+// dependencygroups.Condition values) because ConditionRemove needs each
+// condition's DB id, which the catalog type doesn't carry.
+templ DependencyGroupDetailPage(g dependencygroups.Group, conds []db.DependencyGroupCondition, csrf string) {
+	@DetailShell(
+		"policy-dependency-groups",
+		g.Name+" — Dependency Group",
+		templ.Attributes{"data-testid": "page-dependency-group-detail", "data-policy-id": strconv.FormatInt(g.ID, 10), "data-csrf": csrf},
+		dependencyGroupHero(g, csrf),
+		dependencyGroupTabs(g, conds, csrf),
+	)
+}
+
+// dependencyGroupDeleteAction — delete form in the hero ⋮ dropdown.
+// Builtin groups show a disabled item with tooltip.
+templ dependencyGroupDeleteAction(g dependencygroups.Group, csrf string) {
+	<form class="hero-dropdown-form" method="post" action={ templ.SafeURL("/policy/dependency-groups/" + strconv.FormatInt(g.ID, 10) + "/delete") } onsubmit="return confirm('Delete this dependency group?')">
+		<input type="hidden" name="_csrf" value={ csrf }/>
+		if g.Builtin {
+			<button type="submit" class="hero-dropdown-item" disabled title="Builtin groups cannot be deleted">
+				<svg class="hero-dropdown-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+				Delete
+			</button>
+		} else {
+			<button type="submit" class="hero-dropdown-item">
+				<svg class="hero-dropdown-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+				Delete
+			</button>
+		}
+	</form>
+}
+
+// dependencyGroupGeneralTab — editable name/description form (builtins
+// are editable too — only deletion is protected).
+templ dependencyGroupGeneralTab(g dependencygroups.Group, csrf string) {
+	<div class="asset-detail-grid">
+		<section class="asset-detail-section card">
+			<h4 class="asset-detail-section-title">Definition</h4>
+			<form method="post" action={ templ.SafeURL("/policy/dependency-groups/" + strconv.FormatInt(g.ID, 10)) }>
+				<input type="hidden" name="_csrf" value={ csrf }/>
+				<div class="cg-field">
+					<label for="dg-f-name">Name</label>
+					<input id="dg-f-name" name="name" class="input" value={ g.Name } required/>
+				</div>
+				<div class="cg-field cg-field-wide">
+					<label for="dg-f-description">Description</label>
+					<textarea id="dg-f-description" name="description" class="input" rows="3">{ g.Description }</textarea>
+				</div>
+				<button type="submit" class="btn btn-primary" style="margin-top:8px;">Apply</button>
+			</form>
+		</section>
+	</div>
+}
+
+// dependencyGroupConditionsTab — the group's set of conditions (Task 2.3:
+// now built through the reusable ConditionBuilderDialog rather than a
+// flat inline form). Match mode lives here, not on the General tab: it's
+// meaningless without the conditions it combines, and this tab is where a
+// reader is already looking at the full condition list to judge the
+// effect of switching AND/OR. @ConditionBuilderDialog is mounted once
+// here (never on General/Modules) since it's the only tab that opens it.
+templ dependencyGroupConditionsTab(g dependencygroups.Group, conds []db.DependencyGroupCondition, csrf string) {
+	@DetailTableFrame(lists.ListIDDependencyGroupConditions, dependencyGroupConditionsHeaderActions(g, csrf)) {
+		if len(conds) == 0 {
+			@DetailEmptyRow(2, "No conditions yet. Add one below.")
+		} else {
+			for _, cond := range conds {
+				<tr>
+					<td>
+						{ conditionRowSummary(cond) }
+						if cond.Kind == string(dependencygroups.KindScript) {
+							<div class="font-mono cg-hint" style="margin:2px 0 0;">{ conditionScriptExcerpt(cond.ScriptSource) }</div>
+						}
+					</td>
+					<td style="display:flex; gap:6px; flex-wrap:wrap;">
+						<button
+							type="button"
+							class="btn"
+							data-condition-builder-open
+							data-cb-prefill={ conditionPrefillJSON(cond) }
+							data-cb-cond-id={ strconv.FormatInt(cond.ID, 10) }
+						>Edit</button>
+						<form method="post" action={ templ.SafeURL("/policy/dependency-groups/" + strconv.FormatInt(g.ID, 10) + "/conditions/" + strconv.FormatInt(cond.ID, 10) + "/remove") } onsubmit="return confirm('Remove this condition?')">
+							<input type="hidden" name="_csrf" value={ csrf }/>
+							<button type="submit" class="btn">Remove</button>
+						</form>
+					</td>
+				</tr>
+			}
+		}
+	}
+	<div id="dg-cond-error" class="cb-param-error" hidden role="alert"></div>
+	@ConditionBuilderDialog()
+	@dependencyGroupConditionScript()
+}
+
+// dependencyGroupConditionsHeaderActions — the Conditions tab's header
+// action row: the match-mode toggle (protected for builtins, mirroring
+// dependencyGroupDeleteAction's disabled+title pattern) and the "Add
+// condition" button that opens @ConditionBuilderDialog with no prefill.
+templ dependencyGroupConditionsHeaderActions(g dependencygroups.Group, csrf string) {
+	<div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+		<form method="post" action={ templ.SafeURL("/policy/dependency-groups/" + strconv.FormatInt(g.ID, 10) + "/match-mode") } style="display:flex; gap:6px; align-items:center;">
+			<input type="hidden" name="_csrf" value={ csrf }/>
+			<label for="dg-match-mode" class="cg-hint" style="margin:0;">Match mode</label>
+			if g.Builtin {
+				<select id="dg-match-mode" class="input" disabled title="Builtin groups cannot change match mode">
+					<option value="all" selected>Match all conditions (AND)</option>
+				</select>
+			} else {
+				<select id="dg-match-mode" name="match_mode" class="input" onchange="this.form.submit()">
+					<option value="all" selected?={ g.MatchMode != dependencygroups.MatchAny }>Match all conditions (AND)</option>
+					<option value="any" selected?={ g.MatchMode == dependencygroups.MatchAny }>Match any condition (OR)</option>
+				</select>
+			}
+		</form>
+		<button type="button" class="btn btn-primary" data-condition-builder-open>Add condition</button>
+	</div>
+}
+
+// dependencyGroupConditionScript — page-level wiring between
+// @ConditionBuilderDialog's `condition:save` event and the EXISTING
+// conditions-add/remove routes (Task 2.3; no new persistence endpoint).
+//
+// Values encoding: the dialog's `detail.values` array is sent as
+// REPEATED `values=` form keys (one per element), read server-side via
+// echo's FormParams() rather than a single comma-joined value — chosen
+// so a value that itself contains a comma (e.g. a "contains" match on
+// text with a comma in it) round-trips correctly. See
+// DependencyGroupConditionAdd's doc comment for the handler side of this
+// contract.
+//
+// Edit non-atomicity: there is no "update condition" route, only
+// add/remove, so editing an existing condition is remove-then-add,
+// sequenced here: POST .../conditions/:id/remove, and only on success
+// POST .../conditions (add) with the dialog's new values. This is NOT
+// atomic — if the remove succeeds but the add then fails (e.g. a
+// transient network error, or the add rejected by validation the dialog
+// itself didn't catch), the old condition is already gone and the new
+// one never landed. We can't roll the remove back (no way to
+// re-materialize the same DB id/seq), so instead: stash an error message
+// in sessionStorage and reload — the reload shows the CURRENT true state
+// (old condition gone) rather than a stale row that silently doesn't
+// match what's in the DB, and the stashed message survives the reload to
+// tell the user what happened. A plain "add" failure (not an edit) is
+// less severe — nothing was removed — so it's surfaced inline without a
+// reload.
+templ dependencyGroupConditionScript() {
+	@templ.Raw(`<script>
+(function () {
+	var root = document.querySelector('[data-testid="page-dependency-group-detail"]');
+	var errEl = document.getElementById('dg-cond-error');
+	if (!root || !errEl) return;
+	var groupID = root.dataset.policyId;
+	var csrf = root.dataset.csrf;
+
+	var pendingEditCondID = null;
+
+	function showError(msg) {
+		errEl.textContent = msg;
+		errEl.hidden = false;
+	}
+
+	// Restore an error stashed across a reload forced by a failed edit
+	// (see the templ doc comment above).
+	try {
+		var stashed = sessionStorage.getItem('dgCondError');
+		if (stashed) {
+			showError(stashed);
+			sessionStorage.removeItem('dgCondError');
+		}
+	} catch (e) { /* sessionStorage unavailable (e.g. private mode) — ignore */ }
+
+	// Capture which condition (if any) is being edited at click time,
+	// before the dialog's own click handler opens it — the dialog itself
+	// has no concept of "editing an existing row", only prefill data.
+	document.addEventListener('click', function (e) {
+		var opener = e.target.closest('[data-condition-builder-open]');
+		if (!opener) return;
+		pendingEditCondID = opener.dataset.cbCondId || null;
+	});
+
+	function conditionsURL() {
+		return '/policy/dependency-groups/' + encodeURIComponent(groupID) + '/conditions';
+	}
+
+	function addBody(detail) {
+		var p = new URLSearchParams();
+		p.set('_csrf', csrf);
+		p.set('kind', detail.kind || 'param');
+		p.set('param_path', detail.paramPath || '');
+		p.set('operator', detail.operator || '');
+		(detail.values || []).forEach(function (v) { p.append('values', v); });
+		p.set('script_source', detail.scriptSource || '');
+		p.set('script_expect', detail.scriptExpect || '');
+		return p.toString();
+	}
+
+	function postAdd(detail) {
+		return fetch(conditionsURL(), {
+			method: 'POST',
+			credentials: 'same-origin',
+			headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+			body: addBody(detail),
+		});
+	}
+
+	function postRemove(condID) {
+		return fetch(conditionsURL() + '/' + encodeURIComponent(condID) + '/remove', {
+			method: 'POST',
+			credentials: 'same-origin',
+			headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+			body: '_csrf=' + encodeURIComponent(csrf),
+		});
+	}
+
+	document.addEventListener('condition:save', function (e) {
+		var detail = e.detail || {};
+		var editID = pendingEditCondID;
+		pendingEditCondID = null;
+
+		if (editID) {
+			postRemove(editID).then(function (removeResp) {
+				if (!removeResp.ok) {
+					showError('Failed to remove the old condition; edit aborted.');
+					return;
+				}
+				postAdd(detail).then(function (addResp) {
+					if (!addResp.ok) {
+						var msg = 'The old condition was removed, but saving the edited condition failed. Please re-add it.';
+						try { sessionStorage.setItem('dgCondError', msg); } catch (err) { /* ignore */ }
+						window.location.reload();
+						return;
+					}
+					window.location.reload();
+				}).catch(function () {
+					var msg = 'The old condition was removed, but a network error stopped the edited condition from saving. Please re-add it.';
+					try { sessionStorage.setItem('dgCondError', msg); } catch (err) { /* ignore */ }
+					window.location.reload();
+				});
+			}).catch(function () {
+				showError('Network error while removing the old condition; edit aborted.');
+			});
+			return;
+		}
+
+		postAdd(detail).then(function (addResp) {
+			if (!addResp.ok) {
+				showError('Failed to add condition.');
+				return;
+			}
+			window.location.reload();
+		}).catch(function () {
+			showError('Network error while adding condition.');
+		});
+	});
+})();
+</script>`)
+}
+
+// dependencyGroupModulesTab — read-only for Task 6; module linking lands
+// in Task 7.
+templ dependencyGroupModulesTab() {
+	<div class="asset-detail-grid">
+		<section class="asset-detail-section card">
+			<p>Modules that require this group are managed from the Modules page.</p>
+		</section>
+	</div>
+}
+
+// DependencyGroupNewPage — standalone create form for a custom
+// dependency group.
+templ DependencyGroupNewPage(csrf string) {
+	@Layout("policy-dependency-groups", "New Dependency Group") {
+		@PageHeader("New Dependency Group", "Create a reusable applicability filter.", "", "")
+		<div data-testid="page-dependency-group-new">
+			<section class="asset-detail-section card" style="max-width:640px;">
+				<form method="post" action="/policy/dependency-groups">
+					<input type="hidden" name="_csrf" value={ csrf }/>
+					<div class="cg-field">
+						<label for="dg-new-name">Name</label>
+						<input id="dg-new-name" name="name" class="input" required/>
+					</div>
+					<div class="cg-field cg-field-wide">
+						<label for="dg-new-description">Description</label>
+						<textarea id="dg-new-description" name="description" class="input" rows="3"></textarea>
+					</div>
+					<button type="submit" class="btn btn-primary" style="margin-top:8px;">Create</button>
+				</form>
+			</section>
+		</div>
+	}
+}

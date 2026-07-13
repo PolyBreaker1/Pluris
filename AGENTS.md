@@ -4,40 +4,38 @@ Rules for ANY coding agent (Claude Code, opencode with Kimi/GLM/DeepSeek, etc.) 
 
 ## Absolute rules (never break)
 
-1. **NEVER touch, delete, or write to `pluris.db*` in the repo root.** It is the owner's live GUI-testing database. All tests must use `t.TempDir()` scratch paths (existing tests show the pattern).
-2. **NEVER run git commands that change history or push.** The owner manages git manually. `git status` / `git diff` for reading is fine.
-3. **All `go` commands need `-buildvcs=false`** (example: `go test -buildvcs=false -count=1 ./...`).
-4. **After editing any `.templ` file run `make gen`** (templ is at `~/go/bin/templ`; Makefile uses it). Generated `*_templ.go` files are gitignored — never edit them by hand.
-5. **After editing `db/queries/*.sql` or `db/schema/*.sql` run `sqlc generate`.** SQL comments must be plain ASCII: no em-dashes, no apostrophes/contractions — sqlc's parser breaks on them.
-6. **Never edit applied schema migrations** (`db/schema/00X_*.sql` that already ran). New schema changes = new numbered migration file. Migrations run once via the `schema_migrations` tracker in `pkg/database/database.go`; PRAGMA-bearing migrations run non-transactionally (see that file before adding one).
-7. **Definition of done for every task:** `go build -buildvcs=false ./...` clean AND `go test -buildvcs=false -count=1 ./...` fully green. Never leave the tree red.
-8. **No new dependencies** without the owner's explicit OK. Stack is fixed: Go, Echo v4, Templ, sqlc, SQLite (modernc), vanilla JS.
+1. **NEVER touch, delete, or write to `pluris.db*` in the repo root.** It is the owner's live GUI-testing database. All tests use `t.TempDir()` scratch paths.
+2. **NEVER run git commands that change history or push** (`commit`, `push`, `checkout --`, `restore`, `stash`, etc.). The owner manages git manually. `git status` / `git diff` for reading are fine.
+3. **All `go` commands need `-buildvcs=false`** (e.g. `go test -buildvcs=false -count=1 ./...`).
+4. **After editing any `.templ` file, run `make gen`** (`templ generate ./web/templates`). Generated `*_templ.go` files are gitignored — never hand-edit them. Do **not** run `templ fmt`.
+5. **After editing `db/queries/*.sql` or adding a `db/schema/*.sql` migration, run `sqlc generate`.** SQL comments must be plain ASCII — no em-dashes, no apostrophes/contractions (sqlc's parser breaks on them).
+6. **Never edit an already-applied schema migration** (`db/schema/00X_*.sql`). New change = new numbered migration file. Migrations run once via the `schema_migrations` tracker (`pkg/database/database.go`); PRAGMA-bearing migrations run non-transactionally — read that file before adding one.
+7. **Never hand-edit generated code**: `*_templ.go` (from `make gen`) and `db/*.sql.go` (from `sqlc generate`).
+8. **Tests use `t.TempDir()` scratch databases only.**
+9. **Definition of done**: `go build -buildvcs=false ./...` clean AND `go test -buildvcs=false -count=1 ./...` fully green AND `gofmt -l .` clean. Never leave the tree red.
+10. **No new dependencies** without the owner's explicit OK. Stack is fixed: Go, Echo v4, Templ, sqlc, SQLite (modernc), vanilla JS — no new JS frameworks, no bundler.
 
 ## Architecture invariants
 
-- **INV-CPP (Canonical Parameter Paths):** every parameter is addressable as `entity/section/param` (e.g. `user/identity/email`, `computer/hardware/ram_mb`). Paths are DERIVED from the registry in `catalog/params/` (`PathFor`, `ResolvePath`) — never hardcode or store them in parallel.
-- **INV-L (list registry):** every table's columns come from `web/lists/` registrations — never write ad-hoc `<thead>` markup.
-- **Detail pages:** all detail pages use `DetailShell` (`web/templates/detail_shell.templ`) — hero + tabs. Never invent a second detail layout.
-- **UX invariants:** read `docs/UX_INVARIANTS.md` before UI work.
+- **INV-CPP (Canonical Parameter Paths)**: every parameter is addressable as `entity/section/param` (e.g. `user/identity/email`, `computer/hardware/ram_mb`), derived from `catalog/params/` (`PathFor`, `ResolvePath`) — never hardcode or store paths in parallel.
+- **INV-L (list registry)**: every table's columns come from `web/lists/` registrations — never write ad-hoc `<thead>` markup. Filters/sort/dividers go through `web/static/lists.js` (`data-pluris-*` attributes) — never a per-list script.
+- **Detail pages**: every detail page uses `DetailShell` (`web/templates/detail_shell.templ`) — hero + tabs. Never invent a second detail layout.
+- **Console authorization**: gated by the `catalog/permissions/` grant registry via `pkg/authz`/`pkg/auth`, not hardcoded role checks. Treat `pkg/auth`, `pkg/authz`, `catalog/permissions`, and `pkg/database` as strong-model-only territory — see `docs/development/workflow.md`.
 
-## Where things are
+## Doc map
 
-| What | Where |
-|---|---|
-| Current implementation plan (Tasks 1-16) | `docs/superpowers/plans/2026-07-05-standardized-detail-pages.md` |
-| Approved design spec | `docs/superpowers/specs/2026-07-05-standardized-detail-pages-design.md` |
-| Work state + exactly what to do next | `docs/agent/HANDOFF.md` |
-| Which tasks fit smaller models | `docs/agent/SMALL-MODEL-TASKS.md` |
-| Funding plan (docs work, no code) | `docs/funding/` |
-| Param registry (source of truth) | `catalog/params/` |
-| DB layer (sqlc generated + migrations) | `pkg/database/`, `db/` |
-| HTTP handlers / routes | `console/handlers/`, `console/server/server.go` |
-| Templates | `web/templates/` |
+Read `docs/INDEX.md` first. Concepts and UI reference live under `docs/endpoint-management/`. The dev process (spec → plan → execution, small-model task rules) is `docs/development/workflow.md`. Current shipped/in-flight state is `docs/development/handoff.md` — read it before starting or resuming any task. Setup/build is `docs/development/setup.md`; testing conventions are `docs/development/testing.md`.
+
+Specs and plans for completed and in-flight work live under `docs/history/{specs,plans}/`, dated — permanent record, never deleted.
+
+## Documentation rule (strict)
+
+This doc tree does not accept new stray `.md` files. A new doc must fit the existing structure (`docs/endpoint-management/`, `docs/development/`, `docs/history/`, `docs/product/`) or it doesn't get written — raise it with the owner instead. Temporary working notes belong in `.superpowers/sdd/` (disposable), never loose in `docs/` or the repo root.
 
 ## Workflow
 
-- Work ONE plan task at a time, in order, exactly as written in the plan file. Do not improvise scope.
-- Tests first when the plan says so; the plan contains the test code and expected failures.
-- Before claiming done, re-read the task's requirements in the plan and check each one.
-- Update `docs/agent/HANDOFF.md` (the "Current state" section) when you finish or abandon a task, so the next agent starts accurately.
-- Run the dev server for manual checks with: `PORT=8081 go run -buildvcs=false ./cmd/console` (owner tests GUI on :8081).
+- Work one plan task at a time, in order, exactly as written. Do not improvise scope.
+- Tests first when the plan says so.
+- Before claiming done, re-check each requirement in the task against what you actually built.
+- Update `docs/development/handoff.md` when you finish or abandon a task, so the next agent starts accurately.
+- Run the dev server for manual checks with `PLURIS_HTTP_ADDR=:8081 go run -buildvcs=false ./cmd/console` (or `make dev` for the :8080 default).

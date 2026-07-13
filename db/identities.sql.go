@@ -640,43 +640,99 @@ UPDATE identities SET
     display_name = ?1,
     given_name = ?2,
     surname = ?3,
-    email = ?4,
-    title = ?5,
-    department = ?6,
-    company = ?7,
-    employee_id = ?8,
-    employee_type = ?9,
-    manager_id = ?10,
-    phone_office = ?11,
-    phone_mobile = ?12,
-    site_id = ?13,
+    initials = ?4,
+    email = ?5,
+    title = ?6,
+    department = ?7,
+    company = ?8,
+    employee_id = ?9,
+    employee_type = ?10,
+    manager_id = ?11,
+    phone_office = ?12,
+    phone_mobile = ?13,
+    phone_home = ?14,
+    fax = ?15,
+    office = ?16,
+    street_address = ?17,
+    city = ?18,
+    state = ?19,
+    postal_code = ?20,
+    country = ?21,
+    country_code = ?22,
+    home_directory = ?23,
+    home_drive = ?24,
+    profile_path = ?25,
+    logon_script = ?26,
+    account_enabled = ?27,
+    account_locked = ?28,
+    account_expires_at = ?29,
+    password_never_expires = ?30,
+    must_change_password = ?31,
+    locale = ?32,
+    timezone = ?33,
+    description = ?34,
+    notes = ?35,
+    site_id = ?36,
+    avatar_url = ?37,
     updated_at = CURRENT_TIMESTAMP
-WHERE id = ?14
+WHERE id = ?38
 RETURNING id, tenant_id, site_id, username, user_principal_name, email, display_name, given_name, surname, initials, title, department, company, employee_id, employee_type, manager_id, phone_office, phone_mobile, phone_home, fax, office, street_address, city, state, postal_code, country, country_code, home_directory, home_drive, profile_path, logon_script, account_enabled, account_locked, account_expires_at, password_hash, password_last_set_at, password_never_expires, must_change_password, last_logon_at, logon_count, bad_password_count, last_bad_password_at, role, avatar_url, locale, timezone, description, notes, created_at, updated_at
 `
 
 type UpdateIdentityParams struct {
-	DisplayName  string         `json:"display_name"`
-	GivenName    sql.NullString `json:"given_name"`
-	Surname      sql.NullString `json:"surname"`
-	Email        string         `json:"email"`
-	Title        sql.NullString `json:"title"`
-	Department   sql.NullString `json:"department"`
-	Company      sql.NullString `json:"company"`
-	EmployeeID   sql.NullString `json:"employee_id"`
-	EmployeeType sql.NullString `json:"employee_type"`
-	ManagerID    sql.NullInt64  `json:"manager_id"`
-	PhoneOffice  sql.NullString `json:"phone_office"`
-	PhoneMobile  sql.NullString `json:"phone_mobile"`
-	SiteID       sql.NullInt64  `json:"site_id"`
-	ID           int64          `json:"id"`
+	DisplayName          string         `json:"display_name"`
+	GivenName            sql.NullString `json:"given_name"`
+	Surname              sql.NullString `json:"surname"`
+	Initials             sql.NullString `json:"initials"`
+	Email                string         `json:"email"`
+	Title                sql.NullString `json:"title"`
+	Department           sql.NullString `json:"department"`
+	Company              sql.NullString `json:"company"`
+	EmployeeID           sql.NullString `json:"employee_id"`
+	EmployeeType         sql.NullString `json:"employee_type"`
+	ManagerID            sql.NullInt64  `json:"manager_id"`
+	PhoneOffice          sql.NullString `json:"phone_office"`
+	PhoneMobile          sql.NullString `json:"phone_mobile"`
+	PhoneHome            sql.NullString `json:"phone_home"`
+	Fax                  sql.NullString `json:"fax"`
+	Office               sql.NullString `json:"office"`
+	StreetAddress        sql.NullString `json:"street_address"`
+	City                 sql.NullString `json:"city"`
+	State                sql.NullString `json:"state"`
+	PostalCode           sql.NullString `json:"postal_code"`
+	Country              sql.NullString `json:"country"`
+	CountryCode          sql.NullString `json:"country_code"`
+	HomeDirectory        sql.NullString `json:"home_directory"`
+	HomeDrive            sql.NullString `json:"home_drive"`
+	ProfilePath          sql.NullString `json:"profile_path"`
+	LogonScript          sql.NullString `json:"logon_script"`
+	AccountEnabled       bool           `json:"account_enabled"`
+	AccountLocked        bool           `json:"account_locked"`
+	AccountExpiresAt     sql.NullTime   `json:"account_expires_at"`
+	PasswordNeverExpires bool           `json:"password_never_expires"`
+	MustChangePassword   bool           `json:"must_change_password"`
+	Locale               string         `json:"locale"`
+	Timezone             string         `json:"timezone"`
+	Description          sql.NullString `json:"description"`
+	Notes                sql.NullString `json:"notes"`
+	SiteID               sql.NullInt64  `json:"site_id"`
+	AvatarUrl            sql.NullString `json:"avatar_url"`
+	ID                   int64          `json:"id"`
 }
 
+// Writes every field the Users UI (detail-page editor + inline-edit field
+// API, see console/handlers/field_api.go) can set on an identity. Kept as
+// one wide UPDATE (rather than narrow SetIdentityX statements per field)
+// so IdentityService.Update stays the single write path callers use --
+// ID/AccountEnabled/AccountLocked/Role/password fields have their own
+// narrower statements below for flows that must not clobber unrelated
+// columns.
 func (q *Queries) UpdateIdentity(ctx context.Context, arg UpdateIdentityParams) (Identity, error) {
 	row := q.db.QueryRowContext(ctx, UpdateIdentity,
 		arg.DisplayName,
 		arg.GivenName,
 		arg.Surname,
+		arg.Initials,
 		arg.Email,
 		arg.Title,
 		arg.Department,
@@ -686,7 +742,30 @@ func (q *Queries) UpdateIdentity(ctx context.Context, arg UpdateIdentityParams) 
 		arg.ManagerID,
 		arg.PhoneOffice,
 		arg.PhoneMobile,
+		arg.PhoneHome,
+		arg.Fax,
+		arg.Office,
+		arg.StreetAddress,
+		arg.City,
+		arg.State,
+		arg.PostalCode,
+		arg.Country,
+		arg.CountryCode,
+		arg.HomeDirectory,
+		arg.HomeDrive,
+		arg.ProfilePath,
+		arg.LogonScript,
+		arg.AccountEnabled,
+		arg.AccountLocked,
+		arg.AccountExpiresAt,
+		arg.PasswordNeverExpires,
+		arg.MustChangePassword,
+		arg.Locale,
+		arg.Timezone,
+		arg.Description,
+		arg.Notes,
 		arg.SiteID,
+		arg.AvatarUrl,
 		arg.ID,
 	)
 	var i Identity

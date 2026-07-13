@@ -1,42 +1,38 @@
 # Pluris
 
-Open-source **Microsoft Intune + Active Directory alternative** with a Windows Group Policy compatibility layer. Linux-first unified endpoint management with CMDB-style asset tracking.
+Open-source, EU-sovereign alternative to the Microsoft **Active Directory + Group Policy + Intune** stack — built for organizations moving endpoints off Windows.
 
-**Why:** European organizations that want to move endpoints off Windows have no serious open-source replacement for the AD + Group Policy + Intune management stack — which makes the desktop migration itself impossible in practice. Pluris is built to close that gap: one self-hosted console for identities, devices, policies and software, with familiar concepts (OUs, groups, policies, enrollment) so Windows admins feel at home. Built by a Windows sysadmin who wanted the tool to exist, developed in the open under AGPLv3 with heavy use of AI-assisted engineering (Claude Code).
+Pluris is a family of three interconnected sub-products:
 
-> ⚠️ **Project status: pre-beta.** The management console, data model and policy catalog are real and tested; the endpoint agent and policy enforcement are not built yet. Follow along or contribute — do not run this in production.
+- **Pluris Endpoint Management** — the console (this repo's current focus): identity/asset management, an endpoint policy catalog with Windows GP mappings, and zero-trust console authorization. Built and tested.
+- **Pluris ITSM** *(planned)* — tickets/incidents, a self-service portal, software assignment. Not started; requirements gathered.
+- **Pluris OS** *(under consideration)* — a managed Linux image with the agent pre-enrolled. No commitment.
 
-> **Key docs**: `docs/Pluris UX structure plan.md`, `docs/UX_INVARIANTS.md`, `docs/ARCHITECTURE_DECISIONS.md`
+See `docs/product/pluris.md` for the full family pitch.
 
-<!-- Screenshots: docs/media/ (demo GIF + console screenshots) -->
+> **Project status: pre-beta.** The management console, data model, and policy catalog are real, built, and tested. The endpoint agent and policy enforcement on real devices are **not built yet** — do not run this in production, and do not expect it to manage a live fleet today.
 
----
-
-## Current Status
-
-**Working today:**
-- ✅ Authentication, sessions, CSRF protection, first-run setup flow
-- ✅ Multi-tenant data model (tenants, sites, groups) on SQLite (WAL, zero-config, run-once migrations)
-- ✅ Asset management (Computers, Servers, Printers, Desks) with list + standardized detail pages (hero + tabs)
-- ✅ User/identity management with roles groundwork
-- ✅ Parameter registry with **canonical parameter paths** (`computer/hardware/ram_mb`) — one addressing scheme for filtering, policy targeting and cross-feature references
-- ✅ Policy catalog with Windows Group Policy equivalents mapped per policy
-- ✅ Modern list UX: instant search, quick filters, advanced filter builder, column picker
-- ✅ Full test suite (`go test ./...`) covering handlers, services, DB layer and templates
-
-**In development (current plan: `docs/superpowers/plans/`):**
-- 🔄 Standardized detail pages for all entities, live Groups/Policies/Roles tabs
-- 🔄 Role model (Super Admin / Admin / Technician / User + custom roles)
-- 🔄 Policy assignment resolution (direct / group / site / tenant)
-
-**Planned next:**
-- ⏳ Linux endpoint agent (enrollment, inventory, policy application)
-- ⏳ Group Policy compatibility layer (apply Windows-equivalent policies to Linux)
-- ⏳ Software deployment, scripts, Wine application groups
+Built by a Windows sysadmin who wanted this tool to exist, developed in the open under AGPLv3 with heavy use of AI-assisted engineering (Claude Code).
 
 ---
 
-## Quickstart
+## What works today (Endpoint Management)
+
+- Authentication, sessions, CSRF protection, first-run setup wizard
+- Multi-tenant data model (tenants, sites, groups) on SQLite (WAL, zero-config, auto-migrated)
+- Asset management (Computers, Servers, Printers, Desks) with standardized list + detail pages
+- Identity/user management with AD-familiar fields and a role model (Super Admin/Admin/Technician/User) including hierarchical role inheritance and group-assigned roles
+- Canonical parameter registry — one addressing scheme (`computer/hardware/ram_mb`) for filtering, policy targeting, and cross-feature references
+- Endpoint policy catalog with Windows Group Policy equivalents mapped per policy, plus dependency groups (a WMI-filter analog)
+- Pluris Policy: zero-trust, GLPI-style console permission system with a full role/grant matrix UI
+- Inline field editing, avatar upload, full-page create flows
+- Full Go test suite covering handlers, services, the DB layer, and templates
+
+**Not built yet:** the Linux endpoint agent, and any policy enforcement on a real device.
+
+---
+
+## Getting started
 
 ### Prerequisites
 
@@ -45,124 +41,55 @@ Open-source **Microsoft Intune + Active Directory alternative** with a Windows G
 sudo apt update && sudo apt install -y golang-go build-essential
 ```
 
-**Other:**
-- Go 1.22+ 
-- Make
-- SQLite3 (usually pre-installed)
+**Other:** Go 1.22+, Make, SQLite3 (usually pre-installed).
 
 ### Run
 
 ```bash
-make doctor       # Verify Go installation
-make tools        # Install templ codegen + sqlc
-make dev          # Run at http://localhost:8080
+make doctor       # verify Go installation
+make tools        # install templ codegen
+make dev          # run at http://localhost:8080
 ```
 
 The database (`pluris.db`) is created automatically on first run.
 
----
-
-## Project Layout
-
-```
-├── cmd/
-│   ├── console/          # Main server binary
-│   ├── seed/             # Database seeder
-│   └── gendocs/          # Documentation generator
-├── catalog/
-│   ├── assets/           # Asset type definitions
-│   ├── params/           # Parameter registry (single source of truth)
-│   ├── policies/         # Policy catalog definitions
-│   ├── policymodules/    # Policy module types
-│   └── configgroups/     # Configuration group types
-├── console/
-│   ├── handlers/         # HTTP route handlers
-│   └── server/           # Echo router + middleware
-├── db/
-│   ├── schema/           # SQLite migrations
-│   ├── queries/          # SQL queries (sqlc)
-│   └── *.go              # Generated Go code
-├── pkg/
-│   ├── database/         # Database wrapper
-│   ├── services/         # Business logic layer
-│   └── extension/        # Extension framework
-├── web/
-│   ├── templates/        # Templ components
-│   ├── static/           # CSS/JS assets
-│   └── lists/            # Table field definitions
-└── docs/                 # Documentation
-```
-
----
-
-## Database
-
-SQLite with WAL mode for concurrent access. Schema covers:
-
-| Entity | Tables |
-|--------|--------|
-| Multi-tenancy | tenants, sites, groups |
-| Assets | assets, asset_links, group_memberships |
-| Users | identities |
-| Policies | custom_policies, policy_modules, policy_module_versions |
-| Configuration | configuration_groups, configuration_group_bindings, configuration_group_assignments |
-| Deployment | module_installations, module_installation_dependencies |
-
-All queries use [sqlc](https://sqlc.dev/) for type-safe generated Go code.
-
-### Regenerate after schema changes
+### Other commands
 
 ```bash
-sqlc generate         # Regenerate db/*.go
-make build            # Rebuild server
+make build        # build console binary into bin/
+make test         # run all tests
+make gen          # regenerate templ codegen
+make vet          # go vet
+make clean        # remove generated code + binaries
 ```
 
 ---
 
-## Development
+## Project layout
 
-### Commands
-
-```bash
-make dev              # Run with hot reload
-make build            # Build binary to bin/
-make test             # Run all tests
-make gen              # Regenerate templ + sqlc
 ```
-
-### Agent-assisted development
-
-This repo is developed with AI coding agents. `AGENTS.md` (repo root) holds the strict rules any agent must follow; `docs/agent/HANDOFF.md` tracks the current work state. Human contributors: see `CONTRIBUTING.md`.
-
----
-
-## Architecture Decisions
-
-Key decisions documented in `docs/ARCHITECTURE_DECISIONS.md` (ADR-001..009):
-
-- **ADR-001**: Build the console fresh; do not fork OpenUEM wholesale
-- **ADR-004**: UX invariants & Single Source of Truth UI
-- **ADR-006**: Policy Module system for enforcement
-- **ADR-008**: Extension framework (modules, profiles, scripts, wine, packages)
-
-> Note: the SQLite + sqlc storage choice (replacing the originally planned
-> PostgreSQL + Ent) has no ADR yet — see PROGRESS.md "Divergence from ADRs".
+├── cmd/console/          # Main server binary
+├── catalog/              # Asset types, params, policy catalog, policy modules, dependency groups
+├── console/               # HTTP handlers, Echo router + middleware
+├── db/                    # SQLite schema migrations + sqlc-generated queries
+├── pkg/                   # Database, services, auth/authz, extension framework
+├── web/                   # Templ templates, static assets, list registry
+└── docs/                  # Documentation
+```
 
 ---
 
 ## Documentation
 
-| Document | Purpose |
-|----------|---------|
-| `docs/Pluris UX structure plan.md` | Canonical IA spec (user-authored) |
-| `docs/UX_INVARIANTS.md` | Formal contract for all UI changes |
-| `docs/ARCHITECTURE_DECISIONS.md` | ADR-001 through ADR-009 |
-| `docs/PARAMETER-REGISTRY.md` | Adding new parameters/columns |
-| `docs/DATABASE-IMPLEMENTATION.md` | Database design and queries |
-| `docs/MODERN-FILTER-SYSTEM.md` | Filter UI implementation |
+Start at **`docs/INDEX.md`** — the map of every doc in this repo, wiki-linked and organized by product. Key entry points:
+
+- `docs/product/pluris.md` — the product family and mission
+- `docs/product/endpoint-management.md` — this repo's product charter
+- `docs/product/roadmap.md` — shipped milestones and what's next
+- `AGENTS.md` — rules for any AI coding agent working in this repo
 
 ---
 
 ## License
 
-AGPLv3 — See LICENSE file.
+AGPLv3 — see `LICENSE`.

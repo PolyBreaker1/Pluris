@@ -6,6 +6,7 @@ import (
 
 	"github.com/pluris/pluris/catalog/assets"
 	"github.com/pluris/pluris/catalog/configgroups"
+	"github.com/pluris/pluris/catalog/dependencygroups"
 	"github.com/pluris/pluris/catalog/identities"
 	"github.com/pluris/pluris/catalog/params"
 	"github.com/pluris/pluris/catalog/policies"
@@ -25,9 +26,9 @@ import (
 // 1. Dashboard
 templ DashboardPage() {
 	@Layout("dashboard", "Dashboard") {
-		@PageHeader("Overview", "Dashboard",
+		@PageHeader("Dashboard",
 			"Adjustable scalable tiles. Tile data sources picked from the shared hierarchy (Tenant → Site → Group → Asset | Identity). Display types: graph, text, update view, table, count, status grid.",
-			"Add tile")
+			"Add tile", "")
 		<div data-testid="page-dashboard">
 			@EmptyState("inbox", "No tiles configured yet",
 				"Once Increment 4 lands, admins compose dashboards by picking a hierarchical data source and a display type for each tile. Self-service users get a fixed read-only preset.",
@@ -50,12 +51,13 @@ templ AssetsPage(subtype string, rows []assets.Asset) {
 	{{ st := subtypeFromSlug(subtype) }}
 	@Layout("assets-"+subtype, "Assets — "+subtypeLabel(subtype)) {
 		<div class="page-content">
-			@PageHeader("Assets", subtypeLabel(subtype), assetsDescription(subtype), assetsAddLabel(subtype))
-			@AssetSubtypeTabs(subtype)
+			@PageHeader(subtypeLabel(subtype), assetsDescription(subtype), assetsAddLabel(subtype), "/assets/"+subtype+"/new")
 		</div>
-		<div data-testid={ "page-assets-" + subtype }
+		<div
+			data-testid={ "page-assets-" + subtype }
 			data-canonical-editor="AssetEditor"
-			data-asset-subtype={ string(st) }>
+			data-asset-subtype={ string(st) }
+		>
 			@assetsList(rows, st, subtype)
 			@assetListNavigationScript(subtype)
 		</div>
@@ -70,7 +72,6 @@ templ assetsList(rows []assets.Asset, st assets.Subtype, subtype string) {
 	{{ filterJSON := params.FilterConfigJSON(string(st)) }}
 	<div data-pluris-list={ listID } data-filter-builder={ listID }>
 		@templ.Raw(`<script type="application/json" data-filter-config>` + filterJSON + `</script>`)
-		
 		<!-- Modern Filter System -->
 		<div class="pluris-filters">
 			<!-- Filter Header: Search + Quick Actions -->
@@ -80,10 +81,12 @@ templ assetsList(rows []assets.Asset, st assets.Subtype, subtype string) {
 						<circle cx="11" cy="11" r="8"></circle>
 						<path d="m21 21-4.35-4.35"></path>
 					</svg>
-					<input type="search" 
-						id="filter-search-input" 
-						placeholder="Search across all fields..." 
-						autocomplete="off">
+					<input
+						type="search"
+						id="filter-search-input"
+						placeholder="Search across all fields..."
+						autocomplete="off"
+					/>
 					<button class="filter-search-clear" id="filter-search-clear" style="display:none;">✕</button>
 				</div>
 				<div class="filter-quick-actions">
@@ -101,19 +104,16 @@ templ assetsList(rows []assets.Asset, st assets.Subtype, subtype string) {
 					Add filter
 				</button>
 			</div>
-
 			<!-- Active Filters (Chips) -->
 			<div class="filter-active" id="filter-active">
 				<span class="filter-active-label">Active filters:</span>
 				<div id="filter-chips" style="display: flex; gap: 8px; flex-wrap: wrap; flex: 1;"></div>
 				<button class="filter-clear-all" id="filter-clear-all">Clear all</button>
 			</div>
-
 			<!-- Advanced Filter Builder -->
 			<div class="filter-builder" id="filter-builder">
 				<div id="filter-builder-rows"></div>
 			</div>
-
 			<!-- Results Footer -->
 			<div class="filter-results">
 				<div id="filter-results-count">
@@ -122,53 +122,54 @@ templ assetsList(rows []assets.Asset, st assets.Subtype, subtype string) {
 				<button class="filter-toggle-advanced" id="filter-toggle-advanced">Advanced</button>
 			</div>
 		</div>
-
 		<!-- Empty State -->
 		<div class="filter-empty-state" id="filter-empty-state">
 			<div class="filter-empty-icon">🔍</div>
 			<div class="filter-empty-title">No assets match your filters</div>
 			<div class="filter-empty-desc">Try adjusting your search or filters</div>
 		</div>
-
 		<!-- Assets Table -->
-		<section class="pm-table-wrap"
+		<section
+			class="pm-table-wrap"
 			data-list-id={ listID }
-			data-default-cols={ lists.DefaultVisibleKeys(listID) }>
+			data-default-cols={ lists.DefaultVisibleKeys(listID) }
+		>
 			<div class="pm-table-head">
 				@ColumnPickerButton(listID)
 			</div>
 			@ConceptEmptyState("assets", listID)
 			<table class="pm-table pluris-list" data-list-id={ listID }>
-			<thead>
-				<tr>
-					for _, f := range fields {
-						if f.IsSortable() {
-							<th data-field={ f.Key } data-width={ f.Width } data-sort-type={ f.Sort } title={ f.Description } class="th-sortable">
-								<button type="button" class="th-sort-btn" data-sort-key={ f.Key }>
-									<span>{ f.Label }</span>
-									<span class="th-sort-ind" aria-hidden="true">↕</span>
-								</button>
-							</th>
-						} else {
-							<th data-field={ f.Key } data-width={ f.Width } title={ f.Description }>{ f.Label }</th>
+				<thead>
+					<tr>
+						for _, f := range fields {
+							if f.IsSortable() {
+								<th data-field={ f.Key } data-width={ f.Width } data-sort-type={ f.Sort } title={ f.Description } class="th-sortable">
+									<button type="button" class="th-sort-btn" data-sort-key={ f.Key }>
+										<span>{ f.Label }</span>
+										<span class="th-sort-ind" aria-hidden="true">↕</span>
+									</button>
+								</th>
+							} else {
+								<th data-field={ f.Key } data-width={ f.Width } title={ f.Description }>{ f.Label }</th>
+							}
 						}
+					</tr>
+				</thead>
+				<tbody>
+					{{ rowIdx := 0 }}
+					for _, a := range rows {
+						@templ.Raw(`<tr data-detail-id="` + a.ID + `" data-asset-id="` + a.ID + `" data-searchable="` + assetSearchBlobEscaped(a) + `" data-row-index="` + strconv.Itoa(rowIdx) + `" tabindex="0"` + assetFilterAttrs(a) + `>`)
+						for _, f := range fields {
+							<td data-field={ f.Key } data-sort={ lists.RenderAssetCellSort(f.Key, a) }>@templ.Raw(lists.RenderAssetCell(f.Key, a))
+</td>
+						}
+						@templ.Raw(`</tr>`)
+						{{ rowIdx++ }}
 					}
-				</tr>
-			</thead>
-			<tbody>
-				{{ rowIdx := 0 }}
-			for _, a := range rows {
-				@templ.Raw(`<tr data-detail-id="` + a.ID + `" data-asset-id="` + a.ID + `" data-searchable="` + assetSearchBlobEscaped(a) + `" data-row-index="` + strconv.Itoa(rowIdx) + `" tabindex="0"` + assetFilterAttrs(a) + `>`)
-					for _, f := range fields {
-						<td data-field={ f.Key } data-sort={ lists.RenderAssetCellSort(f.Key, a) }>@templ.Raw(lists.RenderAssetCell(f.Key, a))</td>
-					}
-				@templ.Raw(`</tr>`)
-				{{ rowIdx++ }}
-			}
-			</tbody>
-		</table>
-		@templ.Raw(columnPickerScript)
-	</section>
+				</tbody>
+			</table>
+			@templ.Raw(columnPickerScript)
+		</section>
 	</div>
 }
 
@@ -202,15 +203,6 @@ templ assetListNavigationScript(subtype string) {
 		});
 	})();
 	</script>
-}
-
-templ AssetSubtypeTabs(active string) {
-	<div class="tabs">
-		@tabLink("/assets/computers", "Computers", "computers", active)
-		@tabLink("/assets/servers", "Servers", "servers", active)
-		@tabLink("/assets/printers", "Printers", "printers", active)
-		@tabLink("/assets/desks", "Desks", "desks", active)
-	</div>
 }
 
 func assetsDescription(subtype string) string {
@@ -249,8 +241,7 @@ templ AssetDetailPage(subtype string, id string) {
 	{{ a := assets.FindByID(id) }}
 	if a == nil {
 		@Layout("assets-"+subtype, "Asset not found") {
-			@PageHeader("Assets", "Not found", "The asset ID \""+id+"\" does not exist in the catalog.", "")
-			@AssetSubtypeTabs(subtype)
+			@PageHeader("Not found", "The asset ID \""+id+"\" does not exist in the catalog.", "", "")
 			<div class="card">
 				<div class="empty-state">
 					<h3>Asset not found</h3>
@@ -292,39 +283,54 @@ templ assetOwnerPicker(subtype string, a assets.Asset, owners []identities.Ident
 	</form>
 }
 
-// assetGeneralTab — the schema-driven field grid (moved from the old
-// single-tab page body). Every field value now carries its canonical
-// parameter path via data-path (INV-CPP) so cross-page features can
-// address the exact parameter being displayed.
+// assetGeneralTab — the schema-driven field grid. Every field value
+// carries its canonical parameter path (data-path, INV-CPP).
+// Each section gets a per-section Edit button (pencil icon) that toggles
+// only that tile's [data-editable] fields to <input> elements.
+// ID/tenant fields are read-only; all others are editable.
 templ assetGeneralTab(a assets.Asset) {
 	<div class="asset-detail-grid">
 		{{ sections := buildDetailSections(&a) }}
 		for _, sec := range sections {
-			<section class="asset-detail-section card">
-				<h4 class="asset-detail-section-title">{ sec.Label }</h4>
+			<section class="asset-detail-section card" data-section={ sec.Key }>
+				<div class="section-header">
+					<h4 class="asset-detail-section-title">{ sec.Label }</h4>
+					<div class="section-actions">
+						<button type="button" class="section-edit-btn" onclick="toggleSectionEdit(this)" title="Edit section">
+							<svg class="section-edit-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"></path><path d="m15 5 4 4"></path></svg>
+						</button>
+						<button type="button" class="section-cancel-btn" style="display:none" onclick="cancelSectionEdit(this)">Cancel</button>
+						<button type="button" class="section-save-btn btn-primary" style="display:none" onclick="saveSectionEdit(this)">Save</button>
+					</div>
+				</div>
 				<dl class="asset-detail-defs">
 					for _, f := range sec.Fields {
 						<dt>
 							@fieldIcon(f.Key)
 							{ f.Label }
 						</dt>
-						<dd>
-							<span class="field-value" data-copy={ f.RawValue } title="Click to copy" { assetFieldPathAttrs(a.Subtype, f.Key)... }>
-								@templ.Raw(f.Value)
-								<svg class="copy-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-									<rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-									<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-								</svg>
-							</span>
-						</dd>
+						if assets.NonEditablePayloadKeys[f.Key] {
+							<dd>
+								<span class="field-value" data-readonly="true" data-copy={ f.RawValue } title="Click to copy" { assetFieldPathAttrs(a.Subtype, f.Key)... }>
+									@templ.Raw(f.Value)
+								</span>
+							</dd>
+						} else {
+							<dd>
+								<span class="field-value" data-editable="true" data-field-key={ f.Key } data-copy={ f.RawValue } title="Click to copy" { assetFieldPathAttrs(a.Subtype, f.Key)... }>
+									@templ.Raw(f.Value)
+									<svg class="copy-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+										<rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+										<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+									</svg>
+								</span>
+							</dd>
+						}
 					}
 				</dl>
 			</section>
 		}
 	</div>
-	<footer class="asset-detail-footer">
-		<small class="cg-muted">Database-backed. Editing coming in next increment.</small>
-	</footer>
 	@assetDetailCopyScript()
 }
 
@@ -350,10 +356,32 @@ templ assetPoliciesTab(subtype string, a assets.Asset, applied []services.Applie
 	}
 }
 
-// assetConfigurationTab — frame only until the policy-assignment task (Task 14).
-templ assetConfigurationTab() {
+// assetConfigurationTab — one row per policy-bound value (Task 14).
+// Reported values await the endpoint agent; Override awaits the
+// permission editor.
+templ assetConfigurationTab(applied []services.AppliedPolicy) {
 	@DetailTableFrame(lists.ListIDAssetConfiguration, nil) {
-		@DetailEmptyRow(5, "Configuration view arrives with the policy-assignment task.")
+		@assetConfigurationRows(applied)
+	}
+}
+
+// assetConfigurationRows renders the flattened value rows, or the empty
+// row when no applied policy binds any value.
+templ assetConfigurationRows(applied []services.AppliedPolicy) {
+	if configurationValueCount(applied) == 0 {
+		@DetailEmptyRow(5, "No policy-managed configuration values yet.")
+	} else {
+		for _, ap := range applied {
+			for _, v := range ap.Values {
+				<tr>
+					<td><span class="font-mono" title={ v.Label }>{ v.Key }</span></td>
+					<td class="font-mono">{ v.Value }</td>
+					<td><span class="cg-muted">awaiting agent</span></td>
+					<td><span class={ "asset-chip " + appliedStatusChipClass(ap.Status) }>{ ap.Status }</span></td>
+					<td><button type="button" class="btn" disabled title="Requires the Assets permission: Override policy-set configuration (permission editor coming)">Override</button></td>
+				</tr>
+			}
+		}
 	}
 }
 
@@ -414,66 +442,66 @@ templ assetLogsTab(logs []db.ActivityLog) {
 // fieldIcon renders the appropriate icon for a field key
 templ fieldIcon(key string) {
 	switch key {
-	case "name", "hostname":
-		@IconHostname()
-	case "id":
-		@IconID()
-	case "uuid":
-		@IconUUID()
-	case "tenant":
-		@IconTenant()
-	case "site":
-		@IconSite()
-	case "owner":
-		@IconOwner()
-	case "labels":
-		@IconLabel()
-	case "fqdn":
-		@IconNetwork()
-	case "os_family":
-		@IconOS()
-	case "os_distribution":
-		@IconOS()
-	case "os_version":
-		@IconOS()
-	case "kernel_version":
-		@IconKernel()
-	case "architecture":
-		@IconArchitecture()
-	case "cpu":
-		@IconCPU()
-	case "ram_mb":
-		@IconRAM()
-	case "storage_mb":
-		@IconStorage()
-	case "serial_number":
-		@IconID()
-	case "enrollment_state":
-		@IconEnrollment()
-	case "enrolled_at":
-		@IconCalendar()
-	case "last_seen_at":
-		@IconCalendar()
-	case "agent_version":
-		@IconAgent()
-	case "lifecycle_state":
-		@IconLifecycle()
-	case "vendor":
-		@IconVendor()
-	case "location":
-		@IconLocation()
-	case "purchase_date":
-		@IconCalendar()
-	case "warranty_expires":
-		@IconWarranty()
-	case "server_role":
-		@IconServerRole()
-	case "services":
-		@IconServices()
-	case "uptime_since":
-		@IconUptime()
-	default:
-		// No icon for unknown fields
+		case "name", "hostname":
+			@IconHostname()
+		case "id":
+			@IconID()
+		case "uuid":
+			@IconUUID()
+		case "tenant":
+			@IconTenant()
+		case "site":
+			@IconSite()
+		case "owner":
+			@IconOwner()
+		case "labels":
+			@IconLabel()
+		case "fqdn":
+			@IconNetwork()
+		case "os_family":
+			@IconOS()
+		case "os_distribution":
+			@IconOS()
+		case "os_version":
+			@IconOS()
+		case "kernel_version":
+			@IconKernel()
+		case "architecture":
+			@IconArchitecture()
+		case "cpu":
+			@IconCPU()
+		case "ram_mb":
+			@IconRAM()
+		case "storage_mb":
+			@IconStorage()
+		case "serial_number":
+			@IconID()
+		case "enrollment_state":
+			@IconEnrollment()
+		case "enrolled_at":
+			@IconCalendar()
+		case "last_seen_at":
+			@IconCalendar()
+		case "agent_version":
+			@IconAgent()
+		case "lifecycle_state":
+			@IconLifecycle()
+		case "vendor":
+			@IconVendor()
+		case "location":
+			@IconLocation()
+		case "purchase_date":
+			@IconCalendar()
+		case "warranty_expires":
+			@IconWarranty()
+		case "server_role":
+			@IconServerRole()
+		case "services":
+			@IconServices()
+		case "uptime_since":
+			@IconUptime()
+		default:
+			// No icon for unknown fields
 	}
 }
 
@@ -501,69 +529,69 @@ templ assetDetailDeviceIcon(a *assets.Asset) {
 	{{ iconURL := assetOSIconURL(*a) }}
 	{{ isWindows := IsWindowsOS(*a) }}
 	switch a.Subtype {
-	case assets.SubtypeComputer:
-		<div class="asset-detail-device-frame">
-			<svg class="asset-detail-device-svg" viewBox="0 0 120 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-				<rect x="10" y="8" width="100" height="64" rx="6" fill="#0f1e34" stroke="rgba(0,212,255,0.3)" stroke-width="1.5"/>
-				<rect x="16" y="14" width="88" height="52" rx="3" fill="#1a2940"/>
-				<rect x="50" y="76" width="20" height="8" rx="2" fill="#1a2940" stroke="rgba(0,212,255,0.2)" stroke-width="1"/>
-				<rect x="35" y="84" width="50" height="6" rx="3" fill="#1a2940" stroke="rgba(0,212,255,0.2)" stroke-width="1"/>
-			</svg>
-			if isWindows {
-				<svg class="asset-detail-os-icon" viewBox="0 0 24 24" fill="#00a4ef">
-					<path d="M3 5.5L10.5 4.3V11.5H3V5.5Z"/>
-					<path d="M11.5 4.1L21 2.5V11.5H11.5V4.1Z"/>
-					<path d="M3 12.5H10.5V19.7L3 18.5V12.5Z"/>
-					<path d="M11.5 12.5H21V21.5L11.5 19.9V12.5Z"/>
+		case assets.SubtypeComputer:
+			<div class="asset-detail-device-frame">
+				<svg class="asset-detail-device-svg" viewBox="0 0 120 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+					<rect x="10" y="8" width="100" height="64" rx="6" fill="#0f1e34" stroke="rgba(0,212,255,0.3)" stroke-width="1.5"></rect>
+					<rect x="16" y="14" width="88" height="52" rx="3" fill="#1a2940"></rect>
+					<rect x="50" y="76" width="20" height="8" rx="2" fill="#1a2940" stroke="rgba(0,212,255,0.2)" stroke-width="1"></rect>
+					<rect x="35" y="84" width="50" height="6" rx="3" fill="#1a2940" stroke="rgba(0,212,255,0.2)" stroke-width="1"></rect>
 				</svg>
-			} else if iconURL != "" {
-				<img class="asset-detail-os-icon" src={ iconURL } alt="OS icon" loading="lazy" onerror="this.style.display='none'"/>
-			}
-		</div>
-	case assets.SubtypeServer:
-		<div class="asset-detail-device-frame">
-			<svg class="asset-detail-device-svg" viewBox="0 0 120 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-				<rect x="20" y="10" width="80" height="24" rx="4" fill="#0f1e34" stroke="rgba(0,212,255,0.3)" stroke-width="1.5"/>
-				<rect x="20" y="38" width="80" height="24" rx="4" fill="#0f1e34" stroke="rgba(0,212,255,0.3)" stroke-width="1.5"/>
-				<rect x="20" y="66" width="80" height="24" rx="4" fill="#0f1e34" stroke="rgba(0,212,255,0.3)" stroke-width="1.5"/>
-				<circle cx="32" cy="22" r="3" fill="#00d4ff"/>
-				<circle cx="32" cy="50" r="3" fill="#00d4ff"/>
-				<circle cx="32" cy="78" r="3" fill="#4ade80"/>
-				<rect x="42" y="20" width="40" height="4" rx="2" fill="#1a2940"/>
-				<rect x="42" y="48" width="40" height="4" rx="2" fill="#1a2940"/>
-				<rect x="42" y="76" width="40" height="4" rx="2" fill="#1a2940"/>
-			</svg>
-			if isWindows {
-				<svg class="asset-detail-os-icon asset-detail-os-icon-server" viewBox="0 0 24 24" fill="#00a4ef">
-					<path d="M3 5.5L10.5 4.3V11.5H3V5.5Z"/>
-					<path d="M11.5 4.1L21 2.5V11.5H11.5V4.1Z"/>
-					<path d="M3 12.5H10.5V19.7L3 18.5V12.5Z"/>
-					<path d="M11.5 12.5H21V21.5L11.5 19.9V12.5Z"/>
+				if isWindows {
+					<svg class="asset-detail-os-icon" viewBox="0 0 24 24" fill="#00a4ef">
+						<path d="M3 5.5L10.5 4.3V11.5H3V5.5Z"></path>
+						<path d="M11.5 4.1L21 2.5V11.5H11.5V4.1Z"></path>
+						<path d="M3 12.5H10.5V19.7L3 18.5V12.5Z"></path>
+						<path d="M11.5 12.5H21V21.5L11.5 19.9V12.5Z"></path>
+					</svg>
+				} else if iconURL != "" {
+					<img class="asset-detail-os-icon" src={ iconURL } alt="OS icon" loading="lazy" onerror="this.style.display='none'"/>
+				}
+			</div>
+		case assets.SubtypeServer:
+			<div class="asset-detail-device-frame">
+				<svg class="asset-detail-device-svg" viewBox="0 0 120 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+					<rect x="20" y="10" width="80" height="24" rx="4" fill="#0f1e34" stroke="rgba(0,212,255,0.3)" stroke-width="1.5"></rect>
+					<rect x="20" y="38" width="80" height="24" rx="4" fill="#0f1e34" stroke="rgba(0,212,255,0.3)" stroke-width="1.5"></rect>
+					<rect x="20" y="66" width="80" height="24" rx="4" fill="#0f1e34" stroke="rgba(0,212,255,0.3)" stroke-width="1.5"></rect>
+					<circle cx="32" cy="22" r="3" fill="#00d4ff"></circle>
+					<circle cx="32" cy="50" r="3" fill="#00d4ff"></circle>
+					<circle cx="32" cy="78" r="3" fill="#4ade80"></circle>
+					<rect x="42" y="20" width="40" height="4" rx="2" fill="#1a2940"></rect>
+					<rect x="42" y="48" width="40" height="4" rx="2" fill="#1a2940"></rect>
+					<rect x="42" y="76" width="40" height="4" rx="2" fill="#1a2940"></rect>
 				</svg>
-			} else if iconURL != "" {
-				<img class="asset-detail-os-icon asset-detail-os-icon-server" src={ iconURL } alt="OS icon" loading="lazy" onerror="this.style.display='none'"/>
-			}
-		</div>
-	case assets.SubtypePrinter:
-		<svg class="asset-detail-device-svg" viewBox="0 0 120 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-			<rect x="30" y="10" width="60" height="20" rx="3" fill="#1a2940" stroke="rgba(0,212,255,0.2)" stroke-width="1"/>
-			<rect x="20" y="30" width="80" height="40" rx="5" fill="#0f1e34" stroke="rgba(0,212,255,0.3)" stroke-width="1.5"/>
-			<rect x="32" y="70" width="56" height="22" rx="3" fill="#1a2940" stroke="rgba(0,212,255,0.2)" stroke-width="1"/>
-			<rect x="38" y="76" width="44" height="3" rx="1.5" fill="rgba(0,212,255,0.3)"/>
-			<rect x="38" y="82" width="30" height="3" rx="1.5" fill="rgba(0,212,255,0.2)"/>
-			<circle cx="88" cy="50" r="4" fill="#00d4ff" opacity="0.6"/>
-		</svg>
-	case assets.SubtypeDesk:
-		<svg class="asset-detail-device-svg" viewBox="0 0 120 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-			<rect x="25" y="10" width="70" height="44" rx="5" fill="#0f1e34" stroke="rgba(0,212,255,0.3)" stroke-width="1.5"/>
-			<rect x="30" y="15" width="60" height="34" rx="2" fill="#1a2940"/>
-			<rect x="55" y="54" width="10" height="8" rx="2" fill="#1a2940"/>
-			<rect x="35" y="62" width="50" height="4" rx="2" fill="#1a2940" stroke="rgba(0,212,255,0.2)" stroke-width="1"/>
-			<rect x="10" y="72" width="100" height="6" rx="3" fill="#0f1e34" stroke="rgba(0,212,255,0.15)" stroke-width="1"/>
-			<rect x="10" y="78" width="3" height="14" rx="1.5" fill="#1a2940"/>
-			<rect x="107" y="78" width="3" height="14" rx="1.5" fill="#1a2940"/>
-			<circle cx="60" cy="32" r="8" fill="none" stroke="rgba(0,212,255,0.3)" stroke-width="1"/>
-		</svg>
+				if isWindows {
+					<svg class="asset-detail-os-icon asset-detail-os-icon-server" viewBox="0 0 24 24" fill="#00a4ef">
+						<path d="M3 5.5L10.5 4.3V11.5H3V5.5Z"></path>
+						<path d="M11.5 4.1L21 2.5V11.5H11.5V4.1Z"></path>
+						<path d="M3 12.5H10.5V19.7L3 18.5V12.5Z"></path>
+						<path d="M11.5 12.5H21V21.5L11.5 19.9V12.5Z"></path>
+					</svg>
+				} else if iconURL != "" {
+					<img class="asset-detail-os-icon asset-detail-os-icon-server" src={ iconURL } alt="OS icon" loading="lazy" onerror="this.style.display='none'"/>
+				}
+			</div>
+		case assets.SubtypePrinter:
+			<svg class="asset-detail-device-svg" viewBox="0 0 120 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+				<rect x="30" y="10" width="60" height="20" rx="3" fill="#1a2940" stroke="rgba(0,212,255,0.2)" stroke-width="1"></rect>
+				<rect x="20" y="30" width="80" height="40" rx="5" fill="#0f1e34" stroke="rgba(0,212,255,0.3)" stroke-width="1.5"></rect>
+				<rect x="32" y="70" width="56" height="22" rx="3" fill="#1a2940" stroke="rgba(0,212,255,0.2)" stroke-width="1"></rect>
+				<rect x="38" y="76" width="44" height="3" rx="1.5" fill="rgba(0,212,255,0.3)"></rect>
+				<rect x="38" y="82" width="30" height="3" rx="1.5" fill="rgba(0,212,255,0.2)"></rect>
+				<circle cx="88" cy="50" r="4" fill="#00d4ff" opacity="0.6"></circle>
+			</svg>
+		case assets.SubtypeDesk:
+			<svg class="asset-detail-device-svg" viewBox="0 0 120 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+				<rect x="25" y="10" width="70" height="44" rx="5" fill="#0f1e34" stroke="rgba(0,212,255,0.3)" stroke-width="1.5"></rect>
+				<rect x="30" y="15" width="60" height="34" rx="2" fill="#1a2940"></rect>
+				<rect x="55" y="54" width="10" height="8" rx="2" fill="#1a2940"></rect>
+				<rect x="35" y="62" width="50" height="4" rx="2" fill="#1a2940" stroke="rgba(0,212,255,0.2)" stroke-width="1"></rect>
+				<rect x="10" y="72" width="100" height="6" rx="3" fill="#0f1e34" stroke="rgba(0,212,255,0.15)" stroke-width="1"></rect>
+				<rect x="10" y="78" width="3" height="14" rx="1.5" fill="#1a2940"></rect>
+				<rect x="107" y="78" width="3" height="14" rx="1.5" fill="#1a2940"></rect>
+				<circle cx="60" cy="32" r="8" fill="none" stroke="rgba(0,212,255,0.3)" stroke-width="1"></circle>
+			</svg>
 	}
 }
 
@@ -576,247 +604,28 @@ templ assetDetailDeviceIcon(a *assets.Asset) {
 // (see PolicyConfigurationGroupsPage).
 templ PolicyCatalogPage() {
 	@Layout("policy-catalog", "Policy Catalog") {
-		@PageHeader("Policy", "Policy Catalog",
+		@PageHeader("Policy Catalog",
 			"Windows Group Policy settings with their Linux equivalents. Every row is partitioned into Computer / User scope like Windows GPEdit. To bind a policy to a target, open a Configuration Group.",
-			"")
-		@PolicyTabs("catalog")
+			"", "")
 		<div data-testid="page-policy-catalog">
 			@policyToolbar()
 			<div class="policy-split">
 				@policyTree(policies.BuildTree())
 				@policyTable(policies.Catalog())
 			</div>
-			@PolicyDetailDialog()
-			@policyDetailDataIsland()
-			@CustomPolicyWizard()
+			@policyCatalogNavigationScript()
 			@invariantFooter()
 		</div>
 	}
 }
 
-// PolicyTabs — shared tab strip for the three sub-pages under Policy.
-// "Modules" moved here from /scripts/policy-modules on 2026-05-16: a
-// Policy Module belongs to the Policy concept, not Automation.
-templ PolicyTabs(active string) {
-	<div class="tabs">
-		@tabLink("/policy/catalog", "Policy Catalog", "catalog", active)
-		@tabLink("/policy/groups", "Configuration Groups", "groups", active)
-		@tabLink("/policy/modules", "Modules", "modules", active)
-	</div>
-}
-
-// 4b. Policy → Configuration Groups.
-//
-// Configuration Group = the entity that binds catalog policies (with
-// values) to a target. Each row is one group. "New group" + clicking a
-// row both mount the SAME shared @ConfigurationGroupDialog (INV-U2).
-// That dialog is intentionally a self-contained templ component so it
-// can be invoked from Profile editor, Computer detail, or GP Import
-// later without duplication.
-templ PolicyConfigurationGroupsPage() {
-	@Layout("policy-groups", "Configuration Groups") {
-		@PageHeader("Policy", "Configuration Groups",
-			"Bind policies from the Catalog to a target — computer, user, group, or another Configuration Group's members. Groups targeted at users may carry computer-scope settings; those apply to whichever host the user is logged into.",
-			"")
-		@PolicyTabs("groups")
-		<div data-testid="page-policy-groups">
-			@configGroupsToolbar()
-			@configGroupsTable(configgroups.All())
-			@ConfigurationGroupDialog(configgroups.Blank(), "new")
-			@TargetPickerDialog(configgroups.AllTargetKinds)
-			@invariantFooter()
-		</div>
-	}
-}
-
-// configGroupsToolbar — simple search + "New group" trigger. The "New"
-// button opens the same dialog that edit mounts.
-templ configGroupsToolbar() {
-	{{ listID := lists.ListIDConfigGroups }}
-	<div class="cg-toolbar card" data-pluris-list={ listID }>
-		<div class="field field-wide">
-			<label for="cg-search">Search</label>
-			<input id="cg-search" class="input" type="search" autocomplete="off"
-				data-pluris-filter={ listID }
-				data-filter-attr="cg-searchable"
-				data-filter-mode="contains"
-				data-pluris-highlight="1"
-				placeholder="Filter by name, description, target…"/>
-		</div>
-		<div class="field field-action">
-			<label>&nbsp;</label>
-			<button type="button" class="btn btn-primary" data-cg-open="new">
-				@iconSVG("plus")
-				<span>New configuration group</span>
-			</button>
-		</div>
-	</div>
-}
-
-// configGroupsTable — one row per Configuration Group. Clicking a row
-// opens the shared dialog in edit mode with that group's data.
-templ configGroupsTable(all []configgroups.ConfigurationGroup) {
-	<section class="cg-table-wrap card" data-pluris-list={ lists.ListIDConfigGroups }>
-		@ConceptEmptyState("policy-groups", lists.ListIDConfigGroups)
-		<table class="cg-table pluris-list" data-list-id={ lists.ListIDConfigGroups }>
-			<thead>
-				<tr>
-					<th style="width:32%">Name</th>
-					<th style="width:24%">Target</th>
-					<th style="width:12%">Content</th>
-					<th style="width:12%">Bindings</th>
-					<th style="width:20%">Last change</th>
-				</tr>
-			</thead>
-			<tbody>
-				for _, g := range all {
-					<tr data-cg-id={ g.ID } data-cg-searchable={ cgSearchBlob(g) }>
-						<td>
-							<div class="cg-name">{ g.Name }</div>
-							<div class="cg-id font-mono">{ g.ID }</div>
-							if g.Disabled {
-								<span class="cg-chip cg-chip-off">Disabled</span>
-							}
-						</td>
-						<td>
-							<div class="cg-target">
-								<span class={ targetKindClass(g.TargetKind) }>{ g.TargetKind.Label() }</span>
-								<div class="cg-target-ref">{ configgroups.LookupTargetLabel(g.TargetKind, g.TargetRef) }</div>
-							</div>
-						</td>
-						<td>
-							@contentScopeChip(g.ContentScope())
-						</td>
-						<td class="cg-num">{ strconv.Itoa(len(g.Bindings)) }</td>
-						<td>
-							<div>{ g.UpdatedAt }</div>
-							<div class="cg-muted">by { g.UpdatedBy }</div>
-						</td>
-					</tr>
-				}
-			</tbody>
-		</table>
-	</section>
-	@templ.Raw(configGroupsPageScript)
-}
-
-templ contentScopeChip(s configgroups.ContentScope) {
-	switch s {
-	case configgroups.ContentComputer:
-		<span class="scope-chip scope-computer">Computer</span>
-	case configgroups.ContentUser:
-		<span class="scope-chip scope-user">User</span>
-	case configgroups.ContentBoth:
-		<span class="scope-chip scope-both">Both</span>
-	default:
-		<span class="scope-chip">—</span>
-	}
-}
-
-// ConfigurationGroupDialog — SHARED modal component. Mode is "new" or
-// "edit"; for edit callers pass the loaded group. Callers from other
-// pages (Profile editor, Computer detail, etc.) mount this component
-// directly — do NOT copy/paste or re-implement. Saving is wired via a
-// data-attribute dispatch so the dialog stays framework-agnostic.
-//
-// Interaction contract (JS in configGroupsPageScript):
-//   - Any control with `data-cg-open="<id>"` opens the dialog.
-//     id = "new" → mounts Blank(); id = <group slug> → loads that row's
-//     serialised data from the mock table.
-//   - Save button fires a `cg:save` CustomEvent (stubbed in this
-//     increment — persistence comes with the backend slice).
-//   - Restore reverts all form fields to the as-loaded snapshot.
-//   - Cancel closes without saving.
-templ ConfigurationGroupDialog(g configgroups.ConfigurationGroup, mode string) {
-	<dialog id="cg-dialog" class="cg-dialog" data-mode={ mode }>
-		<form method="dialog" class="cg-dialog-form" onsubmit="return false;">
-			<header class="cg-dialog-head">
-				<div>
-					<div class="crumb" id="cg-dialog-crumb">Configuration Group</div>
-					<h3 id="cg-dialog-title">New configuration group</h3>
-				</div>
-				<button type="button" class="cg-dialog-close" data-cg-close aria-label="Close">×</button>
-			</header>
-			<div class="cg-dialog-body">
-				<div class="cg-form-grid">
-					<div class="cg-field">
-						<label for="cg-f-name">Name</label>
-						<input id="cg-f-name" name="name" class="input" value={ g.Name } required/>
-					</div>
-					<div class="cg-field cg-field-wide">
-						<label for="cg-f-description">Description</label>
-						<textarea id="cg-f-description" name="description" class="input" rows="2">{ g.Description }</textarea>
-					</div>
-				</div>
-				<fieldset class="cg-fieldset">
-					<legend>Target</legend>
-					<p class="cg-hint">A Configuration Group binds to exactly one target. Open the picker to search across every computer, user, group, and other Configuration Group at once. User targets may still carry computer-scope settings — those apply to the session host while the user is logged in (loopback).</p>
-					<div class="cg-target-current" id="cg-target-current" data-kind={ string(g.TargetKind) } data-ref={ g.TargetRef }>
-						@targetSummaryRow(configgroups.TargetByRef(g.TargetKind, g.TargetRef))
-					</div>
-					<input type="hidden" name="target_kind" id="cg-f-target-kind" value={ string(g.TargetKind) }/>
-					<input type="hidden" name="target_ref" id="cg-f-target-ref" value={ g.TargetRef }/>
-					<button type="button" class="btn btn-secondary" data-target-picker-open>
-						@iconSVG("search")
-						<span>Change target…</span>
-					</button>
-				</fieldset>
-				<fieldset class="cg-fieldset">
-					<legend>Policy bindings</legend>
-					<p class="cg-hint">{ strconv.Itoa(len(g.Bindings)) } binding(s) currently in this group. The per-binding editor mounts inline here in a later increment (Increment 4+).</p>
-					if len(g.Bindings) > 0 {
-						<ul class="cg-bindings">
-							for _, b := range g.Bindings {
-								<li>
-									<span class="font-mono cg-binding-id">{ b.PolicyID }</span>
-									<span class="cg-binding-values font-mono">{ formatBindingValues(b.Values) }</span>
-								</li>
-							}
-						</ul>
-					}
-					<button type="button" class="btn btn-secondary" disabled>+ Add binding from catalog</button>
-				</fieldset>
-			</div>
-			<footer class="cg-dialog-foot">
-				<button type="button" class="btn btn-ghost" data-cg-restore>Restore</button>
-				<div class="cg-foot-spacer"></div>
-				<button type="button" class="btn btn-secondary" data-cg-close>Cancel</button>
-				<button type="button" class="btn btn-primary" data-cg-save>Save</button>
-			</footer>
-		</form>
-	</dialog>
-}
-
-// targetSummaryRow — the inline "current target" card shown in the CG
-// dialog above the "Change target…" button. Same DOM shape that JS
-// re-renders client-side after a pick, so the templ template and the
-// JS template stay in lockstep.
-templ targetSummaryRow(t *configgroups.Target) {
-	if t == nil {
-		<div class="cg-target-summary cg-target-summary-empty">
-			<div class="cg-target-icon cg-target-icon-empty">
-				@iconSVG("inbox")
-			</div>
-			<div>
-				<div class="cg-target-summary-label">No target selected</div>
-				<div class="cg-target-summary-meta">Click "Change target…" to choose one.</div>
-			</div>
-		</div>
-	} else {
-		<div class={ "cg-target-summary", targetKindBgClass(t.Kind) }>
-			<div class={ "cg-target-icon", targetKindIconClass(t.Kind) }>
-				@iconSVG(t.IconKey())
-			</div>
-			<div>
-				<div class="cg-target-summary-label">
-					{ t.Label }
-					<span class={ targetKindClass(t.Kind) }>{ t.Kind.Label() }</span>
-				</div>
-				<div class="cg-target-summary-meta">{ t.Meta }</div>
-			</div>
-		</div>
-	}
-}
+// 4b. Policy → Configuration Groups moved to config_groups.templ
+// (Task 5.2): the popup ConfigurationGroupDialog + mock-backed list
+// were retired in favor of full standardized pages (registry-driven
+// list, create form, DetailShell detail) backed by
+// services.ConfigGroupService. The reusable TargetPickerDialog below
+// stayed here — it now mounts on the Configuration Group detail page
+// (and any future picker call site).
 
 // TargetPickerDialog — REUSABLE cross-entity picker. Mounted once per
 // page that needs to pick a target; opened by any element with
@@ -829,12 +638,21 @@ templ targetSummaryRow(t *configgroups.Target) {
 // asset only" passes [KindComputer]. Empty / nil = all kinds. Disabled
 // kinds (regex) are always excluded from the kind filter strip.
 //
+// `targets` is the server-rendered row data — the tenant-scoped catalog
+// built by services.TargetService.Catalog (see pkg/services/targets.go).
+// The caller fetches it once per request and typically passes the same
+// slice regardless of allowedKinds; the client-side kind-chip filter
+// (driven by data-allowed-kinds) hides rows the current open doesn't
+// allow, so a single dialog instance can serve every allowedKinds
+// restriction on a page without a re-render.
+//
 // The picker is intentionally framework-light: a search box + a row of
 // type chips + a virtual-list-friendly table. No special pagination —
 // expected catalog size for a tenant is in the low thousands; the
-// existing search + filter cuts that to <100 visible rows. Real
-// remote-paginated mode arrives with the backend slice.
-templ TargetPickerDialog(allowedKinds []configgroups.TargetKind) {
+// existing search + filter cuts that to <100 visible rows client-side.
+// Real remote-paginated mode is a future increment if that assumption
+// stops holding.
+templ TargetPickerDialog(allowedKinds []configgroups.TargetKind, targets []configgroups.Target) {
 	<dialog id="target-picker" class="tp-dialog" data-allowed-kinds={ joinKinds(allowedKinds) }>
 		<div class="tp-dialog-inner">
 			<header class="tp-dialog-head">
@@ -874,7 +692,7 @@ templ TargetPickerDialog(allowedKinds []configgroups.TargetKind) {
 						</tr>
 					</thead>
 					<tbody>
-						for _, t := range configgroups.AllTargets() {
+						for _, t := range targets {
 							<tr
 								data-tp-kind={ string(t.Kind) }
 								data-tp-ref={ t.Ref }
@@ -929,17 +747,27 @@ templ policyToolbar() {
 	<div class="policy-toolbar card">
 		<div class="field field-wide">
 			<label for="pf-search">Search</label>
-			<input id="pf-search" class="input" type="search" autocomplete="off"
+			<input
+				id="pf-search"
+				class="input"
+				type="search"
+				autocomplete="off"
 				data-pluris-filter={ listID }
 				data-filter-attr="searchable"
 				data-filter-mode="contains"
 				data-pluris-highlight="1"
-				placeholder="Filter by name, Windows GP name, description, Linux mechanism…"/>
+				placeholder="Filter by name, Windows GP name, description, Linux mechanism…"
+			/>
 		</div>
 		<div class="field">
 			<label for="pf-scope">Scope</label>
-			<select id="pf-scope" class="select"
-				data-pluris-filter={ listID } data-filter-attr="scope" data-filter-mode="equals">
+			<select
+				id="pf-scope"
+				class="select"
+				data-pluris-filter={ listID }
+				data-filter-attr="scope"
+				data-filter-mode="equals"
+			>
 				<option value="all">All scopes</option>
 				<option value="computer">Computer</option>
 				<option value="user">User</option>
@@ -948,8 +776,13 @@ templ policyToolbar() {
 		</div>
 		<div class="field">
 			<label for="pf-category">Configuration branch</label>
-			<select id="pf-category" class="select"
-				data-pluris-filter={ listID } data-filter-attr="root-category" data-filter-mode="equals">
+			<select
+				id="pf-category"
+				class="select"
+				data-pluris-filter={ listID }
+				data-filter-attr="root-category"
+				data-filter-mode="equals"
+			>
 				<option value="all">All branches</option>
 				for _, c := range rootCategoryOptions() {
 					<option value={ c }>{ c }</option>
@@ -958,8 +791,13 @@ templ policyToolbar() {
 		</div>
 		<div class="field">
 			<label for="pf-origin">Origin</label>
-			<select id="pf-origin" class="select"
-				data-pluris-filter={ listID } data-filter-attr="origin" data-filter-mode="equals">
+			<select
+				id="pf-origin"
+				class="select"
+				data-pluris-filter={ listID }
+				data-filter-attr="origin"
+				data-filter-mode="equals"
+			>
 				<option value="all">All</option>
 				<option value="bundled">Bundled</option>
 				<option value="custom">Custom</option>
@@ -971,10 +809,10 @@ templ policyToolbar() {
 		</div>
 		<div class="field field-action">
 			<label>&nbsp;</label>
-			<button type="button" class="btn btn-primary" data-cpw-open>
+			<a href="/policy/modules/new" class="btn btn-primary">
 				@iconSVG("plus")
 				<span>New custom policy</span>
-			</button>
+			</a>
 		</div>
 		<div class="policy-counts">
 			<span class="chip chip-total" data-pluris-count={ listID } data-template="{visible} of {total}">{ strconv.Itoa(counts.Total) } of { strconv.Itoa(counts.Total) }</span>
@@ -1037,7 +875,7 @@ templ policyTreeNode(node *policies.CategoryTree, depth int) {
 // the registry; user overrides persist in localStorage.
 templ policyTable(all []policies.Policy) {
 	{{ fields := lists.FieldsFor(lists.ListIDPolicyCatalog) }}
-	{{ cellCtx := lists.PolicyCellCtx{Modules: policymodules.AllModules()} }}
+	{{ cellCtx := lists.PolicyCellCtx{Modules: policymodules.Catalog()} }}
 	<section
 		class="policy-table-wrap card"
 		data-pluris-list={ lists.ListIDPolicyCatalog }
@@ -1109,7 +947,8 @@ templ policyTable(all []policies.Policy) {
 							data-row-index={ strconv.Itoa(rowIdx) }
 						>
 							for _, f := range fields {
-								<td data-field={ f.Key } data-sort={ lists.RenderPolicyCellSort(f.Key, p, cellCtx) }>@templ.Raw(lists.RenderPolicyCell(f.Key, p, cellCtx))</td>
+								<td data-field={ f.Key } data-sort={ lists.RenderPolicyCellSort(f.Key, p, cellCtx) }>@templ.Raw(lists.RenderPolicyCell(f.Key, p, cellCtx))
+</td>
 							}
 						</tr>
 						{{ rowIdx++ }}
@@ -1145,12 +984,14 @@ templ ColumnPickerButton(listID string) {
 					<circle cx="11" cy="11" r="8"></circle>
 					<path d="m21 21-4.35-4.35"></path>
 				</svg>
-				<input type="text" 
-					class="col-picker-search-input" 
-					placeholder="Search columns..." 
+				<input
+					type="text"
+					class="col-picker-search-input"
+					placeholder="Search columns..."
 					data-col-picker-search
 					autocomplete="off"
-					spellcheck="false"/>
+					spellcheck="false"
+				/>
 				<button type="button" class="col-picker-search-clear" data-col-picker-search-clear hidden aria-label="Clear search">×</button>
 			</div>
 			<div class="col-picker-pop-body">
@@ -1163,21 +1004,21 @@ templ ColumnPickerButton(listID string) {
 								<div class="col-picker-group-hint">{ group.Hint }</div>
 							}
 						</header>
-					<ul class="col-picker-list">
-						for _, f := range fields {
-							<li data-col-search-text={ strings.ToLower(f.Label) }>
-								<label>
-									<input type="checkbox" data-col-key={ f.Key } checked?={ f.DefaultVisible }/>
-									<div>
-										<div class="col-picker-field-label">{ f.Label }</div>
-										if f.Description != "" {
-											<div class="col-picker-field-desc">{ f.Description }</div>
-										}
-									</div>
-								</label>
-							</li>
-						}
-					</ul>
+						<ul class="col-picker-list">
+							for _, f := range fields {
+								<li data-col-search-text={ strings.ToLower(f.Label) }>
+									<label>
+										<input type="checkbox" data-col-key={ f.Key } checked?={ f.DefaultVisible }/>
+										<div>
+											<div class="col-picker-field-label">{ f.Label }</div>
+											if f.Description != "" {
+												<div class="col-picker-field-desc">{ f.Description }</div>
+											}
+										</div>
+									</label>
+								</li>
+							}
+						</ul>
 					</section>
 				}
 			</div>
@@ -1193,23 +1034,23 @@ templ ColumnPickerButton(listID string) {
 
 templ scopeChip(s policies.Scope) {
 	switch s {
-	case policies.ScopeComputer:
-		<span class="scope-chip scope-computer">Computer</span>
-	case policies.ScopeUser:
-		<span class="scope-chip scope-user">User</span>
-	case policies.ScopeBoth:
-		<span class="scope-chip scope-both">Both</span>
-	default:
-		<span class="scope-chip">{ string(s) }</span>
+		case policies.ScopeComputer:
+			<span class="scope-chip scope-computer">Computer</span>
+		case policies.ScopeUser:
+			<span class="scope-chip scope-user">User</span>
+		case policies.ScopeBoth:
+			<span class="scope-chip scope-both">Both</span>
+		default:
+			<span class="scope-chip">{ string(s) }</span>
 	}
 }
 
 // 5. Profiles
 templ ProfilesPage() {
 	@Layout("profiles", "Profiles") {
-		@PageHeader("Configuration", "Profiles",
+		@PageHeader("Profiles",
 			"Bundle assigned policy groups, scripts, Wine configuration groups, and packages. Profiles are flat — no profile-includes-profile composition (locked decision in §VII.A).",
-			"New profile")
+			"New profile", "")
 		<div data-testid="page-profiles">
 			@EmptyState("profiles", "No profiles yet",
 				"Create a profile to bundle a set of policies, scripts, and packages and assign them to assets, users, or groups.",
@@ -1225,9 +1066,9 @@ templ ProfilesPage() {
 // /scripts/policy-modules paths redirect.
 templ ScriptsPage() {
 	@Layout("scripts", "Scripts") {
-		@PageHeader("Automation", "Scripts",
+		@PageHeader("Scripts",
 			"User automation scripts with trigger field. Editor includes manual-trigger test against admin testing workstation, live agent log stream, and trigger picker.",
-			"New script")
+			"New script", "")
 		<div data-testid="page-scripts">
 			@EmptyState("scripts", "No scripts yet",
 				"Pluris ships at least 5 predefined scripts (update-on-shutdown, cleanup-temp-on-logout, compliance-snapshot-daily, force-screen-lock-on-policy-change, wake-and-update-windowed). Custom scripts can be authored here with manual-trigger testing against an admin testing workstation.",
@@ -1251,21 +1092,20 @@ templ ScriptsPage() {
 // configures where modules come from (Pluris-bundled, Tenant-local,
 // Imported registries). All three share the same page chrome and the
 // same canonical editor (editors/PolicyModuleEditor).
-templ PolicyModulesPage(view string) {
+templ PolicyModulesPage(view string, mods []policymodules.Module, defaults []policymodules.TenantDefault, deps map[string]ModuleDepsView, groups []dependencygroups.Group, csrf string, isAdmin bool) {
 	@Layout("policy-modules-"+view, "Policy Modules — "+policyModulesViewLabel(view)) {
-		@PageHeader("Policy", "Modules — "+policyModulesViewLabel(view),
+		@PageHeader("Modules — "+policyModulesViewLabel(view),
 			policyModulesViewDescription(view),
-			policyModulesViewAction(view))
-		@PolicyTabs("modules")
+			policyModulesViewAction(view), policyModulesViewActionHref(view))
 		@policyModulesSubTabs(view)
 		<div data-testid={ "page-policy-modules" + policyModulesViewTestIDSuffix(view) }>
 			switch view {
-			case "defaults":
-				@policyModulesDefaultsBody(policymodules.TenantDefaults(""), policymodules.AllModules())
-			case "sources":
-				@policyModulesSourcesBody()
-			default:
-				@policyModulesList(policymodules.AllModules())
+				case "defaults":
+					@policyModulesDefaultsBody(defaults, mods)
+				case "sources":
+					@policyModulesSourcesBody()
+				default:
+					@policyModulesList(mods, deps, groups, csrf, isAdmin)
 			}
 			@invariantFooter()
 		</div>
@@ -1311,7 +1151,17 @@ func policyModulesViewAction(v string) string {
 	case "sources":
 		return "Add source"
 	}
-	return "Upload module"
+	return "New module"
+}
+
+// policyModulesViewActionHref — the Library sub-tab's header action is a
+// real link to the Task 4.3 create page; Defaults/Sources keep their
+// existing non-functional stub buttons (out of scope here).
+func policyModulesViewActionHref(v string) string {
+	if v == "library" {
+		return "/policy/modules/new"
+	}
+	return ""
 }
 
 func policyModulesViewTestIDSuffix(v string) string {
@@ -1324,9 +1174,9 @@ func policyModulesViewTestIDSuffix(v string) string {
 // 7. Wine
 templ WinePage() {
 	@Layout("wine", "Wine") {
-		@PageHeader("Compatibility", "Wine",
+		@PageHeader("Wine",
 			"Manage Windows applications running under Wine on Linux assets. Configuration Groups define the prefix (registry, file overrides, path mappings, env, DLL overrides).",
-			"New configuration group")
+			"New configuration group", "")
 		<div data-testid="page-wine">
 			@EmptyState("wine", "No Wine groups yet",
 				"Create a Wine Configuration Group to define a shared prefix configuration, then add Wine Applications that install into it.",
@@ -1336,11 +1186,11 @@ templ WinePage() {
 	}
 }
 
-// 8. Package Management — three tabs.
+// 8. Package Management — Managers / Packages / Update Cycles, navigated
+//    via the sidebar.
 templ PackagesPage(tab string) {
 	@Layout("packages-"+tab, "Package Management — "+subtypeLabel(tab)) {
-		@PageHeader("Software", subtypeLabel(tab), packagesDescription(tab), packagesAddLabel(tab))
-		@PackagesTabs(tab)
+		@PageHeader(subtypeLabel(tab), packagesDescription(tab), packagesAddLabel(tab), "")
 		<div data-testid={ "page-packages-" + tab }>
 			@EmptyState("packages", "No "+subtypeLabel(tab)+" yet",
 				packagesEmptyHint(tab),
@@ -1348,14 +1198,6 @@ templ PackagesPage(tab string) {
 			@invariantFooter()
 		</div>
 	}
-}
-
-templ PackagesTabs(active string) {
-	<div class="tabs">
-		@tabLink("/packages/managers", "Package Managers", "managers", active)
-		@tabLink("/packages/packages", "Packages", "packages", active)
-		@tabLink("/packages/cycles", "Update Cycles", "cycles", active)
-	</div>
 }
 
 func packagesDescription(tab string) string {
@@ -1409,9 +1251,9 @@ func packagesEditorRef(tab string) string {
 // 9. Server Administration
 templ ServerAdminPage() {
 	@Layout("server-admin", "Server Administration") {
-		@PageHeader("System", "Server Administration",
+		@PageHeader("Server Administration",
 			"AD connection settings (Kanidm + LDAP), Group Policy import wizard, Policy Enforcement Scripts (admin view of the Policy Module catalog), application logs, tenant management.",
-			"")
+			"", "")
 		<div data-testid="page-server-admin">
 			@EmptyState("server-admin", "Server administration",
 				"Configure tenant settings, integrations, AD connection, GP import, and view application logs.",
@@ -1424,9 +1266,9 @@ templ ServerAdminPage() {
 // 10. User / Admin Preferences
 templ PreferencesPage() {
 	@Layout("preferences", "User / Admin Preferences") {
-		@PageHeader("Account", "Preferences",
+		@PageHeader("Preferences",
 			"Per-user (light/dark theme, profile picture). Admin section (admin testing workstations — list of existing assets used for manual-trigger script tests; not a separate concept).",
-			"")
+			"", "")
 		<div data-testid="page-preferences">
 			@EmptyState("preferences", "Preferences",
 				"Manage your profile, appearance, and (for admins) the testing workstations referenced by manual script tests.",
@@ -1438,18 +1280,24 @@ templ PreferencesPage() {
 
 // ---- Shared building blocks ----
 
-// PageHeader is the top-of-page component: section breadcrumb, title,
-// description, optional primary action button.
-templ PageHeader(section string, title string, description string, primaryActionLabel string) {
+// PageHeader is the top-of-page component: title, description, and an
+// optional primary action button.
+templ PageHeader(title string, description string, primaryActionLabel string, primaryActionHref string) {
 	<header class="page-header">
 		<div>
-			<div class="crumb">{ section }</div>
 			<h2>{ title }</h2>
 			if description != "" {
 				<p>{ description }</p>
 			}
 		</div>
-		if primaryActionLabel != "" {
+		if primaryActionLabel != "" && primaryActionHref != "" {
+			<div class="page-header-actions">
+				<a href={ templ.SafeURL(primaryActionHref) } class="btn btn-primary">
+					@iconSVG("plus")
+					<span>{ primaryActionLabel }</span>
+				</a>
+			</div>
+		} else if primaryActionLabel != "" {
 			<div class="page-header-actions">
 				<button type="button" class="btn btn-primary">
 					@iconSVG("plus")
@@ -1494,223 +1342,21 @@ templ invariantFooter() {
 	</div>
 }
 
-// CustomPolicyWizard — multi-step modal that authors a tenant-private
-// catalog policy + at least one tenant module that satisfies it
-// (INV-M9). The two artifacts are saved as one transaction; saving an
-// orphan policy without a module is rejected.
-//
-// Steps mirror ADR-007 §UI:
-//
-//   1. Identify  — name, description, scope, category placement
-//   2. Module    — pick lifecycle phases the module supplies (apply
-//                 mandatory; disable/uninstall optional but recommended)
-//   3. Sandbox   — capability picker (FS, network, target user)
-//   4. Scripts   — Monaco-style editors for each enabled phase
-//   5. Sign      — preview the manifest + commit
-//
-// The wizard is a single <dialog> with all steps in one DOM. JS in
-// customPolicyWizardScript reveals one step at a time; back/next preserve
-// state. Submit dispatches `cpw:save` for now (persistence stub —
-// backend slice will hook this).
-templ CustomPolicyWizard() {
-	<dialog id="cpw-dialog" class="cpw-dialog" data-step="1">
-		<form class="cpw-form" onsubmit="return false;">
-			<header class="cg-dialog-head">
-				<div>
-					<div class="crumb">Custom Policy Wizard · ADR-007</div>
-					<h3 id="cpw-title">New custom policy</h3>
-					<div class="cpw-stepper">
-						<span class="cpw-step is-active" data-cpw-step="1">1 · Identify</span>
-						<span class="cpw-step" data-cpw-step="2">2 · Module</span>
-						<span class="cpw-step" data-cpw-step="3">3 · Sandbox</span>
-						<span class="cpw-step" data-cpw-step="4">4 · Scripts</span>
-						<span class="cpw-step" data-cpw-step="5">5 · Sign &amp; publish</span>
-					</div>
-				</div>
-				<button type="button" class="cg-dialog-close" data-cpw-close aria-label="Close">×</button>
-			</header>
-			<div class="cpw-body">
-				<section class="cpw-pane" data-cpw-pane="1">
-					<p class="cg-hint">A custom policy is a tenant-private catalog entry. It will appear inline in the Policy Catalog with a <strong>Custom</strong> chip. Once published, it can be referenced from any Configuration Group like a bundled policy.</p>
-					<div class="cpw-grid">
-						<div class="cg-field">
-							<label for="cpw-name">Display name</label>
-							<input id="cpw-name" name="name" class="input" placeholder="Corporate SSH login banner" required/>
-						</div>
-						<div class="cg-field">
-							<label for="cpw-id">Policy URN slug</label>
-							<input id="cpw-id" name="id" class="input font-mono" placeholder="ssh.banner" required pattern="[a-z][a-z0-9.-]*"/>
-							<p class="cpw-help">Final URN: <span id="cpw-id-preview" class="font-mono">tenant.&lt;tenant&gt;.…</span></p>
-						</div>
-						<div class="cg-field cg-field-wide">
-							<label for="cpw-desc">Description</label>
-							<textarea id="cpw-desc" name="description" class="input" rows="3" placeholder="What this policy does, and any Linux-specific nuance an admin should know."></textarea>
-						</div>
-						<div class="cg-field">
-							<label>Scope</label>
-							<div class="cpw-radio-row">
-								<label><input type="radio" name="scope" value="computer" checked/> Computer</label>
-								<label><input type="radio" name="scope" value="user"/> User</label>
-								<label><input type="radio" name="scope" value="both"/> Both</label>
-							</div>
-						</div>
-						<div class="cg-field">
-							<label for="cpw-category">Category placement</label>
-							<input id="cpw-category" name="category" class="input" placeholder="Custom (Acme) / Remote Access / SSH" value="Custom"/>
-							<p class="cpw-help">Slash-separated; appears in the catalog tree.</p>
-						</div>
-					</div>
-				</section>
-				<section class="cpw-pane" data-cpw-pane="2" hidden>
-					<p class="cg-hint">Pick which lifecycle phases your module supplies. <strong>Apply</strong> is required (INV-M5); the others are recommended for a complete module.</p>
-					<div class="cpw-phase-grid">
-						for _, ph := range policymodulesAllPhases() {
-							<label class={ "cpw-phase-card", templ.KV("is-required", ph.IsRequired()) }>
-								<input type="checkbox" name="phases" value={ string(ph) } checked?={ ph.IsRequired() } disabled?={ ph.IsRequired() }/>
-								<div>
-									<div class="cpw-phase-label">
-										{ ph.Label() }
-										<span class="cpw-phase-runtime">{ string(ph.Runtime()) }</span>
-									</div>
-									<div class="cpw-phase-help">{ ph.HelpText() }</div>
-								</div>
-							</label>
-						}
-					</div>
-					<div class="cpw-info-box">
-						<strong>Dependency tracking (INV-M1, INV-M4).</strong>
-						<span>Pluris counts how many bindings request your module. <code>uninstall</code> only runs once that count reaches zero, so you can ship the script without worrying about breaking another binding that still needs it.</span>
-					</div>
-				</section>
-				<section class="cpw-pane" data-cpw-pane="3" hidden>
-					<p class="cg-hint">Capabilities are enforced by the agent (bwrap + Landlock + seccomp) regardless of script content (INV-M8). Default: deny all writes outside <code class="font-mono">$PLURIS_TMPDIR</code> and all network egress.</p>
-					<div class="cpw-grid">
-						<div class="cg-field cg-field-wide">
-							<label for="cpw-fs-write">Filesystem write paths (one per line)</label>
-							<textarea id="cpw-fs-write" name="fs_write" class="input font-mono" rows="3" placeholder="/etc/issue.net&#10;/etc/ssh/sshd_config.d/"></textarea>
-						</div>
-						<div class="cg-field cg-field-wide">
-							<label for="cpw-fs-read">Filesystem read paths (one per line)</label>
-							<textarea id="cpw-fs-read" name="fs_read" class="input font-mono" rows="2" placeholder="/etc/os-release"></textarea>
-						</div>
-						<div class="cg-field cg-field-wide">
-							<label for="cpw-net">Network egress allow-list (one per line, default deny-all)</label>
-							<textarea id="cpw-net" name="net_egress" class="input font-mono" rows="2" placeholder="https://crl.tenant.local/"></textarea>
-						</div>
-						<div class="cg-field">
-							<label for="cpw-user">Script runs as</label>
-							<select id="cpw-user" name="user" class="select">
-								<option value="root">root (machine-scope default)</option>
-								<option value="$target_user">$target_user (user-scope default)</option>
-								<option value="nobody">nobody (no privileges)</option>
-							</select>
-						</div>
-					</div>
-				</section>
-				<section class="cpw-pane" data-cpw-pane="4" hidden>
-					<p class="cg-hint">Bash for <code>apply</code>/<code>disable</code>/<code>uninstall</code>; WASM (compiled from Rust/Go/Zig) for <code>validate</code>/<code>report</code>. The editor below is plain text in v1; full Monaco editor lands with the next slice.</p>
-					<div class="cpw-script-tabs" id="cpw-script-tabs"></div>
-					<div class="cpw-script-editors" id="cpw-script-editors"></div>
-				</section>
-				<section class="cpw-pane" data-cpw-pane="5" hidden>
-					<p class="cg-hint">Saving creates the catalog entry and the v0.1.0 module in one transaction (INV-M9). The module is signed with your tenant's Ed25519 key and queued for explicit deploy — bindings can reference it immediately, but no agent applies it until you click <strong>Deploy</strong> on the modules page.</p>
-					<div class="cpw-summary" id="cpw-summary">
-						<div class="cpw-summary-stub">Fill steps 1–4, then return here for a manifest preview.</div>
-					</div>
-				</section>
-			</div>
-			<footer class="cg-dialog-foot">
-				<button type="button" class="btn btn-ghost" data-cpw-back disabled>← Back</button>
-				<div class="cg-foot-spacer"></div>
-				<button type="button" class="btn btn-secondary" data-cpw-close>Cancel</button>
-				<button type="button" class="btn btn-primary" data-cpw-next>Next →</button>
-				<button type="button" class="btn btn-primary" data-cpw-save hidden>Sign &amp; publish</button>
-			</footer>
-		</form>
-	</dialog>
-	@templ.Raw(customPolicyWizardScript)
-}
-
-// PolicyDetailDialog — read-only / edit-on-custom inspector for a single
-// catalog policy. Shows the **modular shape** of the policy: identity,
-// description, the per-tenant catalog URN, and EVERY candidate Policy
-// Module that satisfies it — each module rendered with its origin chip,
-// version + status, signer, lifecycle phase strip, sandbox profile,
-// dependencies, and conflicts. Bundled policies render read-only;
-// custom policies expose an Edit button that launches the
-// CustomPolicyWizard with the policy prefilled.
-//
-// One dialog per page (matches the Configuration Group pattern). Row
-// clicks dispatch hydration via the JSON data island below; no per-row
-// HTML duplication. Reusable from any context that wants to inspect a
-// catalog policy (e.g. Configuration Group binding's "view satisfied
-// policy" link, future Profile editor's policy summary).
-templ PolicyDetailDialog() {
-	<dialog id="pdd-dialog" class="cg-dialog pdd-dialog">
-		<div class="cg-dialog-form">
-			<header class="cg-dialog-head">
-				<div class="pdd-head-text">
-					<div class="crumb" id="pdd-crumb">Policy Catalog</div>
-					<h3 id="pdd-title">Policy</h3>
-					<div class="pdd-meta">
-						<span class="pdd-id font-mono" id="pdd-id"></span>
-						<span class="pdd-meta-sep">·</span>
-						<span id="pdd-scope-host"></span>
-						<span class="pdd-meta-sep">·</span>
-						<span id="pdd-origin-host"></span>
-					</div>
-				</div>
-				<button type="button" class="cg-dialog-close" data-pdd-close aria-label="Close">×</button>
-			</header>
-			<div class="cg-dialog-body">
-				<section class="pdd-section">
-					<h4 class="pdd-section-title">Identity</h4>
-					<dl class="pdd-defs">
-						<dt>Display name</dt>
-						<dd id="pdd-name"></dd>
-						<dt>Catalog URN</dt>
-						<dd class="font-mono" id="pdd-urn"></dd>
-						<dt>Category</dt>
-						<dd id="pdd-category"></dd>
-						<dt>Windows GP equivalent</dt>
-						<dd id="pdd-winname"></dd>
-						<dt>Windows GP path</dt>
-						<dd class="font-mono pdd-muted" id="pdd-winpath"></dd>
-						<dt>Linux mechanism (hint)</dt>
-						<dd id="pdd-linux"></dd>
-					</dl>
-				</section>
-				<section class="pdd-section">
-					<h4 class="pdd-section-title">Description</h4>
-					<p class="pdd-desc" id="pdd-desc"></p>
-				</section>
-				<section class="pdd-section">
-					<h4 class="pdd-section-title">
-						<span>Modular shape</span>
-						<span class="pdd-section-hint">Candidate Policy Modules that satisfy this policy. The Configuration Group binding picks one; the agent applies it via apply / disable / uninstall (INV-M5). All shipped here for inspection.</span>
-					</h4>
-					<div id="pdd-modules">
-						<div class="pdd-empty">No candidate modules in the catalog yet.</div>
-					</div>
-				</section>
-			</div>
-			<footer class="cg-dialog-foot">
-				<div class="cg-foot-spacer"></div>
-				<button type="button" class="btn btn-secondary" data-pdd-close>Close</button>
-				<button type="button" class="btn btn-primary" id="pdd-edit" hidden>Edit (custom policy)</button>
-			</footer>
-		</div>
-	</dialog>
-	@templ.Raw(policyDetailScript)
-}
-
-// policyDetailDataIsland — embedded JSON map keyed by policy ID, with
-// the data needed to render PolicyDetailDialog client-side. Lives once
-// per page; hydration is O(1) by ID. Keeps DOM small (vs. pre-rendering
-// every policy's dialog body) and lets the resolver-style data flow
-// stay server-driven.
-templ policyDetailDataIsland() {
-	@templ.Raw(policyDetailDataIslandHTML())
+// policyCatalogNavigationScript — row click navigates to the policy
+// detail page (Task 15 replaced the PolicyDetailDialog popup). Same
+// pattern as usersListNavigationScript; interactive elements inside a
+// row keep their own behavior.
+templ policyCatalogNavigationScript() {
+	@templ.Raw(`<script>
+(function () {
+	document.addEventListener('click', function (e) {
+		if (e.target.closest('a, button, input, select, form')) return;
+		var row = e.target.closest('tr[data-policy-id]');
+		if (!row) return;
+		window.location.href = '/policy/catalog/' + encodeURIComponent(row.dataset.policyId);
+	});
+})();
+</script>`)
 }
 
 // policyModulesList — the Scripts → Policy Modules tab body. Lists every
@@ -1718,22 +1364,32 @@ templ policyDetailDataIsland() {
 // imported), latest version, signature signer, lifecycle phase strip,
 // and dependency / conflict counts. Click a row → mounts the canonical
 // editors/PolicyModuleEditor (live as a stub modal here in Phase 0).
-templ policyModulesList(mods []policymodules.Module) {
+templ policyModulesList(mods []policymodules.Module, deps map[string]ModuleDepsView, groups []dependencygroups.Group, csrf string, isAdmin bool) {
 	{{ listID := lists.ListIDPolicyModules }}
 	<section class="pm-toolbar card" data-pluris-list={ listID }>
 		<div class="field field-wide">
 			<label for="pm-search">Search</label>
-			<input id="pm-search" class="input" type="search" autocomplete="off"
+			<input
+				id="pm-search"
+				class="input"
+				type="search"
+				autocomplete="off"
 				data-pluris-filter={ listID }
 				data-filter-attr="pm-search"
 				data-filter-mode="contains"
 				data-pluris-highlight="1"
-				placeholder="Filter by id, title, satisfies, signer…"/>
+				placeholder="Filter by id, title, satisfies, signer…"
+			/>
 		</div>
 		<div class="field">
 			<label for="pm-origin">Origin</label>
-			<select id="pm-origin" class="select"
-				data-pluris-filter={ listID } data-filter-attr="pm-origin" data-filter-mode="equals">
+			<select
+				id="pm-origin"
+				class="select"
+				data-pluris-filter={ listID }
+				data-filter-attr="pm-origin"
+				data-filter-mode="equals"
+			>
 				<option value="all">All</option>
 				<option value="bundled">Bundled</option>
 				<option value="tenant">Tenant</option>
@@ -1746,10 +1402,10 @@ templ policyModulesList(mods []policymodules.Module) {
 		</div>
 		<div class="field field-action">
 			<label>&nbsp;</label>
-			<button type="button" class="btn btn-secondary" data-cpw-open>
+			<a href="/policy/modules/new" class="btn btn-secondary">
 				@iconSVG("plus")
-				<span>New module from policy wizard</span>
-			</button>
+				<span>New module</span>
+			</a>
 		</div>
 	</section>
 	<section class="pm-table-wrap card" data-pluris-list={ listID }>
@@ -1778,6 +1434,9 @@ templ policyModulesList(mods []policymodules.Module) {
 									<span class="pm-urn-chip font-mono">{ s }</span>
 								}
 							</div>
+							if deps != nil {
+								@moduleDepsDetails(m.ID, deps[m.ID], groups, csrf, isAdmin)
+							}
 						</td>
 						<td>
 							<span class={ "pm-origin-chip", "pm-origin-" + m.Origin }>{ m.Origin }</span>
@@ -1819,39 +1478,63 @@ templ policyModulesList(mods []policymodules.Module) {
 						</td>
 						<td class="pm-row-actions">
 							if len(m.Satisfies) > 0 {
-								<button type="button" class="btn btn-sm btn-secondary"
+								<button
+									type="button"
+									class="btn btn-sm btn-secondary"
 									data-pmp-open
 									data-pmp-urn={ m.Satisfies[0] }
 									data-pmp-os="linux"
 									data-pmp-source="binding"
 									data-pmp-current-id={ m.ID }
-									title="Open the module picker scoped to this module's primary policy URN">
-									@iconSVG("plus") <span>Pick</span>
+									title="Open the module picker scoped to this module's primary policy URN"
+								>
+									@iconSVG("plus")
+									<span>Pick</span>
 								</button>
 							}
-							if m.Origin == "tenant" {
-								<button type="button" class="btn btn-sm btn-secondary"
-									data-pm-action="edit" data-pm-id={ m.ID }
-									title="Edit this tenant module (opens editors/PolicyModuleEditor — stub)">
-									@iconSVG("pencil") <span>Edit</span>
+							<a
+								href={ templ.SafeURL("/policy/modules/" + m.ID) }
+								class="btn btn-sm btn-secondary"
+								title={ moduleOpenTitle(m.Origin) }
+							>
+								if m.Origin == "tenant" {
+									@iconSVG("pencil")
+									<span>Edit</span>
+								} else {
+									<span>View</span>
+								}
+							</a>
+							<form method="post" action={ templ.SafeURL("/policy/modules/" + m.ID + "/clone") } style="display:inline;">
+								<input type="hidden" name="_csrf" value={ csrf }/>
+								<button
+									type="submit"
+									class="btn btn-sm btn-secondary"
+									title="Clone into a tenant module you can edit"
+								>
+									@iconSVG("copy")
+									<span>Clone</span>
 								</button>
-							}
-							<button type="button" class="btn btn-sm btn-secondary"
-								data-pm-action="clone" data-pm-id={ m.ID }
-								title="Clone into a tenant module you can edit">
-								@iconSVG("copy") <span>Clone</span>
-							</button>
+							</form>
 							if m.Origin != "bundled" {
-								<button type="button" class="btn btn-sm btn-secondary"
-									data-pm-action="disable" data-pm-id={ m.ID }
-									title="Disable (agents stop running this module; bindings flagged)">
+								<button
+									type="button"
+									class="btn btn-sm btn-secondary"
+									data-pm-action="disable"
+									data-pm-id={ m.ID }
+									title="Disable (agents stop running this module; bindings flagged)"
+								>
 									@iconSVG("ban")
 								</button>
-								<button type="button" class="btn btn-sm btn-danger"
-									data-pm-action="delete" data-pm-id={ m.ID }
-									title="Delete (only allowed when refcount = 0 across all versions)">
-									@iconSVG("trash")
-								</button>
+								<form method="post" action={ templ.SafeURL("/policy/modules/" + m.ID + "/delete") } style="display:inline;" onsubmit="return confirm('Delete this module? This only works if nothing references it.')">
+									<input type="hidden" name="_csrf" value={ csrf }/>
+									<button
+										type="submit"
+										class="btn btn-sm btn-danger"
+										title="Delete (only allowed when refcount = 0 across all versions)"
+									>
+										@iconSVG("trash")
+									</button>
+								</form>
 							}
 						</td>
 					</tr>
@@ -1859,6 +1542,69 @@ templ policyModulesList(mods []policymodules.Module) {
 			</tbody>
 		</table>
 	</section>
+}
+
+// moduleDepsDetails (Task 7) — a native <details> expander inside a
+// module row's first cell showing its Platforms (match-any) and Requires
+// (match-all) dependency-group links, with admin-only add/remove forms.
+// Kept as a same-row expander (not a second <tr>) so the list-filter JS,
+// which toggles rows matching data-pm-search, doesn't desync from a
+// companion row.
+templ moduleDepsDetails(moduleID string, dv ModuleDepsView, groups []dependencygroups.Group, csrf string, isAdmin bool) {
+	<details class="pm-deps">
+		<summary class="cg-muted">Dependency groups</summary>
+		<div class="pm-deps-body">
+			<div>
+				<strong>Platforms (any):</strong>
+				if len(dv.Platforms) == 0 {
+					<span class="cg-muted">Any (no platform filter)</span>
+				} else {
+					for _, ch := range dv.Platforms {
+						@moduleDepChip(moduleID, ch, csrf, isAdmin)
+					}
+				}
+			</div>
+			<div>
+				<strong>Requires (all):</strong>
+				if len(dv.Requirements) == 0 {
+					<span class="cg-muted">None</span>
+				} else {
+					for _, ch := range dv.Requirements {
+						@moduleDepChip(moduleID, ch, csrf, isAdmin)
+					}
+				}
+			</div>
+			if isAdmin {
+				<form method="post" action={ templ.SafeURL("/policy/modules/" + moduleID + "/dependencies") } class="pm-deps-add">
+					<input type="hidden" name="_csrf" value={ csrf }/>
+					<select name="group_id" class="input">
+						for _, g := range groups {
+							<option value={ strconv.FormatInt(g.ID, 10) }>{ g.Name }</option>
+						}
+					</select>
+					<select name="role" class="input">
+						<option value="platform">Platform</option>
+						<option value="requirement">Requirement</option>
+					</select>
+					<button type="submit" class="btn btn-sm btn-secondary">Link group</button>
+				</form>
+			}
+		</div>
+	</details>
+}
+
+// moduleDepChip — one linked dependency group rendered as a chip, with an
+// admin-only inline remove form.
+templ moduleDepChip(moduleID string, ch ModuleDepChip, csrf string, isAdmin bool) {
+	<span class="pm-urn-chip">
+		{ ch.Name }
+		if isAdmin {
+			<form method="post" action={ templ.SafeURL("/policy/modules/" + moduleID + "/dependencies/" + strconv.FormatInt(ch.GroupID, 10) + "/remove") } style="display:inline;">
+				<input type="hidden" name="_csrf" value={ csrf }/>
+				<button type="submit" class="pm-deps-remove" title="Unlink this dependency group">×</button>
+			</form>
+		}
+	</span>
 }
 
 // =====================================================================
@@ -1970,7 +1716,8 @@ templ policyModulesSourcesBody() {
 	<section class="pm-sources card">
 		<ul class="pm-source-list">
 			<li class="pm-source pm-source-bundled">
-				<div class="pm-source-icon">@iconSVG("package")</div>
+				<div class="pm-source-icon">@iconSVG("package")
+</div>
 				<div class="pm-source-body">
 					<div class="pm-source-title">Pluris-bundled modules</div>
 					<div class="pm-source-meta">{ SourceCount(extension.KindPolicyModule, extension.SourceBundled) } · always enabled · read-only · ships with this Pluris release</div>
@@ -1979,16 +1726,18 @@ templ policyModulesSourcesBody() {
 				<div class="pm-source-status"><span class="pm-status pm-status-published">active</span></div>
 			</li>
 			<li class="pm-source pm-source-tenant">
-				<div class="pm-source-icon">@iconSVG("building")</div>
+				<div class="pm-source-icon">@iconSVG("building")
+</div>
 				<div class="pm-source-body">
 					<div class="pm-source-title">Tenant-local modules</div>
 					<div class="pm-source-meta">{ SourceCount(extension.KindPolicyModule, extension.SourceTenant) } · always enabled · signed by your tenant key</div>
-					<div class="pm-source-desc">Modules you author with the Custom Policy Wizard, clone from a bundled module, or upload as a bundle (<code>.tar.gz</code> with <code>module.yaml</code>). Listed as <span class="pm-origin-chip pm-origin-tenant">tenant</span> in the Library.</div>
+					<div class="pm-source-desc">Modules you author in the module editor, clone from a bundled module, or upload as a bundle (<code>.tar.gz</code> with <code>module.yaml</code>). Listed as <span class="pm-origin-chip pm-origin-tenant">tenant</span> in the Library.</div>
 				</div>
 				<div class="pm-source-status"><span class="pm-status pm-status-published">active</span></div>
 			</li>
 			<li class="pm-source pm-source-imported">
-				<div class="pm-source-icon">@iconSVG("globe")</div>
+				<div class="pm-source-icon">@iconSVG("globe")
+</div>
 				<div class="pm-source-body">
 					<div class="pm-source-title">Imported module registries</div>
 					<div class="pm-source-meta">{ SourceCount(extension.KindPolicyModule, extension.SourceImported) } · phase 4 · manual fetch · per-source signing trust</div>
@@ -1997,7 +1746,8 @@ templ policyModulesSourcesBody() {
 				</div>
 				<div class="pm-source-status">
 					<button type="button" class="btn btn-secondary" disabled title="Imported registries are Phase 4">
-						@iconSVG("plus") <span>Add registry</span>
+						@iconSVG("plus")
+						<span>Add registry</span>
 					</button>
 				</div>
 			</li>
@@ -2010,8 +1760,8 @@ templ policyModulesSourcesBody() {
 //
 // Mounted once per page in PolicyModulesPage and opened by any
 // "Pick module" button via the data-pmp-open attribute. Future
-// mount points (CG editor, Profile editor, Custom Policy Wizard
-// step 5) share the same DOM and the same JS shim.
+// mount points (CG binding rows, Profile editor) share the same DOM
+// and the same JS shim.
 //
 // The dialog hydrates client-side from the row that opened it:
 //

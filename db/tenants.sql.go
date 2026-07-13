@@ -115,7 +115,7 @@ func (q *Queries) CountTenants(ctx context.Context) (int64, error) {
 const CreateGroup = `-- name: CreateGroup :one
 
 INSERT INTO groups (tenant_id, site_id, name, slug)
-VALUES (?1, ?2, ?3, ?4) RETURNING id, tenant_id, site_id, name, slug, created_at, group_category, group_scope
+VALUES (?1, ?2, ?3, ?4) RETURNING id, tenant_id, site_id, name, slug, created_at, group_category, group_scope, description, member_kind, membership, rules_match_mode
 `
 
 type CreateGroupParams struct {
@@ -145,6 +145,10 @@ func (q *Queries) CreateGroup(ctx context.Context, arg CreateGroupParams) (Group
 		&i.CreatedAt,
 		&i.GroupCategory,
 		&i.GroupScope,
+		&i.Description,
+		&i.MemberKind,
+		&i.Membership,
+		&i.RulesMatchMode,
 	)
 	return i, err
 }
@@ -229,7 +233,7 @@ func (q *Queries) DeleteTenant(ctx context.Context, id int64) error {
 }
 
 const GetGroup = `-- name: GetGroup :one
-SELECT id, tenant_id, site_id, name, slug, created_at, group_category, group_scope FROM groups WHERE id = ?1 LIMIT 1
+SELECT id, tenant_id, site_id, name, slug, created_at, group_category, group_scope, description, member_kind, membership, rules_match_mode FROM groups WHERE id = ?1 LIMIT 1
 `
 
 func (q *Queries) GetGroup(ctx context.Context, id int64) (Group, error) {
@@ -244,12 +248,16 @@ func (q *Queries) GetGroup(ctx context.Context, id int64) (Group, error) {
 		&i.CreatedAt,
 		&i.GroupCategory,
 		&i.GroupScope,
+		&i.Description,
+		&i.MemberKind,
+		&i.Membership,
+		&i.RulesMatchMode,
 	)
 	return i, err
 }
 
 const GetGroupBySlug = `-- name: GetGroupBySlug :one
-SELECT id, tenant_id, site_id, name, slug, created_at, group_category, group_scope FROM groups 
+SELECT id, tenant_id, site_id, name, slug, created_at, group_category, group_scope, description, member_kind, membership, rules_match_mode FROM groups 
 WHERE tenant_id = ?1 AND slug = ?2 
 LIMIT 1
 `
@@ -271,6 +279,10 @@ func (q *Queries) GetGroupBySlug(ctx context.Context, arg GetGroupBySlugParams) 
 		&i.CreatedAt,
 		&i.GroupCategory,
 		&i.GroupScope,
+		&i.Description,
+		&i.MemberKind,
+		&i.Membership,
+		&i.RulesMatchMode,
 	)
 	return i, err
 }
@@ -441,7 +453,7 @@ func (q *Queries) ListAssetsInGroup(ctx context.Context, groupID int64) ([]Asset
 }
 
 const ListGroupsBySite = `-- name: ListGroupsBySite :many
-SELECT id, tenant_id, site_id, name, slug, created_at, group_category, group_scope FROM groups
+SELECT id, tenant_id, site_id, name, slug, created_at, group_category, group_scope, description, member_kind, membership, rules_match_mode FROM groups
 WHERE tenant_id = ?1 AND site_id = ?2
 ORDER BY name
 `
@@ -469,6 +481,10 @@ func (q *Queries) ListGroupsBySite(ctx context.Context, arg ListGroupsBySitePara
 			&i.CreatedAt,
 			&i.GroupCategory,
 			&i.GroupScope,
+			&i.Description,
+			&i.MemberKind,
+			&i.Membership,
+			&i.RulesMatchMode,
 		); err != nil {
 			return nil, err
 		}
@@ -484,7 +500,7 @@ func (q *Queries) ListGroupsBySite(ctx context.Context, arg ListGroupsBySitePara
 }
 
 const ListGroupsByTenant = `-- name: ListGroupsByTenant :many
-SELECT id, tenant_id, site_id, name, slug, created_at, group_category, group_scope FROM groups
+SELECT id, tenant_id, site_id, name, slug, created_at, group_category, group_scope, description, member_kind, membership, rules_match_mode FROM groups
 WHERE tenant_id = ?1
 ORDER BY name
 `
@@ -507,6 +523,10 @@ func (q *Queries) ListGroupsByTenant(ctx context.Context, tenantID int64) ([]Gro
 			&i.CreatedAt,
 			&i.GroupCategory,
 			&i.GroupScope,
+			&i.Description,
+			&i.MemberKind,
+			&i.Membership,
+			&i.RulesMatchMode,
 		); err != nil {
 			return nil, err
 		}
@@ -522,7 +542,7 @@ func (q *Queries) ListGroupsByTenant(ctx context.Context, tenantID int64) ([]Gro
 }
 
 const ListGroupsForAsset = `-- name: ListGroupsForAsset :many
-SELECT g.id, g.tenant_id, g.site_id, g.name, g.slug, g.created_at, g.group_category, g.group_scope FROM groups g
+SELECT g.id, g.tenant_id, g.site_id, g.name, g.slug, g.created_at, g.group_category, g.group_scope, g.description, g.member_kind, g.membership, g.rules_match_mode FROM groups g
 INNER JOIN group_memberships gm ON g.id = gm.group_id
 WHERE gm.asset_id = ?1
 ORDER BY g.name
@@ -546,6 +566,10 @@ func (q *Queries) ListGroupsForAsset(ctx context.Context, assetID sql.NullInt64)
 			&i.CreatedAt,
 			&i.GroupCategory,
 			&i.GroupScope,
+			&i.Description,
+			&i.MemberKind,
+			&i.Membership,
+			&i.RulesMatchMode,
 		); err != nil {
 			return nil, err
 		}
@@ -561,7 +585,7 @@ func (q *Queries) ListGroupsForAsset(ctx context.Context, assetID sql.NullInt64)
 }
 
 const ListGroupsForIdentity = `-- name: ListGroupsForIdentity :many
-SELECT g.id, g.tenant_id, g.site_id, g.name, g.slug, g.created_at, g.group_category, g.group_scope FROM groups g
+SELECT g.id, g.tenant_id, g.site_id, g.name, g.slug, g.created_at, g.group_category, g.group_scope, g.description, g.member_kind, g.membership, g.rules_match_mode FROM groups g
 INNER JOIN group_memberships gm ON g.id = gm.group_id
 WHERE gm.identity_id = ?1
 ORDER BY g.name
@@ -585,6 +609,10 @@ func (q *Queries) ListGroupsForIdentity(ctx context.Context, identityID sql.Null
 			&i.CreatedAt,
 			&i.GroupCategory,
 			&i.GroupScope,
+			&i.Description,
+			&i.MemberKind,
+			&i.Membership,
+			&i.RulesMatchMode,
 		); err != nil {
 			return nil, err
 		}
@@ -778,7 +806,7 @@ func (q *Queries) RemoveIdentityFromGroup(ctx context.Context, arg RemoveIdentit
 }
 
 const SearchGroups = `-- name: SearchGroups :many
-SELECT id, tenant_id, site_id, name, slug, created_at, group_category, group_scope FROM groups
+SELECT id, tenant_id, site_id, name, slug, created_at, group_category, group_scope, description, member_kind, membership, rules_match_mode FROM groups
 WHERE tenant_id = ?1
   AND name LIKE '%' || ?2 || '%'
 ORDER BY name
@@ -809,6 +837,10 @@ func (q *Queries) SearchGroups(ctx context.Context, arg SearchGroupsParams) ([]G
 			&i.CreatedAt,
 			&i.GroupCategory,
 			&i.GroupScope,
+			&i.Description,
+			&i.MemberKind,
+			&i.Membership,
+			&i.RulesMatchMode,
 		); err != nil {
 			return nil, err
 		}
@@ -828,7 +860,7 @@ UPDATE groups SET
     name = ?1, 
     site_id = ?2
 WHERE id = ?3
-RETURNING id, tenant_id, site_id, name, slug, created_at, group_category, group_scope
+RETURNING id, tenant_id, site_id, name, slug, created_at, group_category, group_scope, description, member_kind, membership, rules_match_mode
 `
 
 type UpdateGroupParams struct {
@@ -849,6 +881,10 @@ func (q *Queries) UpdateGroup(ctx context.Context, arg UpdateGroupParams) (Group
 		&i.CreatedAt,
 		&i.GroupCategory,
 		&i.GroupScope,
+		&i.Description,
+		&i.MemberKind,
+		&i.Membership,
+		&i.RulesMatchMode,
 	)
 	return i, err
 }

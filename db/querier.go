@@ -14,7 +14,13 @@ type Querier interface {
 	// Group membership operations
 	// ============================================================================
 	AddAssetToGroup(ctx context.Context, arg AddAssetToGroupParams) error
+	// ============================================================================
+	// Rule-sourced membership reconciliation
+	// ============================================================================
+	AddAssetToGroupWithSource(ctx context.Context, arg AddAssetToGroupWithSourceParams) error
 	AddIdentityToGroup(ctx context.Context, arg AddIdentityToGroupParams) error
+	AddIdentityToGroupWithSource(ctx context.Context, arg AddIdentityToGroupWithSourceParams) error
+	AssignRoleToGroup(ctx context.Context, arg AssignRoleToGroupParams) error
 	AssignRoleToIdentity(ctx context.Context, arg AssignRoleToIdentityParams) error
 	ClearAssetOwner(ctx context.Context, id int64) error
 	ClearGroupMembers(ctx context.Context, groupID int64) error
@@ -23,8 +29,20 @@ type Querier interface {
 	CountAssetsByTenant(ctx context.Context, tenantID int64) (int64, error)
 	CountAssetsInGroup(ctx context.Context, groupID int64) (int64, error)
 	CountAssignmentsByGroup(ctx context.Context, configurationGroupID int64) (int64, error)
+	// Used by the module service's DeleteModule guard: a module referenced
+	// by any configuration-group binding may not be deleted (see
+	// pkg/services/policymodules.go).
+	CountBindingsByModule(ctx context.Context, moduleID sql.NullInt64) (int64, error)
+	// Delete-guard: configuration_group_assignments.target_id is a
+	// polymorphic reference (no FK -- see 001_initial.sql's comment on that
+	// table) so deleting a group referenced there would leave a dangling
+	// assignment row pointing at a now-nonexistent group id. Group deletion
+	// is blocked while any assignment still targets it (target_type='group').
+	CountConfigGroupAssignmentsForGroupTarget(ctx context.Context, targetID int64) (int64, error)
 	CountConfigurationGroupsByTenant(ctx context.Context, tenantID int64) (int64, error)
 	CountCustomPoliciesByTenant(ctx context.Context, tenantID int64) (int64, error)
+	CountDirectAssetsInGroup(ctx context.Context, groupID int64) (int64, error)
+	CountDirectIdentitiesInGroup(ctx context.Context, groupID int64) (int64, error)
 	CountGroupsByTenant(ctx context.Context, tenantID int64) (int64, error)
 	CountIdentitiesByTenant(ctx context.Context, tenantID int64) (int64, error)
 	// Used by the setup-gate middleware: "does any identity exist anywhere?"
@@ -34,6 +52,11 @@ type Querier interface {
 	CountInstallationsByModule(ctx context.Context, moduleID int64) (int64, error)
 	CountInstallationsByState(ctx context.Context, state string) (int64, error)
 	CountLinksForAsset(ctx context.Context, assetID int64) (int64, error)
+	CountLinksForGroup(ctx context.Context, groupID int64) (int64, error)
+	// Used by the module service's DeleteModule guard: a module referenced
+	// by any dependency-group link may not be deleted (see
+	// pkg/services/policymodules.go).
+	CountLinksForModule(ctx context.Context, arg CountLinksForModuleParams) (int64, error)
 	CountPolicyModulesByTenant(ctx context.Context, tenantID sql.NullInt64) (int64, error)
 	CountSitesByTenant(ctx context.Context, tenantID int64) (int64, error)
 	CountTenants(ctx context.Context) (int64, error)
@@ -57,10 +80,24 @@ type Querier interface {
 	// Custom policy queries
 	// Custom policies are tenant-specific policy definitions (not from bundled catalog)
 	CreateCustomPolicy(ctx context.Context, arg CreateCustomPolicyParams) (CustomPolicy, error)
+	// Dependency group queries. Matches the tables in
+	// db/schema/004_dependency_groups.sql. Groups are per tenant module
+	// applicability filters; conditions AND within a group; module links
+	// attach a group to a module in a role (platform or requirement).
+	CreateDependencyGroup(ctx context.Context, arg CreateDependencyGroupParams) (DependencyGroup, error)
+	CreateDependencyGroupCondition(ctx context.Context, arg CreateDependencyGroupConditionParams) (DependencyGroupCondition, error)
 	// ============================================================================
 	// Group operations
 	// ============================================================================
 	CreateGroup(ctx context.Context, arg CreateGroupParams) (Group, error)
+	// Create-page insert: every column the create form + presets need in one
+	// round trip, rather than CreateGroup (name/slug only) followed by a
+	// second UpdateGroupMeta call.
+	CreateGroupFull(ctx context.Context, arg CreateGroupFullParams) (Group, error)
+	// ============================================================================
+	// Membership rules (group_membership_rules)
+	// ============================================================================
+	CreateGroupMembershipRule(ctx context.Context, arg CreateGroupMembershipRuleParams) (GroupMembershipRule, error)
 	// Identity management queries - matches the schema in
 	// db/schema/002_identity_ad_compat.sql. Identities are both the
 	// end-user directory (owner of assets) and the accounts that log into
@@ -76,6 +113,7 @@ type Querier interface {
 	// Installed software queries - per asset software inventory backed by
 	// the installed_software table in db/schema/003_roles_software_logs.sql.
 	CreateInstalledSoftware(ctx context.Context, arg CreateInstalledSoftwareParams) (InstalledSoftware, error)
+	CreateModuleDependencyLink(ctx context.Context, arg CreateModuleDependencyLinkParams) error
 	// Module installation queries
 	// Tracks which policy modules are installed on which assets
 	CreateModuleInstallation(ctx context.Context, arg CreateModuleInstallationParams) (ModuleInstallation, error)
@@ -84,6 +122,12 @@ type Querier interface {
 	CreatePolicyModule(ctx context.Context, arg CreatePolicyModuleParams) (PolicyModule, error)
 	// ============================================================================
 	// Policy Module Versions
+	//
+	// Migration 008 reconciled this table with the catalog/policymodules
+	// domain model: runtime moved to per-phase (derived in Go from
+	// LifecyclePhase, never stored -- see 008's header), and the fixed
+	// enforce_script/validate_script/rollback_script columns were replaced
+	// by the policy_module_scripts child table below.
 	// ============================================================================
 	CreatePolicyModuleVersion(ctx context.Context, arg CreatePolicyModuleVersionParams) (PolicyModuleVersion, error)
 	// Role queries - matches the roles and identity_roles tables in
@@ -97,28 +141,43 @@ type Querier interface {
 	CreateSite(ctx context.Context, arg CreateSiteParams) (Site, error)
 	// Tenant operations
 	CreateTenant(ctx context.Context, arg CreateTenantParams) (Tenant, error)
+	DeleteAllRuleSourcedMembersForGroup(ctx context.Context, groupID int64) error
 	DeleteAsset(ctx context.Context, id int64) error
 	DeleteAssetLink(ctx context.Context, id int64) error
 	DeleteAssignmentsByGroup(ctx context.Context, configurationGroupID int64) error
 	DeleteAssignmentsByTarget(ctx context.Context, arg DeleteAssignmentsByTargetParams) error
 	DeleteBindingsByGroup(ctx context.Context, configurationGroupID int64) error
+	DeleteConditionsForGroup(ctx context.Context, groupID int64) error
 	DeleteConfigurationGroup(ctx context.Context, id int64) error
 	DeleteConfigurationGroupAssignment(ctx context.Context, id int64) error
 	DeleteConfigurationGroupBinding(ctx context.Context, id int64) error
 	DeleteCustomPolicy(ctx context.Context, id int64) error
 	DeleteDependenciesForInstallation(ctx context.Context, installationID int64) error
 	DeleteDependenciesOnInstallation(ctx context.Context, installationID int64) error
+	DeleteDependencyGroup(ctx context.Context, id int64) error
+	DeleteDependencyGroupCondition(ctx context.Context, arg DeleteDependencyGroupConditionParams) error
 	DeleteExpiredSessions(ctx context.Context) error
 	DeleteGroup(ctx context.Context, id int64) error
+	DeleteGroupMembershipRule(ctx context.Context, arg DeleteGroupMembershipRuleParams) error
 	DeleteIdentity(ctx context.Context, id int64) error
 	DeleteInstallationDependency(ctx context.Context, id int64) error
 	DeleteInstallationsByAsset(ctx context.Context, assetID int64) error
 	DeleteInstallationsByModule(ctx context.Context, moduleID int64) error
 	DeleteLinksByRelation(ctx context.Context, arg DeleteLinksByRelationParams) error
 	DeleteLinksForAsset(ctx context.Context, assetID int64) error
+	DeleteModuleDependencyLink(ctx context.Context, arg DeleteModuleDependencyLinkParams) error
+	DeleteModuleGrant(ctx context.Context, arg DeleteModuleGrantParams) error
 	DeleteModuleInstallation(ctx context.Context, id int64) error
+	DeleteModuleScript(ctx context.Context, arg DeleteModuleScriptParams) error
 	DeletePolicyModule(ctx context.Context, id int64) error
 	DeletePolicyModuleVersion(ctx context.Context, id int64) error
+	// Deletes a custom role. Callers must guard against deleting builtin
+	// roles and roles that still have members (Task 6, Pluris Policy delete).
+	DeleteRole(ctx context.Context, id int64) error
+	DeleteRuleSourcedAssetFromGroup(ctx context.Context, arg DeleteRuleSourcedAssetFromGroupParams) error
+	DeleteRuleSourcedIdentityFromGroup(ctx context.Context, arg DeleteRuleSourcedIdentityFromGroupParams) error
+	DeleteRulesForGroup(ctx context.Context, groupID int64) error
+	DeleteScriptsForVersion(ctx context.Context, versionID int64) error
 	DeleteSite(ctx context.Context, id int64) error
 	DeleteTenant(ctx context.Context, id int64) error
 	GetActiveSessionByTokenHash(ctx context.Context, tokenHash string) (IdentitySession, error)
@@ -137,8 +196,12 @@ type Querier interface {
 	GetConfigurationGroupByName(ctx context.Context, arg GetConfigurationGroupByNameParams) (ConfigurationGroup, error)
 	GetCustomPolicy(ctx context.Context, id int64) (CustomPolicy, error)
 	GetCustomPolicyByURN(ctx context.Context, arg GetCustomPolicyByURNParams) (CustomPolicy, error)
+	GetDependencyGroup(ctx context.Context, id int64) (DependencyGroup, error)
+	GetDependencyGroupBySlug(ctx context.Context, arg GetDependencyGroupBySlugParams) (DependencyGroup, error)
 	GetGroup(ctx context.Context, id int64) (Group, error)
 	GetGroupBySlug(ctx context.Context, arg GetGroupBySlugParams) (Group, error)
+	GetGroupMembershipSourceForAsset(ctx context.Context, arg GetGroupMembershipSourceForAssetParams) (string, error)
+	GetGroupMembershipSourceForIdentity(ctx context.Context, arg GetGroupMembershipSourceForIdentityParams) (string, error)
 	GetIdentity(ctx context.Context, id int64) (Identity, error)
 	GetIdentityByEmail(ctx context.Context, arg GetIdentityByEmailParams) (Identity, error)
 	// Used at login: the user only enters an email, not a tenant, so this
@@ -150,6 +213,10 @@ type Querier interface {
 	GetInstallationByAssetAndModule(ctx context.Context, arg GetInstallationByAssetAndModuleParams) (ModuleInstallation, error)
 	GetLatestPublishedVersion(ctx context.Context, moduleID int64) (PolicyModuleVersion, error)
 	GetModuleInstallation(ctx context.Context, id int64) (ModuleInstallation, error)
+	// Returns just the owner_identity_id column; GetPolicyModule's SELECT *
+	// already includes it, but this narrow query is convenient for authz
+	// checks that only need the owner, not the whole row.
+	GetModuleOwner(ctx context.Context, id int64) (sql.NullInt64, error)
 	GetModuleWithLatestVersion(ctx context.Context, id int64) (GetModuleWithLatestVersionRow, error)
 	GetPolicyModule(ctx context.Context, id int64) (PolicyModule, error)
 	GetPolicyModuleByURN(ctx context.Context, moduleUrn string) (PolicyModule, error)
@@ -170,6 +237,13 @@ type Querier interface {
 	IsIdentityInGroup(ctx context.Context, arg IsIdentityInGroupParams) (int64, error)
 	ListActivityForEntity(ctx context.Context, arg ListActivityForEntityParams) ([]ActivityLog, error)
 	ListAllLinksForAsset(ctx context.Context, assetID int64) ([]ListAllLinksForAssetRow, error)
+	// Task 6.2 -- Group detail page Members tab + create/delete-guard support.
+	// Mirrors group_detail.sql's "g.*, gm.created_at AS added_at" shape:
+	// these two queries add gm.source so the Members tab can render a
+	// Direct/Dynamic chip per row (fixing the GroupService.ListForAsset/
+	// ListForIdentity Source hardcoding carry-forward at its root: the raw
+	// membership row's source column, not a hardcoded "Direct" string).
+	ListAssetMembersForGroup(ctx context.Context, groupID int64) ([]ListAssetMembersForGroupRow, error)
 	ListAssets(ctx context.Context, arg ListAssetsParams) ([]Asset, error)
 	// Filter assets by enrollment state
 	ListAssetsByEnrollmentState(ctx context.Context, arg ListAssetsByEnrollmentStateParams) ([]Asset, error)
@@ -180,19 +254,43 @@ type Querier interface {
 	ListAssetsBySubtype(ctx context.Context, arg ListAssetsBySubtypeParams) ([]ListAssetsBySubtypeRow, error)
 	ListAssetsInGroup(ctx context.Context, groupID int64) ([]Asset, error)
 	ListAssignmentsByGroup(ctx context.Context, configurationGroupID int64) ([]ConfigurationGroupAssignment, error)
+	// Assignments reaching a given catalog policy, for the policy detail
+	// page Assignments tab (Task 15).
+	ListAssignmentsByPolicy(ctx context.Context, arg ListAssignmentsByPolicyParams) ([]ListAssignmentsByPolicyRow, error)
 	ListAssignmentsByTarget(ctx context.Context, arg ListAssignmentsByTargetParams) ([]ListAssignmentsByTargetRow, error)
 	ListBindingsByGroup(ctx context.Context, configurationGroupID int64) ([]ListBindingsByGroupRow, error)
 	ListBindingsByModule(ctx context.Context, moduleID sql.NullInt64) ([]ListBindingsByModuleRow, error)
 	ListBundledModules(ctx context.Context) ([]PolicyModule, error)
+	ListConditionsForGroup(ctx context.Context, groupID int64) ([]DependencyGroupCondition, error)
 	ListConfigGroupsForAsset(ctx context.Context, arg ListConfigGroupsForAssetParams) ([]ConfigurationGroup, error)
 	ListConfigurationGroupsByTenant(ctx context.Context, arg ListConfigurationGroupsByTenantParams) ([]ConfigurationGroup, error)
 	ListCustomPoliciesByCategory(ctx context.Context, arg ListCustomPoliciesByCategoryParams) ([]CustomPolicy, error)
 	ListCustomPoliciesByScope(ctx context.Context, arg ListCustomPoliciesByScopeParams) ([]CustomPolicy, error)
 	ListCustomPoliciesByTenant(ctx context.Context, arg ListCustomPoliciesByTenantParams) ([]CustomPolicy, error)
 	ListDependenciesForInstallation(ctx context.Context, installationID int64) ([]ListDependenciesForInstallationRow, error)
+	ListDependencyGroupsByTenant(ctx context.Context, tenantID int64) ([]DependencyGroup, error)
 	ListDependentsOfInstallation(ctx context.Context, installationID int64) ([]ListDependentsOfInstallationRow, error)
+	ListDirectAssetIDsForGroup(ctx context.Context, groupID int64) ([]sql.NullInt64, error)
+	ListDirectIdentityIDsForGroup(ctx context.Context, groupID int64) ([]sql.NullInt64, error)
 	ListEnabledConfigurationGroups(ctx context.Context, tenantID int64) ([]ConfigurationGroup, error)
 	ListFailingInstallations(ctx context.Context, limit int64) ([]ListFailingInstallationsRow, error)
+	// Module grants queries.
+	//
+	// module_grants is the single, shared per-module access-grant table for
+	// both policy modules and the future Scripts feature (a script is an
+	// unpackaged module row in policy_modules) -- see db/schema/007's header
+	// comment. subject_type/level are validated in Go, not the schema; see
+	// pkg/authz/modules.go for the decision logic these rows feed.
+	ListGrantsForModule(ctx context.Context, moduleID int64) ([]ModuleGrant, error)
+	// Roles an identity inherits via group membership (distinct across
+	// however many groups grant the same role).
+	ListGroupRolesForIdentity(ctx context.Context, identityID sql.NullInt64) ([]Role, error)
+	// Roles an identity inherits via group membership, WITH the group each
+	// one comes from (Task 7 user detail Roles tab "via <group>" rows). One
+	// row per (role, group) pair -- an identity in two groups that both
+	// grant the same role gets two rows, one per group, unlike the
+	// DISTINCT-collapsed ListGroupRolesForIdentity above.
+	ListGroupRolesForIdentityDetail(ctx context.Context, identityID sql.NullInt64) ([]ListGroupRolesForIdentityDetailRow, error)
 	ListGroupsBySite(ctx context.Context, arg ListGroupsBySiteParams) ([]Group, error)
 	ListGroupsByTenant(ctx context.Context, tenantID int64) ([]Group, error)
 	ListGroupsForAsset(ctx context.Context, assetID sql.NullInt64) ([]Group, error)
@@ -200,39 +298,75 @@ type Querier interface {
 	// ListGroupsForAsset and ListGroupsForIdentity but each row also carries
 	// the membership creation time so the UI can show when the entity was
 	// added to the group.
+	// gm.source is selected (Task 6.2) so GroupService.ListForAsset can show
+	// the membership's real source (direct/rule) instead of a hardcoded
+	// "Direct" label.
 	ListGroupsForAssetDetail(ctx context.Context, assetID sql.NullInt64) ([]ListGroupsForAssetDetailRow, error)
 	ListGroupsForIdentity(ctx context.Context, identityID sql.NullInt64) ([]Group, error)
+	// gm.source selected for the same reason as ListGroupsForAssetDetail
+	// above.
 	ListGroupsForIdentityDetail(ctx context.Context, identityID sql.NullInt64) ([]ListGroupsForIdentityDetailRow, error)
+	// Groups holding a given role, for the role detail Members tab.
+	ListGroupsForRole(ctx context.Context, roleID int64) ([]ListGroupsForRoleRow, error)
 	ListIdentitiesByTenant(ctx context.Context, arg ListIdentitiesByTenantParams) ([]Identity, error)
+	// Identities assigned to a given role, for the role detail page.
+	ListIdentitiesForRole(ctx context.Context, roleID int64) ([]ListIdentitiesForRoleRow, error)
 	ListIdentitiesInGroup(ctx context.Context, groupID int64) ([]Identity, error)
 	ListIdentityAuditLogByTenant(ctx context.Context, arg ListIdentityAuditLogByTenantParams) ([]IdentityAuditLog, error)
+	ListIdentityMembersForGroup(ctx context.Context, groupID int64) ([]ListIdentityMembersForGroupRow, error)
 	ListInstallationsByAsset(ctx context.Context, assetID int64) ([]ListInstallationsByAssetRow, error)
 	ListInstallationsByModule(ctx context.Context, moduleID int64) ([]ListInstallationsByModuleRow, error)
 	ListInstallationsByState(ctx context.Context, arg ListInstallationsByStateParams) ([]ListInstallationsByStateRow, error)
 	ListLinksByRelation(ctx context.Context, arg ListLinksByRelationParams) ([]ListLinksByRelationRow, error)
+	ListLinksForGroup(ctx context.Context, groupID int64) ([]ModuleDependencyLink, error)
+	ListLinksForModule(ctx context.Context, arg ListLinksForModuleParams) ([]ModuleDependencyLink, error)
 	ListLinksFromAsset(ctx context.Context, fromAssetID int64) ([]ListLinksFromAssetRow, error)
 	ListLinksToAsset(ctx context.Context, toAssetID int64) ([]ListLinksToAssetRow, error)
 	ListPendingInstallations(ctx context.Context, limit int64) ([]ListPendingInstallationsRow, error)
 	ListPolicyModulesByTenant(ctx context.Context, arg ListPolicyModulesByTenantParams) ([]PolicyModule, error)
+	// Direct children of a role in the inheritance chain.
+	ListRoleChildren(ctx context.Context, id sql.NullInt64) ([]Role, error)
 	ListRolesByTenant(ctx context.Context, tenantID int64) ([]Role, error)
+	// Roles assigned directly to a group, for the group detail Roles tab.
+	ListRolesForGroup(ctx context.Context, groupID int64) ([]Role, error)
+	// Same as ListRolesForGroup but carries the assignment time (Task 7
+	// group detail Roles tab "Assigned" column). Mirrors
+	// ListRolesForIdentityDetail's relationship to ListRolesForIdentity.
+	ListRolesForGroupDetail(ctx context.Context, groupID int64) ([]ListRolesForGroupDetailRow, error)
 	ListRolesForIdentity(ctx context.Context, identityID int64) ([]Role, error)
 	// Role rows for the user detail Roles tab (Task 11). Same join as
 	// ListRolesForIdentity but carries the assignment time.
 	ListRolesForIdentityDetail(ctx context.Context, identityID int64) ([]ListRolesForIdentityDetailRow, error)
+	ListRuleSourcedAssetIDsForGroup(ctx context.Context, groupID int64) ([]sql.NullInt64, error)
+	ListRuleSourcedIdentityIDsForGroup(ctx context.Context, groupID int64) ([]sql.NullInt64, error)
+	ListRulesForGroup(ctx context.Context, groupID int64) ([]GroupMembershipRule, error)
+	ListScriptsForVersion(ctx context.Context, versionID int64) ([]PolicyModuleScript, error)
 	ListSitesByTenant(ctx context.Context, tenantID int64) ([]Site, error)
 	ListSoftwareForAsset(ctx context.Context, assetID int64) ([]InstalledSoftware, error)
 	// Get assets not seen since a timestamp (stale)
 	ListStaleAssets(ctx context.Context, arg ListStaleAssetsParams) ([]Asset, error)
 	ListTenants(ctx context.Context) ([]Tenant, error)
 	ListVersionsByModule(ctx context.Context, moduleID int64) ([]ListVersionsByModuleRow, error)
+	// Every module a tenant can see: its own tenant-authored modules plus
+	// every bundled module. Used by the service's ListModules (read path
+	// for the Modules Library/Defaults/Sources pages).
+	ListVisibleModules(ctx context.Context, tenantID sql.NullInt64) ([]PolicyModule, error)
 	LockIdentityIfThresholdExceeded(ctx context.Context, arg LockIdentityIfThresholdExceededParams) error
-	PublishModuleVersion(ctx context.Context, arg PublishModuleVersionParams) error
+	// State-guarded: only a draft can transition to published. Returns rows
+	// affected so the service detects a lost race (two concurrent Publishes
+	// of the same draft: exactly one sees 1 row). Runs inside Publish's
+	// transaction together with SupersedeCurrentPublishedVersion.
+	PublishModuleVersion(ctx context.Context, arg PublishModuleVersionParams) (int64, error)
 	RecordLoginFailure(ctx context.Context, id int64) error
 	RecordLoginSuccess(ctx context.Context, id int64) error
 	RemoveAssetFromGroup(ctx context.Context, arg RemoveAssetFromGroupParams) error
 	RemoveIdentityFromGroup(ctx context.Context, arg RemoveIdentityFromGroupParams) error
+	RemoveRoleFromGroup(ctx context.Context, arg RemoveRoleFromGroupParams) error
 	RemoveRoleFromIdentity(ctx context.Context, arg RemoveRoleFromIdentityParams) error
-	RevokeModuleVersion(ctx context.Context, id int64) error
+	// State-guarded: only published/superseded versions can be revoked;
+	// drafts should be deleted instead (the service returns a typed error
+	// when 0 rows change).
+	RevokeModuleVersion(ctx context.Context, id int64) (int64, error)
 	RevokeSession(ctx context.Context, tokenHash string) error
 	// Search assets across multiple fields
 	SearchAssets(ctx context.Context, arg SearchAssetsParams) ([]SearchAssetsRow, error)
@@ -252,9 +386,32 @@ type Querier interface {
 	SetIdentityEnabled(ctx context.Context, arg SetIdentityEnabledParams) error
 	SetIdentityLocked(ctx context.Context, arg SetIdentityLockedParams) error
 	SetIdentityPasswordHash(ctx context.Context, arg SetIdentityPasswordHashParams) error
+	// Sets (or clears, with a NULL @owner_identity_id) the owning identity of
+	// a module. A module's owner is the identity whose Pluris permissions it
+	// inherits (see pkg/authz/modules.go). Bundled modules should never have
+	// an owner set.
+	SetModuleOwner(ctx context.Context, arg SetModuleOwnerParams) error
 	SetSessionActiveTenant(ctx context.Context, arg SetSessionActiveTenantParams) error
+	// Marks whatever is currently published for @module_id (excluding the
+	// version being published, @exclude_id) superseded by
+	// @superseded_by_version. One state-guarded statement instead of a
+	// read-then-update so the "at most one published version per module"
+	// invariant can't be broken by a writer racing between the read and the
+	// write. Runs inside Publish's transaction.
+	SupersedeCurrentPublishedVersion(ctx context.Context, arg SupersedeCurrentPublishedVersionParams) (int64, error)
 	UpdateAsset(ctx context.Context, arg UpdateAssetParams) (Asset, error)
 	UpdateAssetCMDB(ctx context.Context, arg UpdateAssetCMDBParams) error
+	// Column-backed keys editable through the field-update API (Task 8
+	// review Finding 2): the "identity" section's description plus the
+	// "lifecycle" section's lifecycle_state/vendor/location/purchase_date/
+	// warranty_expires_at. Every other assets-table column (uuid, tenant_id,
+	// site_id, owner_identity_id, enrollment_state, ...) is either computed,
+	// a link resolved through another entity, or agent-controlled, and is
+	// NOT touched here. Caller (AssetService.UpdateFields) fetches the
+	// current row first and re-supplies every column (fetched-then-mutated,
+	// same pattern as IdentityService.UpdateFields), so a request editing
+	// only one of these columns cannot clobber the others.
+	UpdateAssetEditableColumns(ctx context.Context, arg UpdateAssetEditableColumnsParams) error
 	UpdateAssetEnrollmentState(ctx context.Context, arg UpdateAssetEnrollmentStateParams) error
 	UpdateAssetLastSeen(ctx context.Context, arg UpdateAssetLastSeenParams) error
 	UpdateAssetLink(ctx context.Context, arg UpdateAssetLinkParams) (AssetLink, error)
@@ -264,17 +421,82 @@ type Querier interface {
 	UpdateAssetPayload(ctx context.Context, arg UpdateAssetPayloadParams) error
 	UpdateAssetSite(ctx context.Context, arg UpdateAssetSiteParams) error
 	UpdateConfigurationGroup(ctx context.Context, arg UpdateConfigurationGroupParams) (ConfigurationGroup, error)
+	// Updates priority/enforced on an existing assignment. target_type/
+	// target_id/group are immutable after creation (remove + re-add to
+	// retarget); this only covers the fields the detail-page assignments
+	// table lets an admin tweak in place.
+	UpdateConfigurationGroupAssignment(ctx context.Context, arg UpdateConfigurationGroupAssignmentParams) (ConfigurationGroupAssignment, error)
 	UpdateConfigurationGroupBinding(ctx context.Context, arg UpdateConfigurationGroupBindingParams) (ConfigurationGroupBinding, error)
 	UpdateCustomPolicy(ctx context.Context, arg UpdateCustomPolicyParams) (CustomPolicy, error)
+	UpdateDependencyGroup(ctx context.Context, arg UpdateDependencyGroupParams) error
 	UpdateGroup(ctx context.Context, arg UpdateGroupParams) (Group, error)
+	UpdateGroupMatchMode(ctx context.Context, arg UpdateGroupMatchModeParams) error
+	// Group member-kind/membership metadata and dynamic membership rules.
+	// Matches db/schema/009_group_kinds_rules.sql. group_membership_rules
+	// mirrors dependency_group_conditions column-for-column (see that
+	// migration's header comment) so both are driven by the same eval
+	// engine (catalog/dependencygroups/eval.go).
+	// ============================================================================
+	// Group metadata (member_kind / membership / rules_match_mode / description)
+	// ============================================================================
+	UpdateGroupMeta(ctx context.Context, arg UpdateGroupMetaParams) error
+	// Writes every field the Users UI (detail-page editor + inline-edit field
+	// API, see console/handlers/field_api.go) can set on an identity. Kept as
+	// one wide UPDATE (rather than narrow SetIdentityX statements per field)
+	// so IdentityService.Update stays the single write path callers use --
+	// ID/AccountEnabled/AccountLocked/Role/password fields have their own
+	// narrower statements below for flows that must not clobber unrelated
+	// columns.
 	UpdateIdentity(ctx context.Context, arg UpdateIdentityParams) (Identity, error)
 	UpdateIdentityRole(ctx context.Context, arg UpdateIdentityRoleParams) error
 	UpdateInstallationApplied(ctx context.Context, id int64) error
 	UpdateInstallationState(ctx context.Context, arg UpdateInstallationStateParams) error
 	UpdateModuleInstallation(ctx context.Context, arg UpdateModuleInstallationParams) (ModuleInstallation, error)
 	UpdatePolicyModule(ctx context.Context, arg UpdatePolicyModuleParams) (PolicyModule, error)
+	// Mutates a version's fields. The WHERE state = 'draft' guard makes the
+	// immutability rule (ADR-007: published/superseded/revoked versions are
+	// frozen) hold atomically even if a Publish races between the service's
+	// pre-read and this UPDATE: a non-draft row matches nothing and sqlite's
+	// RETURNING yields no row (sql.ErrNoRows), which the service maps to
+	// ErrVersionNotDraft.
+	UpdatePolicyModuleVersionDraft(ctx context.Context, arg UpdatePolicyModuleVersionDraftParams) (PolicyModuleVersion, error)
+	// Sets (or clears, if parent_role_id is NULL) a role's parent for
+	// inheritance. Callers must guard cycles and max depth (service layer).
+	UpdateRoleParent(ctx context.Context, arg UpdateRoleParentParams) error
+	UpdateRolePermissions(ctx context.Context, arg UpdateRolePermissionsParams) error
+	// Updates a custom role's name/description (Task 6 Settings tab rename).
+	// Callers must guard builtin roles -- this query has no such check.
+	UpdateRoleSettings(ctx context.Context, arg UpdateRoleSettingsParams) error
 	UpdateSite(ctx context.Context, arg UpdateSiteParams) (Site, error)
 	UpdateTenant(ctx context.Context, arg UpdateTenantParams) (Tenant, error)
+	// Creates a grant, or -- if this (module, subject) pair already has a
+	// grant row -- updates it in place to the new level, so a subject never
+	// ends up with more than one grant per module.
+	UpsertModuleGrant(ctx context.Context, arg UpsertModuleGrantParams) (ModuleGrant, error)
+	// ============================================================================
+	// Policy Module Scripts (migration 008)
+	// ============================================================================
+	// Insert-or-replace the script for (version_id, phase, seq). v1 always
+	// writes seq=0 (one script per phase); the seq column exists for a
+	// future multi-file phase.
+	//
+	// UNGUARDED -- only safe to call when the caller has already established
+	// the version is a draft (e.g. ForkLatestPublished copying a brand-new
+	// draft's scripts forward). Editor-facing script writes MUST go through
+	// UpsertModuleScriptGuarded below instead.
+	UpsertModuleScript(ctx context.Context, arg UpsertModuleScriptParams) (PolicyModuleScript, error)
+	// Task 4.3 mandatory fix: the plain UpsertModuleScript above has no
+	// draft guard, so a published/superseded/revoked version's scripts could
+	// be silently overwritten -- breaking ADR-007 immutability the same way
+	// an unguarded version-field UPDATE would. This variant only inserts (or
+	// upserts) a row when the target version's state = 'draft'; the WHERE
+	// EXISTS subquery is evaluated as part of the same atomic INSERT
+	// statement (no separate read-then-write), so it holds even if a Publish
+	// races between the service's pre-check and this call. When the version
+	// isn't a draft, the SELECT yields zero rows, nothing is inserted, and
+	// RETURNING produces no row -- the :one code path surfaces that as
+	// sql.ErrNoRows, which the service maps to the typed ErrVersionNotDraft.
+	UpsertModuleScriptGuarded(ctx context.Context, arg UpsertModuleScriptGuardedParams) (PolicyModuleScript, error)
 }
 
 var _ Querier = (*Queries)(nil)

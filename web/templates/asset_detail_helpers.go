@@ -39,24 +39,25 @@ func assetDetailHero(subtype string, a assets.Asset, owners []identities.Identit
 		chips = append(chips, Chip{Label: string(a.LifecycleState), Class: "asset-chip-lifecycle"})
 	}
 
-	var defs []HeroDef
+	defs := []HeroDef{
+		{Label: "Hostname", Value: a.PrimaryHostname(), IconSVG: heroIconMonitor},
+	}
 	if os := a.OSSummary(); os != "" {
-		defs = append(defs, HeroDef{Label: "OS", Value: os})
+		defs = append(defs, HeroDef{Label: "OS", Value: os, IconSVG: heroIconTerminal})
 	}
 	if a.Site != "" {
-		defs = append(defs, HeroDef{Label: "Site", Value: a.Site})
+		defs = append(defs, HeroDef{Label: "Site", Value: a.Site, IconSVG: heroIconMapPin})
 	}
 	if a.ManagedBy != "" {
-		defs = append(defs, HeroDef{Label: "Managed by", Value: a.ManagedBy})
+		defs = append(defs, HeroDef{Label: "Managed by", Value: a.ManagedBy, IconSVG: heroIconUsers})
 	}
 	if a.AgentVersion != "" {
-		defs = append(defs, HeroDef{Label: "Agent", Value: a.AgentVersion})
+		defs = append(defs, HeroDef{Label: "Agent", Value: a.AgentVersion, IconSVG: heroIconRadio})
 	}
 
 	return HeroSpec{
 		Crumbs: []Crumb{
-			{Label: "Assets", Href: "/assets/computers"},
-			{Label: assetSubtypeTabLabel(subtype), Href: "/assets/" + subtype},
+			{Label: "Assets", Href: "/assets/" + subtype},
 			{Label: a.PrimaryHostname()},
 		},
 		Name:   a.PrimaryHostname(),
@@ -90,7 +91,7 @@ func assetDetailTabs(subtype string, a assets.Asset, software []db.InstalledSoft
 		{Slug: "general", Label: "General", Body: assetGeneralTab(a)},
 		{Slug: "groups", Label: "Groups", Body: assetGroupsTab(subtype, a, groups, allGroups, csrfToken)},
 		{Slug: "policies", Label: "Applied Policies", Body: assetPoliciesTab(subtype, a, applied)},
-		{Slug: "configuration", Label: "Configuration", Body: assetConfigurationTab()},
+		{Slug: "configuration", Label: "Configuration", Body: assetConfigurationTab(applied)},
 		{Slug: "software", Label: "Software", Body: assetSoftwareTab(software)},
 		{Slug: "wine-groups", Label: "Wine Groups", Body: assetWineGroupsTab()},
 		{Slug: "scripts", Label: "Scripts", Body: assetScriptsTab()},
@@ -129,4 +130,14 @@ func logActorLabel(id sql.NullInt64) string {
 		return "#" + strconv.FormatInt(id.Int64, 10)
 	}
 	return "System"
+}
+
+// configurationValueCount counts bound values across applied policies
+// (drives the Configuration tab empty state).
+func configurationValueCount(applied []services.AppliedPolicy) int {
+	n := 0
+	for _, ap := range applied {
+		n += len(ap.Values)
+	}
+	return n
 }

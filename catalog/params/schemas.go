@@ -21,22 +21,49 @@ func SchemaBySubtype(subtype string) *SubtypeSchema {
 	return Schemas[subtype]
 }
 
+// schemaOrder is the canonical display order of the built-in schemas —
+// asset subtypes first (matching the Assets navigation), identity last.
+// Deterministic consumers (the /api/params feed, future pickers) iterate
+// this instead of ranging over the Schemas map.
+var schemaOrder = []string{"computer", "server", "printer", "desk", "identity"}
+
+// OrderedSchemas returns every registered schema in canonical display
+// order. It panics at first use if schemaOrder and Schemas ever drift
+// (a schema added to one but not the other), so the drift is caught by
+// any test touching the registry rather than surfacing as a
+// silently-missing entity in API output.
+func OrderedSchemas() []*SubtypeSchema {
+	if len(schemaOrder) != len(Schemas) {
+		panic("params: schemaOrder out of sync with Schemas registry")
+	}
+	out := make([]*SubtypeSchema, 0, len(schemaOrder))
+	for _, slug := range schemaOrder {
+		s := Schemas[slug]
+		if s == nil {
+			panic("params: schemaOrder lists unknown subtype " + slug)
+		}
+		out = append(out, s)
+	}
+	return out
+}
+
 // ---------------------------------------------------------------------------
 // Computer schema
 // ---------------------------------------------------------------------------
 
 var SchemaComputer = &SubtypeSchema{
-	Subtype:     "computer",
-	PathEntity:  "computer",
-	Label:       "Computer",
-	PluralLabel: "Computers",
+	Subtype:           "computer",
+	PathEntity:        "computer",
+	Label:             "Computer",
+	PluralLabel:       "Computers",
+	DefaultPermission: "asset.view",
 	Sections: []SchemaSection{
 		{Key: "identity", Label: "Identity", Params: []string{
 			"name", "id", "uuid", "tenant", "site", "owner", "groups", "labels",
 			"description", "managed_by",
 		}},
 		{Key: "hardware", Label: "Hardware", Params: []string{
-			"hostname", "fqdn", "os_family", "os_distribution", "os_version", "kernel_version",
+			"hostname", "fqdn", "os_family", "os_package_family", "disk_encryption", "os_distribution", "os_version", "kernel_version",
 			"architecture", "cpu", "ram_mb", "serial_number", "storage_mb",
 		}},
 		{Key: "enrollment", Label: "Enrollment", Params: []string{
@@ -54,17 +81,18 @@ var SchemaComputer = &SubtypeSchema{
 // ---------------------------------------------------------------------------
 
 var SchemaServer = &SubtypeSchema{
-	Subtype:     "server",
-	PathEntity:  "server",
-	Label:       "Server",
-	PluralLabel: "Servers",
+	Subtype:           "server",
+	PathEntity:        "server",
+	Label:             "Server",
+	PluralLabel:       "Servers",
+	DefaultPermission: "asset.view",
 	Sections: []SchemaSection{
 		{Key: "identity", Label: "Identity", Params: []string{
 			"name", "id", "uuid", "tenant", "site", "owner", "groups", "labels",
 			"description", "managed_by",
 		}},
 		{Key: "hardware", Label: "Hardware", Params: []string{
-			"hostname", "fqdn", "os_family", "os_distribution", "os_version", "kernel_version",
+			"hostname", "fqdn", "os_family", "os_package_family", "disk_encryption", "os_distribution", "os_version", "kernel_version",
 			"architecture", "server_role", "services", "uptime_since", "ram_mb", "serial_number",
 		}},
 		{Key: "enrollment", Label: "Enrollment", Params: []string{
@@ -82,10 +110,11 @@ var SchemaServer = &SubtypeSchema{
 // ---------------------------------------------------------------------------
 
 var SchemaPrinter = &SubtypeSchema{
-	Subtype:     "printer",
-	PathEntity:  "printer",
-	Label:       "Printer",
-	PluralLabel: "Printers",
+	Subtype:           "printer",
+	PathEntity:        "printer",
+	Label:             "Printer",
+	PluralLabel:       "Printers",
+	DefaultPermission: "asset.view",
 	Sections: []SchemaSection{
 		{Key: "identity", Label: "Identity", Params: []string{
 			"name", "id", "tenant", "site", "owner", "groups", "labels", "description",
@@ -108,10 +137,11 @@ var SchemaPrinter = &SubtypeSchema{
 // ---------------------------------------------------------------------------
 
 var SchemaDesk = &SubtypeSchema{
-	Subtype:     "desk",
-	PathEntity:  "desk",
-	Label:       "Desk",
-	PluralLabel: "Desks",
+	Subtype:           "desk",
+	PathEntity:        "desk",
+	Label:             "Desk",
+	PluralLabel:       "Desks",
+	DefaultPermission: "asset.view",
 	Sections: []SchemaSection{
 		{Key: "identity", Label: "Identity", Params: []string{
 			"name", "id", "tenant", "site", "groups", "labels", "description",
@@ -128,18 +158,19 @@ var SchemaDesk = &SubtypeSchema{
 
 // ---------------------------------------------------------------------------
 // Identity schema — the Users directory. Reuses the shared "tenant" and
-// "site" ParamDefs already defined for Assets (docs/UX_INVARIANTS.md's
+// "site" ParamDefs already defined for Assets (docs/endpoint-management/ui/invariants.md's
 // INV-H1 shared hierarchy: Tenant → Site → Group → (Asset | Identity)).
 // ---------------------------------------------------------------------------
 
 var SchemaIdentity = &SubtypeSchema{
-	Subtype:     "identity",
-	PathEntity:  "user",
-	Label:       "User",
-	PluralLabel: "Users",
+	Subtype:           "identity",
+	PathEntity:        "user",
+	Label:             "User",
+	PluralLabel:       "Users",
+	DefaultPermission: "identity.view",
 	Sections: []SchemaSection{
 		{Key: "identity", Label: "Identity", Params: []string{
-			"display_name", "initials", "username", "user_principal_name", "email", "tenant", "site", "role",
+			"display_name", "given_name", "surname", "initials", "username", "user_principal_name", "email", "tenant", "site", "role",
 		}},
 		{Key: "organization", Label: "Organization", Params: []string{
 			"title", "department", "company", "employee_id", "employee_type", "manager",

@@ -7,6 +7,8 @@
 
 # Local dev data
 /deploy/data/
+# Uploaded avatars (console/handlers/avatar.go's AvatarDir default)
+/data/
 /deploy/certs/*.pem
 /deploy/certs/*.key
 /deploy/certs/*.crt
@@ -19,14 +21,16 @@ pluris.db*
 
 # Built binaries in root (should be in bin/)
 /pluris-console
+/seed
 
 # Environment
 .env
 .env.local
 
-# Editor / OS
+# Editor / OS / agent scratch state
 .idea/
 .vscode/
+.superpowers/
 *.swp
 .DS_Store
 

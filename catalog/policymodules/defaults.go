@@ -13,7 +13,7 @@ package policymodules
 //   2. TenantDefault(tenant, policyURN)  ← tenant-wide default
 //   3. PlurisDefault(policyURN, deviceOS) = first bundled module that
 //      satisfies the URN and supports the device OS, ordered by
-//      AllModules() stable order.
+//      the catalog's stable order.
 //
 // Lock as INV-M11 (resolution order) in UX_INVARIANTS §VII.B.
 //
@@ -145,7 +145,7 @@ func (p ResolvedPick) IsResolved() bool { return p.ModuleID != "" }
 //   - tenant: tenant id; "" in the single-tenant mock.
 //   - policyURN: the policy this binding configures.
 //   - deviceOS: optional OS filter ("" = no narrowing).
-//   - catalog: module catalog snapshot (typically AllModules()).
+//   - catalog: module catalog snapshot (typically catalog.go's Catalog()).
 func ResolveBindingModule(
 	bindingOverrideID, bindingOverrideVer, tenant, policyURN string,
 	deviceOS TargetOS, catalog []Module,
@@ -189,7 +189,7 @@ func ResolveBindingModule(
 	// 3. Pluris default = first bundled module in stable catalog order
 	// that satisfies and supports the OS. ADR-006: "the highest-
 	// priority compatible module" — v1 priority is "bundled origin +
-	// first in AllModules() order".
+	// first in the catalog's stable order".
 	for i := range catalog {
 		m := &catalog[i]
 		if m.Origin != "bundled" {
@@ -244,7 +244,7 @@ func pickVersion(m *Module, requested string) string {
 		return ""
 	}
 	if requested == "" {
-		// AllModules() emits versions newest-first.
+		// The catalog's Versions slice is newest-first by convention.
 		for _, v := range m.Versions {
 			if v.Status == "published" {
 				return v.Version

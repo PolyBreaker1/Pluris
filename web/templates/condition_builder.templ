@@ -1,0 +1,174 @@
+package templates
+
+import (
+	"strings"
+
+	"github.com/pluris/pluris/catalog/dependencygroups"
+)
+
+// ConditionBuilderDialog — REUSABLE popup for building (or editing) ONE
+// dependencygroups.Condition. This is Pluris's WMI-filter alternative: a
+// single param-match or agent-script predicate, built through a small
+// dialog rather than a bespoke inline form. Mirrors TargetPickerDialog's
+// architecture (pages.templ ~L840): mounted ONCE per page by the
+// embedding page, opened by any element carrying the trigger attribute,
+// and it emits a CustomEvent rather than owning persistence itself.
+//
+// Delivery mechanism (explicit choice — see brief): TargetPickerDialog
+// ships its JS as a Go const string rendered via `templ.Raw` at the tail
+// of the component. This component's JS is a full standalone
+// `web/static/condition-builder.js` file instead (per this task's brief),
+// so the analogous "one component, self-delivering script" mechanism is
+// a `<script src>` tag emitted by this SAME templ component — still
+// "mounted once per page, JS travels with the dialog," just referencing
+// an external file instead of inlining one. Pages never need their own
+// `<script src="/static/condition-builder.js">` tag; embedding this
+// component is sufficient.
+//
+// Interaction contract (implemented in web/static/condition-builder.js):
+//
+//   - Open: any element carrying `data-condition-builder-open` opens the
+//     dialog. Optional `data-cb-prefill` on that SAME element is a JSON
+//     string shaped like a dependencygroups.Condition (camelCase):
+//     `{"kind":"param","paramPath":"...","operator":"...",
+//     "values":["..."],"scriptSource":"...","scriptExpect":"..."}` —
+//     used by edit flows to reopen the dialog pre-filled. Omit entirely
+//     (or pass `{}`) for "add new".
+//   - Data source: `GET /api/params` is fetched fresh EVERY open (fetch
+//     with `credentials: "same-origin"` for the session cookie) so a
+//     long-lived page always sees the caller's current permission-
+//     filtered param tree. A non-200 response renders an inline error
+//     banner in the dialog — never a console-only failure.
+//   - Operators offered for a selected param are that param's
+//     `operators[].key` list from the API response INTERSECTED with
+//     `data-supported-operators` below (dependencygroups.AllOperators(),
+//     server-rendered — never hardcoded in JS) so the picker can never
+//     offer an operator the eval engine doesn't implement.
+//   - Save: dispatches `condition:save` (CustomEvent) on `document` with
+//     `detail = {kind, paramPath, operator, values, scriptSource,
+//     scriptExpect}`. `values` is always a string array (single-operand
+//     operators serialize to a 1-element array; "exists" serializes to
+//     an empty array). The embedding page owns persistence (e.g. POST to
+//     its condition-add endpoint) — this dialog never calls a save API
+//     itself.
+//   - Cancel / × / Esc: closes the dialog. No event is dispatched.
+//   - Save is disabled until the current tab's inputs are valid: "param"
+//     kind requires a selected param + operator (+ a value when the
+//     operator's `needsValue` is true); "script" kind requires a
+//     non-empty script source.
+templ ConditionBuilderDialog() {
+	<dialog id="condition-builder" class="cb-dialog" data-supported-operators={ joinOperators(dependencygroups.AllOperators()) }>
+		<div class="cb-dialog-inner">
+			<header class="cb-dialog-head">
+				<div>
+					<div class="crumb">Condition</div>
+					<h3 id="cb-dialog-title">Add condition</h3>
+				</div>
+				<button type="button" class="cg-dialog-close" data-cb-close aria-label="Close">×</button>
+			</header>
+			<div class="cb-tabs" role="tablist" aria-label="Condition kind">
+				<button type="button" class="cb-tab is-active" data-cb-tab="param" role="tab" aria-selected="true">
+					@iconSVG("search")
+					<span>Parameter</span>
+				</button>
+				<button type="button" class="cb-tab" data-cb-tab="script" role="tab" aria-selected="false">
+					@iconSVG("scripts")
+					<span>Custom script</span>
+				</button>
+			</div>
+			<div class="cb-dialog-body">
+				<div class="cb-panel" data-cb-panel="param">
+					<div class="cb-param-error" id="cb-param-error" hidden role="alert"></div>
+					<div class="cb-param-grid">
+						<div class="cb-param-tree-col">
+							<label class="tp-search cb-param-search">
+								@iconSVG("search")
+								<input type="search" id="cb-param-search" placeholder="Search parameters…" autocomplete="off"/>
+							</label>
+							<div class="cb-param-tree" id="cb-param-tree" role="tree" aria-label="Parameters">
+								<div class="cb-param-loading" id="cb-param-loading">Loading parameters…</div>
+							</div>
+						</div>
+						<div class="cb-param-detail-col">
+							<div class="cb-param-selected" id="cb-param-selected">
+								<div class="cb-param-selected-empty">Select a parameter on the left.</div>
+							</div>
+							<div class="cb-field">
+								<label for="cb-operator">Operator</label>
+								<select id="cb-operator" class="input" disabled>
+									<option value="">— select a parameter first —</option>
+								</select>
+							</div>
+							<div class="cb-field" id="cb-value-field">
+								<label id="cb-value-label" for="cb-value-input">Value</label>
+								<div id="cb-value-container" class="cb-value-container"></div>
+							</div>
+						</div>
+					</div>
+				</div>
+				<div class="cb-panel" data-cb-panel="script" hidden>
+					<p class="cg-hint">
+						The script runs sandboxed on the endpoint via the Pluris agent. The condition
+						passes when the script's exit code matches (and, if set, its stdout equals the
+						given text exactly). Until an agent has reported a result, this condition's
+						status shows as "unknown" — it never blocks module rollout on its own.
+					</p>
+					<div class="cb-field">
+						<label for="cb-script-source">Script source (bash)</label>
+						<textarea id="cb-script-source" class="input cb-script-source" data-code-editor="bash" rows="8" placeholder="#!/bin/sh&#10;..."></textarea>
+					</div>
+					<div class="cb-script-expect-grid">
+						<div class="cb-field">
+							<label for="cb-script-exit-code">Expected exit code</label>
+							<input type="number" id="cb-script-exit-code" class="input" value="0" step="1"/>
+						</div>
+						<div class="cb-field cb-field-wide">
+							<label for="cb-script-output-equals">Expected stdout equals (optional)</label>
+							<input type="text" id="cb-script-output-equals" class="input" placeholder="Leave blank to ignore stdout"/>
+						</div>
+					</div>
+				</div>
+			</div>
+			<footer class="cg-dialog-foot">
+				<button type="button" class="btn btn-secondary" data-cb-close>Cancel</button>
+				<div class="cg-foot-spacer"></div>
+				<button type="button" class="btn btn-primary" data-cb-save disabled>Save condition</button>
+			</footer>
+		</div>
+	</dialog>
+	<script src="/static/vendor/codemirror/codemirror-pluris.js" defer></script>
+	<script src="/static/code-editor.js" defer></script>
+	<script src="/static/condition-builder.js" defer></script>
+}
+
+// Code-editor wiring (task 4.1): the two extra script tags above —
+// vendor CodeMirror 6 bundle (defines window.CM6) BEFORE the
+// PlurisCodeEditor wrapper (reads window.CM6), both before
+// condition-builder.js — give condition-builder.js's openDialog() the
+// pieces it needs to upgrade the script tab's
+// `<textarea data-code-editor="bash">` into a real editor. The upgrade
+// call lives INSIDE openDialog, right after showModal(): CodeMirror 6
+// measures its DOM on construction, and this native <dialog> is
+// display:none until showModal(), so mounting at page load (or from any
+// listener that can run before showModal) would yield a zero-size
+// editor. openDialog's call is guarded (window.PlurisCodeEditor may be
+// absent) so the dialog component stays generic — pages that somehow
+// render it without the two script tags still get a working plain
+// textarea.
+
+// joinOperators — comma-joined operator key list for the condition
+// builder's `data-supported-operators` attribute (dependencygroups.
+// AllOperators(), the eval engine's single source of truth). JS reads it
+// back as a Set and intersects it with each param's API-advertised
+// operators — mirrors joinKinds' role for TargetPickerDialog's
+// `data-allowed-kinds`.
+func joinOperators(ops []dependencygroups.Operator) string {
+	if len(ops) == 0 {
+		return ""
+	}
+	out := make([]string, 0, len(ops))
+	for _, o := range ops {
+		out = append(out, string(o))
+	}
+	return strings.Join(out, ",")
+}

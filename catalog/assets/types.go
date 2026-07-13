@@ -1,6 +1,6 @@
 // Package assets is the v1 mock catalog for the Asset entity that
 // every device-management surface in Pluris targets. The shape here
-// is the IA contract from docs/UX_INVARIANTS.md §VII.A1 (codified by
+// is the IA contract from docs/endpoint-management/ui/invariants.md §VII.A1 (codified by
 // ADR-005); when the backend lands in Increment 3 these types become
 // the seed data for db/schema/asset.go and the JSON payload schemas.
 //
@@ -186,17 +186,17 @@ type SubtypePayload interface {
 
 // ComputerPayload is the §VII.A1 payload for SubtypeComputer.
 type ComputerPayload struct {
-	Hostname        string
-	FQDN            string
-	OSFamily        string // "linux" | "windows" | "macos"
-	OSDistribution  string // "Ubuntu" | "Windows 11 Pro" | …
-	OSVersion       string
-	KernelVersion   string // "6.8.0-40-generic" | "10.0.22631" | …
-	Architecture    string // "x86_64" | "arm64" | …
-	CPUSummary      string
-	RAMMB           int
-	StorageMB       int
-	ScreenshotURL   string // asset photo or rendered OS screenshot
+	Hostname       string
+	FQDN           string
+	OSFamily       string // "linux" | "windows" | "macos"
+	OSDistribution string // "Ubuntu" | "Windows 11 Pro" | …
+	OSVersion      string
+	KernelVersion  string // "6.8.0-40-generic" | "10.0.22631" | …
+	Architecture   string // "x86_64" | "arm64" | …
+	CPUSummary     string
+	RAMMB          int
+	StorageMB      int
+	ScreenshotURL  string // asset photo or rendered OS screenshot
 }
 
 // Kind implements SubtypePayload.
@@ -392,6 +392,29 @@ type validationError string
 func (v validationError) Error() string { return "assets: " + string(v) }
 
 func errInvalid(msg string) error { return validationError(msg) }
+
+// NonEditablePayloadKeys are asset params that render read-only in the
+// detail UI and are always refused by the field-update service
+// (pkg/services/assets.go's UpdateFields): identifiers, tenancy, and
+// TypeLink params that are never column-backed and never live in the
+// "hardware" section (the only section UpdateFields writes arbitrary
+// payload keys for). See assetColumnBackedKeys's doc comment in
+// pkg/services/assets.go, which this list mirrors -- the two must be
+// kept in sync by hand since one lives in catalog (no service import)
+// and the other in pkg/services (no UI import).
+var NonEditablePayloadKeys = map[string]bool{
+	"id":               true,
+	"uuid":             true,
+	"tenant":           true,
+	"site":             true,
+	"owner":            true,
+	"groups":           true,
+	"managed_by":       true,
+	"enrollment_state": true,
+	"enrolled_at":      true,
+	"last_seen_at":     true,
+	"agent_version":    true,
+}
 
 // ----------------------------------------------------------------------
 // Convenience accessors — keep templ templates one-liners.

@@ -1,0 +1,49 @@
+# Architecture decisions
+
+**What:** Condensed decision log — carried-over ADRs from the original architecture docs plus the de-facto decisions visible in current code that were never written up as ADRs.
+
+**Related:** [[overview]], [[data-model]], [[parameters]], [[identity-assets]]
+
+Format: `ID — decision`, why, status. Full prose for ADR-001 through ADR-009 was condensed from a now-deleted document (full text in git history); this page keeps only what's still relevant to the current codebase.
+
+## Still-relevant ADRs (condensed)
+
+**ADR-001 — Build the Pluris console fresh; do not fork OpenUEM wholesale.** OpenUEM's `Task` schema and `Profile → Tag → Agent` assignment model offer no reuse for a Group-Policy-shaped product with org→site→group→device→user inheritance and per-user identity. Status: accepted, and consistent with current code (no OpenUEM code present).
+
+**ADR-002 — Selective OpenUEM reuse: import `openuem-nats` as a dependency, fork only `openuem-agent`.** Status: **not reflected in current code.** `go.mod` has no NATS dependency and no agent fork exists in this repo. Either unimplemented or superseded by a simpler v1 scope — treat as aspirational until an agent/NATS layer actually lands.
+
+**ADR-003 — Linux GP enforcement architecture: extended agent + native CSEs + PAM session hook.** Describes the eventual endpoint-agent enforcement design (mTLS, NATS policy bundles, PAM session hook, drift refresh). Status: accepted as a target design; **not yet implemented** — there is no `pluris-agent` in this repo. §3's native-CSE list is superseded by ADR-006.
+
+**ADR-004 — UX invariants & Single Source of Truth UI.** The owner-authored IA source and its checkable extraction (condensed from now-deleted documents, full text in git history) live on today as [[invariants]]. One canonical editor per concept; entry points pass filter/scope props, never fork a sibling component. Status: accepted, actively enforced in current code (e.g. all four Asset subtype tabs mount the same editor; `console/server/server.go`'s route comments cite this repeatedly).
+
+**ADR-005 — Asset hierarchy: Asset replaces Computer at the top of the hardware hierarchy.** Single `Asset` entity with a `subtype` discriminator (`computer | server | printer | desk`) and a typed JSON payload per subtype, rather than parallel top-level entity types. Status: accepted, matches `catalog/assets/types.go` and the `assets` table exactly.
+
+**ADR-006 — Policy Module system (supersedes ADR-003's native-CSE list).** Enforcement unit is a versioned, signed **module package** (manifest + lifecycle scripts), not Go code baked into an agent. Status: **manifest/versioning/lifecycle/persistence shipped and DB-real** (migration 008, `pkg/services/policymodules.go`'s draft/publish/supersede/revoke state machine, module detail/create editor at `/policy/modules/:id` — see `docs/history/specs/2026-07-12-module-persistence-and-param-injection.md`); the agent-side execution runtime (bwrap/Landlock/wasmtime described in ADR-007) still does not exist — no agent binary is in this repo, so nothing is enforced on a real device yet.
+
+**ADR-007 — Policy Module engine: ephemeral runtime, bash+WASM, tenant Ed25519 signing, refcount-based uninstall safety.** Extends ADR-006 with the security/dependency-tracking model. Status: **partially implemented.** `module_installations` and `module_installation_dependencies` tables exist (refcount-based uninstall safety, per INV-M1–M4) but are not yet written by any service (no agent to report installations); the memfd/tmpfs/sandbox/signing runtime is design-only, no agent exists. Per-module ownership + grants (migration 007, `pkg/authz.ModuleCanView/Edit/Admin`) shipped as a console-side access-control layer on top of this ADR's persistence model — see `docs/history/specs/2026-07-12-module-grants-and-ownership.md`. Note: the former Custom Policy Wizard (a stepper `<dialog>` for authoring a tenant custom policy referenced by earlier drafts of this ADR) was a pure stub — its save event had zero listeners, nothing it produced was ever persisted — and was deleted; the module editor is the one module-authoring surface today.
+
+**ADR-008 — Extension Framework: unified abstraction for Policy Modules, Profiles, Scripts, Wine Configs, Packages.** `pkg/extension` defines `Kind`/`Source`/`LifecycleState`/`Signature`/`Manifest`/`Version`/`Extension`; concrete kinds register via `RegisterKind` + an adapter. Status: accepted and implemented — `catalog/policymodules` is the first (and currently only) registered kind (`extension_adapter.go`). Profile/Script/WineConfig/Package kinds are documented but not yet built.
+
+**ADR-009 — FreeIPA: integration target, not a foundation.** Do not vendor FreeIPA/389-DS/Kerberos; treat it as a peer integration alongside AD, reachable later via a pluggable identity-backend adapter. Status: accepted as a non-decision — no identity-provider adapter exists yet; identities are stored natively in the Pluris database (see below).
+
+## Superseded / dead
+
+- ADR-002's NATS/agent-fork plan — superseded in practice by "no agent in v1"; revisit when an agent project starts.
+- ADR-003 §3's hardcoded CSE list — superseded by ADR-006.
+- The old technology-decisions doc's desktop-OS/Office-compatibility/KDE-configuration content (condensed from a now-deleted document, full text in git history) — describes the *managed endpoint's* Linux desktop stack (Debian base, KDE Plasma, Office 365 PWA strategy), a product-scope decision orthogonal to the console's own architecture. Not superseded, just out of scope for this architecture tree; see [[os]] for the current pointer to that product line.
+
+## De-facto decisions (undocumented in ADR form until now)
+
+**DEC-010 — SQLite + sqlc replaces the planned PostgreSQL + Ent stack.** The original ADRs (and the original management-interface design doc, condensed from a now-deleted document — full text in git history) describe PostgreSQL + Ent + NATS. Current code uses SQLite (WAL mode, single writer, `pkg/database/database.go`) with sqlc-generated type-safe queries (`sqlc.yaml`, `db/*.sql.go`) and no ORM. Why: zero-config single-binary deployment, sufficient for the target scale (1000+ endpoints, per the original database implementation design doc, also condensed from a now-deleted document), full SQL control. A documented migration path to PostgreSQL exists if write-concurrency or horizontal scale ever require it, but nothing in the current codebase depends on that migration happening. Status: accepted (de facto), current.
+
+**DEC-011 — Canonical Parameter Paths (INV-CPP).** Every parameter mounted by a schema is addressable as `<entity>/<section>/<param>` (lowercase snake, forward slashes), derived — never stored in parallel — from `SubtypeSchema.PathEntity` + `SchemaSection.Key` + `ParamDef.Key` (`catalog/params/paths.go`). Why: dependency-group conditions (`catalog/dependencygroups`) and any future cross-entity reference need a single stable addressing scheme instead of ad hoc string keys. Status: accepted, current — see [[parameters]].
+
+**DEC-012 — GLPI-style scoped grants + locked-builtin templates + clone, replacing a fixed 3-role RBAC.** Permissions are `domain.action → none|own|all` (scoped) or `no|yes` (unscoped) grants (`catalog/permissions`, `pkg/authz`), not a hardcoded switch on 3 role names. Four builtin roles (`super_admin`, `admin`, `technician`, `user`) ship as locked templates (`catalog/permissions/templates.go`); tenants can clone a builtin or another custom role into a new editable role ("Pluris Policy" editor, `console/handlers/pluris_policy.go`: `PlurisPolicyClone`, `PlurisPolicySave`). Builtins themselves are never directly editable. Status: accepted, current — see [[authorization]].
+
+**DEC-013 — Role inheritance with override-diff storage.** Custom roles may set `parent_role_id` (migration 005); a role's stored `permissions` JSON holds only its *own* overrides, not the full resolved matrix. Effective grants for a role are computed by walking the parent chain and unioning stored overrides (`pkg/authz.Service`, `console/handlers/pluris_policy.go`'s `roleInheritedGrants`/`roleParentChain`/`roleOriginByKey`). Why: keeps a parent-role edit propagating to children without a rewrite fan-out, and lets the UI show per-key origin ("own override" vs "inherited from X"). Builtin roles never have a parent (enforced in service code, not the schema); cycles and depth limits are rejected at write time. Status: accepted, current.
+
+**DEC-014 — Group-role assignment.** Roles can be assigned to a `Group` (migration 005's `group_roles` table), not just directly to an `Identity`. Group members inherit the group's roles in addition to any directly-assigned roles; `identities.role` is a denormalized cache of the highest-privilege role across both direct and group-inherited assignments, recomputed by `RoleService.recomputeRoleCache` after any assignment change. Status: accepted, current.
+
+**DEC-015 — Identities are stored natively; no external identity provider.** Despite ADR-009 and the original management-interface design doc (condensed from a now-deleted document, full text in git history) describing Kanidm/AD/FreeIPA as the identity backend, current code has no pluggable identity-provider adapter: `identities`, `identity_sessions`, and password hashes (`pkg/auth/password.go`, argon2-style hashing) live directly in the Pluris SQLite database. AD-compatible *attributes* (givenName/sn/UPN/sAMAccountName-equivalent) are modeled (migration 002) for parity with AD-migrating admins, but there is no live directory sync. Status: de facto current state; ADR-009's adapter design remains the intended Phase 2 direction.
+
+No-commit agent policy and other process rules (e.g. `.windsurf/rules/`) are process, not architecture, and are intentionally excluded from this log.

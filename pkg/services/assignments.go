@@ -36,6 +36,40 @@ type AppliedPolicy struct {
 	Scope        string
 	ValueSummary string
 	Status       string
+	Values       []PolicyValue
+}
+
+// PolicyValue is one bound parameter value; Label is the raw key
+// upgraded to its param Label when the CPP registry resolves it.
+type PolicyValue struct {
+	Key   string
+	Label string
+	Value string
+}
+
+// policyValues parses a binding parameter_values JSON into sorted rows.
+func policyValues(raw string) []PolicyValue {
+	if raw == "" || raw == "{}" {
+		return nil
+	}
+	var m map[string]any
+	if err := json.Unmarshal([]byte(raw), &m); err != nil {
+		return nil
+	}
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	out := make([]PolicyValue, 0, len(keys))
+	for _, k := range keys {
+		label := k
+		if _, _, def, err := params.ResolvePath(k); err == nil {
+			label = def.Label
+		}
+		out = append(out, PolicyValue{Key: k, Label: label, Value: jsonValueString(m[k])})
+	}
+	return out
 }
 
 // policyNameByID resolves a catalog policy's display name; unknown IDs
@@ -131,8 +165,10 @@ func (s *AssignmentService) ResolveForTarget(ctx context.Context, tenantID int64
 					status = "Disabled"
 				}
 				values := ""
+				var vrows []PolicyValue
 				if b.ParameterValues.Valid {
 					values = valueSummary(b.ParameterValues.String)
+					vrows = policyValues(b.ParameterValues.String)
 				}
 				out = append(out, AppliedPolicy{
 					BindingID:    b.ID,
@@ -142,6 +178,7 @@ func (s *AssignmentService) ResolveForTarget(ctx context.Context, tenantID int64
 					Scope:        group.Scope,
 					ValueSummary: values,
 					Status:       status,
+					Values:       vrows,
 				})
 			}
 		}

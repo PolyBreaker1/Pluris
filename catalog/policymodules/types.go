@@ -1,21 +1,32 @@
-// Package policymodules holds the in-memory mock of Pluris' Policy Module
+// Package policymodules holds the domain types for Pluris' Policy Module
 // catalog. The shape of these types is the IA contract from ADR-007 §
-// "Manifest extensions" and UX_INVARIANTS §VII.B (INV-M1..M10). Real
-// persistence comes with the backend slice; the UI binds to this shape
-// and will not change when the Ent schemas land.
+// "Manifest extensions" and the UI invariants doc's §VI-adjacent module
+// rules (INV-M1..M13, docs/endpoint-management/ui/invariants.md). Real
+// persistence landed in migration 008 + `pkg/services/policymodules.go`
+// (draft/publish/supersede/revoke state machine); this package stays
+// DB-free and is fed by a catalog provider (`SetCatalogProvider`/
+// `Catalog()` in catalog.go) rather than a hardcoded literal slice.
 //
 // Vocabulary recap (read these once before reading the code):
 //
 //   - Module        = a versioned, signed package containing apply/disable/
 //     uninstall scripts (+ optional validate/report). One
 //     "module ID" with multiple immutable versions.
-//   - Manifest      = the YAML at the top of a module bundle, parsed into
-//     Module/ModuleVersion structs here.
+//   - Manifest      = the YAML at the top of a module bundle; `manifest_yaml`
+//     on the persisted version is now a derived export artifact, not the
+//     source of truth — the structured columns (parameters_schema,
+//     sandbox_profile, satisfies, etc.) and the policy_module_scripts
+//     table are authoritative. See
+//     docs/history/specs/2026-07-12-module-persistence-and-param-injection.md.
 //   - Catalog Policy = an entry from pluris/catalog/policies — the
 //     vocabulary item a module *satisfies*.
-//   - Custom Policy  = a tenant-authored catalog policy created via the
-//     CustomPolicyWizard. Stored alongside bundled ones,
-//     marked with `Custom: true` (see policies.Policy).
+//   - Custom Policy  = a tenant-authored catalog policy, marked with
+//     `Custom: true` (see policies.Policy). There is no dedicated
+//     authoring wizard for these today — the former Custom Policy Wizard
+//     was a pure stub (no save path ever persisted anything) and was
+//     deleted; the module editor (`/policy/modules/new`) is the canonical
+//     authoring surface for policy MODULES. custom_policies.parameters_schema
+//     remains unreachable dead schema (documented in the spec above).
 //   - Installation   = a row in ModuleInstallation: "this asset has this
 //     module version installed because of these bindings".
 //     Refcount is computed from incoming edges.
@@ -44,8 +55,8 @@ const (
 	PhaseReport    LifecyclePhase = "report"
 )
 
-// AllLifecyclePhases — used by UI iteration. Order matches the editor's
-// tab order in PolicyModuleEditor / CustomPolicyWizard step 5.
+// AllLifecyclePhases — used by UI iteration. Order matches the module
+// editor's Scripts-tab phase tab order (web/templates/policy_module_editor.templ).
 var AllLifecyclePhases = []LifecyclePhase{
 	PhaseApply, PhaseDisable, PhaseUninstall, PhaseValidate, PhaseReport,
 }
@@ -208,8 +219,9 @@ type Module struct {
 	Scope       string   // "machine" | "user" | "both" — mirrors policies.Scope
 	Satisfies   []string // catalog Policy URNs this module implements (many, INV-U2-style)
 	// Origin — "bundled" (ships with Pluris, read-only), "tenant" (authored
-	// in this tenant via the wizard), "imported" (pulled from a community
-	// registry — Phase 4). The UI gates Edit / Sign / Delete on this.
+	// in this tenant via the module editor, `/policy/modules/new`),
+	// "imported" (pulled from a community registry — Phase 4). The UI
+	// gates Edit / Sign / Delete on this.
 	Origin   string
 	Versions []ModuleVersion
 }

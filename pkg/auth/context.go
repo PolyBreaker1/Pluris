@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/pluris/pluris/catalog/identities"
+	"github.com/pluris/pluris/pkg/authz"
 )
 
 // TenantOption is one entry in a super_admin's tenant switcher.
@@ -29,6 +30,13 @@ type UserSession struct {
 	// AvailableTenants is populated only when Role == identities.RoleSuperAdmin;
 	// every other role never sees a switcher.
 	AvailableTenants []TenantOption
+
+	// Grants is the effective Pluris Policy grants for this identity,
+	// resolved once per request by RequireAuth. super_admin sessions get
+	// the authz.BypassKey marker instead of a resolved union. Zero value
+	// (nil map) is deny-all, so existing UserSession literals in tests
+	// remain valid without this field.
+	Grants authz.Grants
 }
 
 type contextKey int

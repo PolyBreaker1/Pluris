@@ -3,10 +3,8 @@ package handlers
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"net/http"
 	"strconv"
-	"strings"
 
 	"github.com/labstack/echo/v4"
 
@@ -30,12 +28,6 @@ func policyByID(id string) *policies.Policy {
 		}
 	}
 	return nil
-}
-
-// isUniqueErr matches SQLite UNIQUE violations so repeat assigns are
-// idempotent rather than 500s.
-func isUniqueErr(err error) bool {
-	return err != nil && strings.Contains(err.Error(), "UNIQUE constraint failed")
 }
 
 // configGroupScope maps a policy scope to the configuration_groups CHECK
@@ -64,36 +56,13 @@ func (h *Handler) renderPolicyPicker(c echo.Context, entityName, backHref, selfH
 
 // assignPolicyDirect performs the POST: find-or-create the direct
 // configuration group, bind the policy, assign the group to the target
-// and log the event. Idempotent on repeats.
+// and log the event. Idempotent on repeats. The actual find-or-create +
+// binding + assignment writes live in services.ConfigGroupService.
+// AssignPolicyDirect (Task 5.2 reconciliation) -- this handler only
+// resolves the group name/description/scope and logs the activity row.
 func (h *Handler) assignPolicyDirect(ctx context.Context, tenantID int64, targetType string, targetID int64, entityName string, pol *policies.Policy, actorID int64) error {
 	groupName := "Direct - " + entityName
-	cg, err := h.db.Queries.GetConfigurationGroupByName(ctx, db.GetConfigurationGroupByNameParams{
-		TenantID: tenantID, Name: groupName,
-	})
-	if errors.Is(err, sql.ErrNoRows) {
-		cg, err = h.db.Queries.CreateConfigurationGroup(ctx, db.CreateConfigurationGroupParams{
-			TenantID:    tenantID,
-			Name:        groupName,
-			Description: sql.NullString{String: "Direct assignments for " + entityName, Valid: true},
-			Scope:       configGroupScope(pol.Scope),
-		})
-	}
-	if err != nil {
-		return err
-	}
-	if _, err := h.db.Queries.CreateConfigurationGroupBinding(ctx, db.CreateConfigurationGroupBindingParams{
-		ConfigurationGroupID: cg.ID,
-		PolicyUrn:            pol.ID,
-		State:                "enabled",
-		ParameterValues:      sql.NullString{String: "{}", Valid: true},
-	}); err != nil && !isUniqueErr(err) {
-		return err
-	}
-	if _, err := h.db.Queries.CreateConfigurationGroupAssignment(ctx, db.CreateConfigurationGroupAssignmentParams{
-		ConfigurationGroupID: cg.ID,
-		TargetType:           targetType,
-		TargetID:             targetID,
-	}); err != nil && !isUniqueErr(err) {
+	if _, err := h.configGroupSvc.AssignPolicyDirect(ctx, tenantID, groupName, "Direct assignments for "+entityName, configGroupScope(pol.Scope), pol.ID, targetType, targetID); err != nil {
 		return err
 	}
 	_ = h.db.Queries.InsertActivity(ctx, db.InsertActivityParams{
@@ -109,6 +78,9 @@ func (h *Handler) assignPolicyDirect(ctx context.Context, tenantID int64, target
 
 // AssetPolicyAdd handles GET (picker/confirm) for assets.
 func (h *Handler) AssetPolicyAdd(c echo.Context) error {
+	if err := requirePermission(c, "endpoint_policy.assign_policies"); err != nil {
+		return err
+	}
 	subtype := c.Param("subtype")
 	id := c.Param("id")
 	asset, err := h.assetSvc.GetByID(c.Request().Context(), id)
@@ -121,6 +93,9 @@ func (h *Handler) AssetPolicyAdd(c echo.Context) error {
 
 // AssetPolicyAddSubmit handles the POST for assets.
 func (h *Handler) AssetPolicyAddSubmit(c echo.Context) error {
+	if err := requirePermission(c, "endpoint_policy.assign_policies"); err != nil {
+		return err
+	}
 	ctx := c.Request().Context()
 	subtype := c.Param("subtype")
 	id := c.Param("id")
@@ -145,6 +120,9 @@ func (h *Handler) AssetPolicyAddSubmit(c echo.Context) error {
 
 // UserPolicyAdd handles GET (picker/confirm) for users.
 func (h *Handler) UserPolicyAdd(c echo.Context) error {
+	if err := requirePermission(c, "endpoint_policy.assign_policies"); err != nil {
+		return err
+	}
 	identityID, err := h.resolveTenantIdentity(c)
 	if err != nil {
 		return err
@@ -159,6 +137,9 @@ func (h *Handler) UserPolicyAdd(c echo.Context) error {
 
 // UserPolicyAddSubmit handles the POST for users.
 func (h *Handler) UserPolicyAddSubmit(c echo.Context) error {
+	if err := requirePermission(c, "endpoint_policy.assign_policies"); err != nil {
+		return err
+	}
 	ctx := c.Request().Context()
 	identityID, err := h.resolveTenantIdentity(c)
 	if err != nil {

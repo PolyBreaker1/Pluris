@@ -1,12 +1,16 @@
-// Package configgroups is the v1 (in-memory) model for Configuration
+// Package configgroups holds the pure domain types for Configuration
 // Groups — the Pluris concept formerly called "Policy Group" in early
 // docs. A Configuration Group binds a set of policy-catalog entries
-// (with values) to a target (computer, user, group, or another CG).
+// (with values) to targets (computers, users, groups).
 //
-// Status: scaffolding. The data here is a mock slice that powers the
-// /policy/groups list page and the New/Edit dialog. Persistence, Ent
-// schema, and the resolver that merges groups into an effective policy
-// set at agent evaluation time land in a later increment.
+// Status: persistence is real (configuration_groups + bindings +
+// assignments tables via pkg/services/configgroups.go, Task 5.2 — the
+// old in-memory mock slice and its popup dialog are retired). This
+// package keeps the DB-free domain vocabulary: TargetKind (the picker's
+// kind enum + labels), Target (picker row shape), and the legacy
+// ConfigurationGroup/Binding value types. The resolver that merges
+// groups into an effective policy set at agent evaluation time lands in
+// a later increment.
 //
 // Loopback semantics (locked):
 //

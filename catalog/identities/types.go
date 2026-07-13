@@ -7,7 +7,7 @@ package identities
 
 import "time"
 
-// Role gates access per docs/UX_INVARIANTS.md's locked permission matrix.
+// Role gates access per docs/endpoint-management/ui/invariants.md's locked permission matrix.
 type Role string
 
 const (
@@ -101,6 +101,55 @@ type Identity struct {
 
 	CreatedAt time.Time
 	UpdatedAt time.Time
+}
+
+// SelfServiceEditableKeys is the allowlist of param keys a user holding
+// only "own" scope on identity.update may set on THEIR OWN identity via
+// the inline-edit field API (console/handlers/field_api.go). It is
+// deliberately narrow: contact/personal details only, never
+// role/employment/site/security fields -- those require "all" scope.
+// See docs/history/specs/2026-07-08-pluris-policy-authz-design.md
+// section "5. User management backend".
+var SelfServiceEditableKeys = map[string]bool{
+	"display_name":   true,
+	"given_name":     true,
+	"surname":        true,
+	"initials":       true,
+	"email":          true,
+	"phone_office":   true,
+	"phone_mobile":   true,
+	"phone_home":     true,
+	"fax":            true,
+	"office":         true,
+	"street_address": true,
+	"city":           true,
+	"state":          true,
+	"postal_code":    true,
+	"country":        true,
+	"locale":         true,
+	"timezone":       true,
+}
+
+// NonEditableFieldKeys are identity params that render read-only in the
+// detail UI and are refused by the field-update service
+// (pkg/services/identities.go's identityFieldEditable): identifiers,
+// tenancy/site/manager links, denormalized caches, and system-maintained
+// audit fields. Roles are managed on the Roles tab, never as a text
+// field. This is the single source of truth for both the UI (users.templ)
+// and the service, so the two can never diverge again.
+var NonEditableFieldKeys = map[string]bool{
+	"id":                   true,
+	"tenant":               true,
+	"site":                 true,
+	"username":             true,
+	"role":                 true,
+	"avatar_url":           true,
+	"groups":               true,
+	"manager":              true,
+	"password_last_set_at": true,
+	"last_logon_at":        true,
+	"logon_count":          true,
+	"bad_password_count":   true,
 }
 
 // ResolvedDisplayName returns DisplayName if set, else "GivenName Surname"

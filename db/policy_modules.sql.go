@@ -47,7 +47,7 @@ INSERT INTO policy_modules (
     ?3,
     ?4,
     ?5
-) RETURNING id, module_urn, tenant_id, title, description, is_bundled, created_at
+) RETURNING id, module_urn, tenant_id, title, description, is_bundled, created_at, owner_identity_id
 `
 
 type CreatePolicyModuleParams struct {
@@ -77,6 +77,7 @@ func (q *Queries) CreatePolicyModule(ctx context.Context, arg CreatePolicyModule
 		&i.Description,
 		&i.IsBundled,
 		&i.CreatedAt,
+		&i.OwnerIdentityID,
 	)
 	return i, err
 }
@@ -90,14 +91,12 @@ INSERT INTO policy_module_versions (
     manifest_yaml,
     target_os,
     scope,
-    runtime,
     satisfies,
     parameters_schema,
     depends_on,
     conflicts,
-    enforce_script,
-    validate_script,
-    rollback_script
+    sandbox_profile,
+    report_schema
 ) VALUES (
     ?1,
     ?2,
@@ -110,10 +109,8 @@ INSERT INTO policy_module_versions (
     ?9,
     ?10,
     ?11,
-    ?12,
-    ?13,
-    ?14
-) RETURNING id, module_id, version, state, manifest_yaml, target_os, scope, runtime, satisfies, parameters_schema, depends_on, conflicts, enforce_script, validate_script, rollback_script, signature_algo, signature_data, signed_by, published_at, published_by, superseded_by_version, created_at
+    ?12
+) RETURNING id, module_id, version, state, target_os, scope, satisfies, parameters_schema, depends_on, conflicts, sandbox_profile, report_schema, manifest_yaml, signature_algo, signature_data, signed_by, published_at, published_by, superseded_by_version, created_at
 `
 
 type CreatePolicyModuleVersionParams struct {
@@ -123,18 +120,22 @@ type CreatePolicyModuleVersionParams struct {
 	ManifestYaml     string         `json:"manifest_yaml"`
 	TargetOs         string         `json:"target_os"`
 	Scope            string         `json:"scope"`
-	Runtime          string         `json:"runtime"`
 	Satisfies        string         `json:"satisfies"`
 	ParametersSchema sql.NullString `json:"parameters_schema"`
 	DependsOn        sql.NullString `json:"depends_on"`
 	Conflicts        sql.NullString `json:"conflicts"`
-	EnforceScript    string         `json:"enforce_script"`
-	ValidateScript   sql.NullString `json:"validate_script"`
-	RollbackScript   sql.NullString `json:"rollback_script"`
+	SandboxProfile   string         `json:"sandbox_profile"`
+	ReportSchema     string         `json:"report_schema"`
 }
 
 // ============================================================================
 // Policy Module Versions
+//
+// Migration 008 reconciled this table with the catalog/policymodules
+// domain model: runtime moved to per-phase (derived in Go from
+// LifecyclePhase, never stored -- see 008's header), and the fixed
+// enforce_script/validate_script/rollback_script columns were replaced
+// by the policy_module_scripts child table below.
 // ============================================================================
 func (q *Queries) CreatePolicyModuleVersion(ctx context.Context, arg CreatePolicyModuleVersionParams) (PolicyModuleVersion, error) {
 	row := q.db.QueryRowContext(ctx, CreatePolicyModuleVersion,
@@ -144,14 +145,12 @@ func (q *Queries) CreatePolicyModuleVersion(ctx context.Context, arg CreatePolic
 		arg.ManifestYaml,
 		arg.TargetOs,
 		arg.Scope,
-		arg.Runtime,
 		arg.Satisfies,
 		arg.ParametersSchema,
 		arg.DependsOn,
 		arg.Conflicts,
-		arg.EnforceScript,
-		arg.ValidateScript,
-		arg.RollbackScript,
+		arg.SandboxProfile,
+		arg.ReportSchema,
 	)
 	var i PolicyModuleVersion
 	err := row.Scan(
@@ -159,17 +158,15 @@ func (q *Queries) CreatePolicyModuleVersion(ctx context.Context, arg CreatePolic
 		&i.ModuleID,
 		&i.Version,
 		&i.State,
-		&i.ManifestYaml,
 		&i.TargetOs,
 		&i.Scope,
-		&i.Runtime,
 		&i.Satisfies,
 		&i.ParametersSchema,
 		&i.DependsOn,
 		&i.Conflicts,
-		&i.EnforceScript,
-		&i.ValidateScript,
-		&i.RollbackScript,
+		&i.SandboxProfile,
+		&i.ReportSchema,
+		&i.ManifestYaml,
 		&i.SignatureAlgo,
 		&i.SignatureData,
 		&i.SignedBy,
@@ -179,6 +176,22 @@ func (q *Queries) CreatePolicyModuleVersion(ctx context.Context, arg CreatePolic
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const DeleteModuleScript = `-- name: DeleteModuleScript :exec
+DELETE FROM policy_module_scripts
+WHERE version_id = ?1 AND phase = ?2 AND seq = ?3
+`
+
+type DeleteModuleScriptParams struct {
+	VersionID int64  `json:"version_id"`
+	Phase     string `json:"phase"`
+	Seq       int64  `json:"seq"`
+}
+
+func (q *Queries) DeleteModuleScript(ctx context.Context, arg DeleteModuleScriptParams) error {
+	_, err := q.db.ExecContext(ctx, DeleteModuleScript, arg.VersionID, arg.Phase, arg.Seq)
+	return err
 }
 
 const DeletePolicyModule = `-- name: DeletePolicyModule :exec
@@ -199,10 +212,19 @@ func (q *Queries) DeletePolicyModuleVersion(ctx context.Context, id int64) error
 	return err
 }
 
+const DeleteScriptsForVersion = `-- name: DeleteScriptsForVersion :exec
+DELETE FROM policy_module_scripts WHERE version_id = ?1
+`
+
+func (q *Queries) DeleteScriptsForVersion(ctx context.Context, versionID int64) error {
+	_, err := q.db.ExecContext(ctx, DeleteScriptsForVersion, versionID)
+	return err
+}
+
 const GetLatestPublishedVersion = `-- name: GetLatestPublishedVersion :one
-SELECT id, module_id, version, state, manifest_yaml, target_os, scope, runtime, satisfies, parameters_schema, depends_on, conflicts, enforce_script, validate_script, rollback_script, signature_algo, signature_data, signed_by, published_at, published_by, superseded_by_version, created_at FROM policy_module_versions 
+SELECT id, module_id, version, state, target_os, scope, satisfies, parameters_schema, depends_on, conflicts, sandbox_profile, report_schema, manifest_yaml, signature_algo, signature_data, signed_by, published_at, published_by, superseded_by_version, created_at FROM policy_module_versions
 WHERE module_id = ?1 AND state = 'published'
-ORDER BY published_at DESC 
+ORDER BY published_at DESC
 LIMIT 1
 `
 
@@ -214,17 +236,15 @@ func (q *Queries) GetLatestPublishedVersion(ctx context.Context, moduleID int64)
 		&i.ModuleID,
 		&i.Version,
 		&i.State,
-		&i.ManifestYaml,
 		&i.TargetOs,
 		&i.Scope,
-		&i.Runtime,
 		&i.Satisfies,
 		&i.ParametersSchema,
 		&i.DependsOn,
 		&i.Conflicts,
-		&i.EnforceScript,
-		&i.ValidateScript,
-		&i.RollbackScript,
+		&i.SandboxProfile,
+		&i.ReportSchema,
+		&i.ManifestYaml,
 		&i.SignatureAlgo,
 		&i.SignatureData,
 		&i.SignedBy,
@@ -236,9 +256,23 @@ func (q *Queries) GetLatestPublishedVersion(ctx context.Context, moduleID int64)
 	return i, err
 }
 
+const GetModuleOwner = `-- name: GetModuleOwner :one
+SELECT owner_identity_id FROM policy_modules WHERE id = ?1 LIMIT 1
+`
+
+// Returns just the owner_identity_id column; GetPolicyModule's SELECT *
+// already includes it, but this narrow query is convenient for authz
+// checks that only need the owner, not the whole row.
+func (q *Queries) GetModuleOwner(ctx context.Context, id int64) (sql.NullInt64, error) {
+	row := q.db.QueryRowContext(ctx, GetModuleOwner, id)
+	var owner_identity_id sql.NullInt64
+	err := row.Scan(&owner_identity_id)
+	return owner_identity_id, err
+}
+
 const GetModuleWithLatestVersion = `-- name: GetModuleWithLatestVersion :one
-SELECT 
-    m.id, m.module_urn, m.tenant_id, m.title, m.description, m.is_bundled, m.created_at,
+SELECT
+    m.id, m.module_urn, m.tenant_id, m.title, m.description, m.is_bundled, m.created_at, m.owner_identity_id,
     v.id as latest_version_id,
     v.version as latest_version,
     v.published_at as latest_published_at
@@ -257,6 +291,7 @@ type GetModuleWithLatestVersionRow struct {
 	Description       sql.NullString `json:"description"`
 	IsBundled         bool           `json:"is_bundled"`
 	CreatedAt         time.Time      `json:"created_at"`
+	OwnerIdentityID   sql.NullInt64  `json:"owner_identity_id"`
 	LatestVersionID   sql.NullInt64  `json:"latest_version_id"`
 	LatestVersion     sql.NullString `json:"latest_version"`
 	LatestPublishedAt sql.NullTime   `json:"latest_published_at"`
@@ -273,6 +308,7 @@ func (q *Queries) GetModuleWithLatestVersion(ctx context.Context, id int64) (Get
 		&i.Description,
 		&i.IsBundled,
 		&i.CreatedAt,
+		&i.OwnerIdentityID,
 		&i.LatestVersionID,
 		&i.LatestVersion,
 		&i.LatestPublishedAt,
@@ -281,7 +317,7 @@ func (q *Queries) GetModuleWithLatestVersion(ctx context.Context, id int64) (Get
 }
 
 const GetPolicyModule = `-- name: GetPolicyModule :one
-SELECT id, module_urn, tenant_id, title, description, is_bundled, created_at FROM policy_modules WHERE id = ?1 LIMIT 1
+SELECT id, module_urn, tenant_id, title, description, is_bundled, created_at, owner_identity_id FROM policy_modules WHERE id = ?1 LIMIT 1
 `
 
 func (q *Queries) GetPolicyModule(ctx context.Context, id int64) (PolicyModule, error) {
@@ -295,12 +331,13 @@ func (q *Queries) GetPolicyModule(ctx context.Context, id int64) (PolicyModule, 
 		&i.Description,
 		&i.IsBundled,
 		&i.CreatedAt,
+		&i.OwnerIdentityID,
 	)
 	return i, err
 }
 
 const GetPolicyModuleByURN = `-- name: GetPolicyModuleByURN :one
-SELECT id, module_urn, tenant_id, title, description, is_bundled, created_at FROM policy_modules 
+SELECT id, module_urn, tenant_id, title, description, is_bundled, created_at, owner_identity_id FROM policy_modules 
 WHERE module_urn = ?1 
 LIMIT 1
 `
@@ -316,12 +353,13 @@ func (q *Queries) GetPolicyModuleByURN(ctx context.Context, moduleUrn string) (P
 		&i.Description,
 		&i.IsBundled,
 		&i.CreatedAt,
+		&i.OwnerIdentityID,
 	)
 	return i, err
 }
 
 const GetPolicyModuleVersion = `-- name: GetPolicyModuleVersion :one
-SELECT id, module_id, version, state, manifest_yaml, target_os, scope, runtime, satisfies, parameters_schema, depends_on, conflicts, enforce_script, validate_script, rollback_script, signature_algo, signature_data, signed_by, published_at, published_by, superseded_by_version, created_at FROM policy_module_versions WHERE id = ?1 LIMIT 1
+SELECT id, module_id, version, state, target_os, scope, satisfies, parameters_schema, depends_on, conflicts, sandbox_profile, report_schema, manifest_yaml, signature_algo, signature_data, signed_by, published_at, published_by, superseded_by_version, created_at FROM policy_module_versions WHERE id = ?1 LIMIT 1
 `
 
 func (q *Queries) GetPolicyModuleVersion(ctx context.Context, id int64) (PolicyModuleVersion, error) {
@@ -332,17 +370,15 @@ func (q *Queries) GetPolicyModuleVersion(ctx context.Context, id int64) (PolicyM
 		&i.ModuleID,
 		&i.Version,
 		&i.State,
-		&i.ManifestYaml,
 		&i.TargetOs,
 		&i.Scope,
-		&i.Runtime,
 		&i.Satisfies,
 		&i.ParametersSchema,
 		&i.DependsOn,
 		&i.Conflicts,
-		&i.EnforceScript,
-		&i.ValidateScript,
-		&i.RollbackScript,
+		&i.SandboxProfile,
+		&i.ReportSchema,
+		&i.ManifestYaml,
 		&i.SignatureAlgo,
 		&i.SignatureData,
 		&i.SignedBy,
@@ -355,8 +391,8 @@ func (q *Queries) GetPolicyModuleVersion(ctx context.Context, id int64) (PolicyM
 }
 
 const GetPolicyModuleVersionByNumber = `-- name: GetPolicyModuleVersionByNumber :one
-SELECT id, module_id, version, state, manifest_yaml, target_os, scope, runtime, satisfies, parameters_schema, depends_on, conflicts, enforce_script, validate_script, rollback_script, signature_algo, signature_data, signed_by, published_at, published_by, superseded_by_version, created_at FROM policy_module_versions 
-WHERE module_id = ?1 AND version = ?2 
+SELECT id, module_id, version, state, target_os, scope, satisfies, parameters_schema, depends_on, conflicts, sandbox_profile, report_schema, manifest_yaml, signature_algo, signature_data, signed_by, published_at, published_by, superseded_by_version, created_at FROM policy_module_versions
+WHERE module_id = ?1 AND version = ?2
 LIMIT 1
 `
 
@@ -373,17 +409,15 @@ func (q *Queries) GetPolicyModuleVersionByNumber(ctx context.Context, arg GetPol
 		&i.ModuleID,
 		&i.Version,
 		&i.State,
-		&i.ManifestYaml,
 		&i.TargetOs,
 		&i.Scope,
-		&i.Runtime,
 		&i.Satisfies,
 		&i.ParametersSchema,
 		&i.DependsOn,
 		&i.Conflicts,
-		&i.EnforceScript,
-		&i.ValidateScript,
-		&i.RollbackScript,
+		&i.SandboxProfile,
+		&i.ReportSchema,
+		&i.ManifestYaml,
 		&i.SignatureAlgo,
 		&i.SignatureData,
 		&i.SignedBy,
@@ -396,7 +430,7 @@ func (q *Queries) GetPolicyModuleVersionByNumber(ctx context.Context, arg GetPol
 }
 
 const ListBundledModules = `-- name: ListBundledModules :many
-SELECT id, module_urn, tenant_id, title, description, is_bundled, created_at FROM policy_modules 
+SELECT id, module_urn, tenant_id, title, description, is_bundled, created_at, owner_identity_id FROM policy_modules 
 WHERE is_bundled = TRUE
 ORDER BY title
 `
@@ -418,6 +452,7 @@ func (q *Queries) ListBundledModules(ctx context.Context) ([]PolicyModule, error
 			&i.Description,
 			&i.IsBundled,
 			&i.CreatedAt,
+			&i.OwnerIdentityID,
 		); err != nil {
 			return nil, err
 		}
@@ -433,7 +468,7 @@ func (q *Queries) ListBundledModules(ctx context.Context) ([]PolicyModule, error
 }
 
 const ListPolicyModulesByTenant = `-- name: ListPolicyModulesByTenant :many
-SELECT id, module_urn, tenant_id, title, description, is_bundled, created_at FROM policy_modules 
+SELECT id, module_urn, tenant_id, title, description, is_bundled, created_at, owner_identity_id FROM policy_modules 
 WHERE tenant_id = ?1 
 ORDER BY title
 LIMIT ?3 OFFSET ?2
@@ -462,6 +497,43 @@ func (q *Queries) ListPolicyModulesByTenant(ctx context.Context, arg ListPolicyM
 			&i.Description,
 			&i.IsBundled,
 			&i.CreatedAt,
+			&i.OwnerIdentityID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ListScriptsForVersion = `-- name: ListScriptsForVersion :many
+SELECT id, version_id, phase, filename, source, seq FROM policy_module_scripts
+WHERE version_id = ?1
+ORDER BY phase, seq
+`
+
+func (q *Queries) ListScriptsForVersion(ctx context.Context, versionID int64) ([]PolicyModuleScript, error) {
+	rows, err := q.db.QueryContext(ctx, ListScriptsForVersion, versionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []PolicyModuleScript{}
+	for rows.Next() {
+		var i PolicyModuleScript
+		if err := rows.Scan(
+			&i.ID,
+			&i.VersionID,
+			&i.Phase,
+			&i.Filename,
+			&i.Source,
+			&i.Seq,
 		); err != nil {
 			return nil, err
 		}
@@ -477,7 +549,7 @@ func (q *Queries) ListPolicyModulesByTenant(ctx context.Context, arg ListPolicyM
 }
 
 const ListVersionsByModule = `-- name: ListVersionsByModule :many
-SELECT v.id, v.module_id, v.version, v.state, v.manifest_yaml, v.target_os, v.scope, v.runtime, v.satisfies, v.parameters_schema, v.depends_on, v.conflicts, v.enforce_script, v.validate_script, v.rollback_script, v.signature_algo, v.signature_data, v.signed_by, v.published_at, v.published_by, v.superseded_by_version, v.created_at, i.display_name as publisher_name
+SELECT v.id, v.module_id, v.version, v.state, v.target_os, v.scope, v.satisfies, v.parameters_schema, v.depends_on, v.conflicts, v.sandbox_profile, v.report_schema, v.manifest_yaml, v.signature_algo, v.signature_data, v.signed_by, v.published_at, v.published_by, v.superseded_by_version, v.created_at, i.display_name as publisher_name
 FROM policy_module_versions v
 LEFT JOIN identities i ON i.id = v.published_by
 WHERE v.module_id = ?1
@@ -489,17 +561,15 @@ type ListVersionsByModuleRow struct {
 	ModuleID            int64          `json:"module_id"`
 	Version             string         `json:"version"`
 	State               string         `json:"state"`
-	ManifestYaml        string         `json:"manifest_yaml"`
 	TargetOs            string         `json:"target_os"`
 	Scope               string         `json:"scope"`
-	Runtime             string         `json:"runtime"`
 	Satisfies           string         `json:"satisfies"`
 	ParametersSchema    sql.NullString `json:"parameters_schema"`
 	DependsOn           sql.NullString `json:"depends_on"`
 	Conflicts           sql.NullString `json:"conflicts"`
-	EnforceScript       string         `json:"enforce_script"`
-	ValidateScript      sql.NullString `json:"validate_script"`
-	RollbackScript      sql.NullString `json:"rollback_script"`
+	SandboxProfile      string         `json:"sandbox_profile"`
+	ReportSchema        string         `json:"report_schema"`
+	ManifestYaml        string         `json:"manifest_yaml"`
 	SignatureAlgo       sql.NullString `json:"signature_algo"`
 	SignatureData       sql.NullString `json:"signature_data"`
 	SignedBy            sql.NullString `json:"signed_by"`
@@ -524,17 +594,15 @@ func (q *Queries) ListVersionsByModule(ctx context.Context, moduleID int64) ([]L
 			&i.ModuleID,
 			&i.Version,
 			&i.State,
-			&i.ManifestYaml,
 			&i.TargetOs,
 			&i.Scope,
-			&i.Runtime,
 			&i.Satisfies,
 			&i.ParametersSchema,
 			&i.DependsOn,
 			&i.Conflicts,
-			&i.EnforceScript,
-			&i.ValidateScript,
-			&i.RollbackScript,
+			&i.SandboxProfile,
+			&i.ReportSchema,
+			&i.ManifestYaml,
 			&i.SignatureAlgo,
 			&i.SignatureData,
 			&i.SignedBy,
@@ -557,12 +625,53 @@ func (q *Queries) ListVersionsByModule(ctx context.Context, moduleID int64) ([]L
 	return items, nil
 }
 
-const PublishModuleVersion = `-- name: PublishModuleVersion :exec
+const ListVisibleModules = `-- name: ListVisibleModules :many
+SELECT id, module_urn, tenant_id, title, description, is_bundled, created_at, owner_identity_id FROM policy_modules
+WHERE tenant_id = ?1 OR is_bundled = TRUE
+ORDER BY title
+`
+
+// Every module a tenant can see: its own tenant-authored modules plus
+// every bundled module. Used by the service's ListModules (read path
+// for the Modules Library/Defaults/Sources pages).
+func (q *Queries) ListVisibleModules(ctx context.Context, tenantID sql.NullInt64) ([]PolicyModule, error) {
+	rows, err := q.db.QueryContext(ctx, ListVisibleModules, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []PolicyModule{}
+	for rows.Next() {
+		var i PolicyModule
+		if err := rows.Scan(
+			&i.ID,
+			&i.ModuleUrn,
+			&i.TenantID,
+			&i.Title,
+			&i.Description,
+			&i.IsBundled,
+			&i.CreatedAt,
+			&i.OwnerIdentityID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const PublishModuleVersion = `-- name: PublishModuleVersion :execrows
 UPDATE policy_module_versions SET
     state = 'published',
     published_at = CURRENT_TIMESTAMP,
     published_by = ?1
-WHERE id = ?2
+WHERE id = ?2 AND state = 'draft'
 `
 
 type PublishModuleVersionParams struct {
@@ -570,24 +679,37 @@ type PublishModuleVersionParams struct {
 	ID          int64         `json:"id"`
 }
 
-func (q *Queries) PublishModuleVersion(ctx context.Context, arg PublishModuleVersionParams) error {
-	_, err := q.db.ExecContext(ctx, PublishModuleVersion, arg.PublishedBy, arg.ID)
-	return err
+// State-guarded: only a draft can transition to published. Returns rows
+// affected so the service detects a lost race (two concurrent Publishes
+// of the same draft: exactly one sees 1 row). Runs inside Publish's
+// transaction together with SupersedeCurrentPublishedVersion.
+func (q *Queries) PublishModuleVersion(ctx context.Context, arg PublishModuleVersionParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, PublishModuleVersion, arg.PublishedBy, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
-const RevokeModuleVersion = `-- name: RevokeModuleVersion :exec
+const RevokeModuleVersion = `-- name: RevokeModuleVersion :execrows
 UPDATE policy_module_versions SET
     state = 'revoked'
-WHERE id = ?1
+WHERE id = ?1 AND state IN ('published', 'superseded')
 `
 
-func (q *Queries) RevokeModuleVersion(ctx context.Context, id int64) error {
-	_, err := q.db.ExecContext(ctx, RevokeModuleVersion, id)
-	return err
+// State-guarded: only published/superseded versions can be revoked;
+// drafts should be deleted instead (the service returns a typed error
+// when 0 rows change).
+func (q *Queries) RevokeModuleVersion(ctx context.Context, id int64) (int64, error) {
+	result, err := q.db.ExecContext(ctx, RevokeModuleVersion, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const SearchPolicyModules = `-- name: SearchPolicyModules :many
-SELECT id, module_urn, tenant_id, title, description, is_bundled, created_at FROM policy_modules
+SELECT id, module_urn, tenant_id, title, description, is_bundled, created_at, owner_identity_id FROM policy_modules
 WHERE (tenant_id = ?1 OR is_bundled = TRUE)
   AND (title LIKE '%' || ?2 || '%' OR module_urn LIKE '%' || ?2 || '%')
 ORDER BY title
@@ -617,6 +739,7 @@ func (q *Queries) SearchPolicyModules(ctx context.Context, arg SearchPolicyModul
 			&i.Description,
 			&i.IsBundled,
 			&i.CreatedAt,
+			&i.OwnerIdentityID,
 		); err != nil {
 			return nil, err
 		}
@@ -631,12 +754,57 @@ func (q *Queries) SearchPolicyModules(ctx context.Context, arg SearchPolicyModul
 	return items, nil
 }
 
+const SetModuleOwner = `-- name: SetModuleOwner :exec
+UPDATE policy_modules SET owner_identity_id = ?1 WHERE id = ?2
+`
+
+type SetModuleOwnerParams struct {
+	OwnerIdentityID sql.NullInt64 `json:"owner_identity_id"`
+	ID              int64         `json:"id"`
+}
+
+// Sets (or clears, with a NULL @owner_identity_id) the owning identity of
+// a module. A module's owner is the identity whose Pluris permissions it
+// inherits (see pkg/authz/modules.go). Bundled modules should never have
+// an owner set.
+func (q *Queries) SetModuleOwner(ctx context.Context, arg SetModuleOwnerParams) error {
+	_, err := q.db.ExecContext(ctx, SetModuleOwner, arg.OwnerIdentityID, arg.ID)
+	return err
+}
+
+const SupersedeCurrentPublishedVersion = `-- name: SupersedeCurrentPublishedVersion :execrows
+UPDATE policy_module_versions SET
+    state = 'superseded',
+    superseded_by_version = ?1
+WHERE module_id = ?2 AND state = 'published' AND id != ?3
+`
+
+type SupersedeCurrentPublishedVersionParams struct {
+	SupersededByVersion sql.NullString `json:"superseded_by_version"`
+	ModuleID            int64          `json:"module_id"`
+	ExcludeID           int64          `json:"exclude_id"`
+}
+
+// Marks whatever is currently published for @module_id (excluding the
+// version being published, @exclude_id) superseded by
+// @superseded_by_version. One state-guarded statement instead of a
+// read-then-update so the "at most one published version per module"
+// invariant can't be broken by a writer racing between the read and the
+// write. Runs inside Publish's transaction.
+func (q *Queries) SupersedeCurrentPublishedVersion(ctx context.Context, arg SupersedeCurrentPublishedVersionParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, SupersedeCurrentPublishedVersion, arg.SupersededByVersion, arg.ModuleID, arg.ExcludeID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const UpdatePolicyModule = `-- name: UpdatePolicyModule :one
 UPDATE policy_modules SET
     title = ?1,
     description = ?2
 WHERE id = ?3
-RETURNING id, module_urn, tenant_id, title, description, is_bundled, created_at
+RETURNING id, module_urn, tenant_id, title, description, is_bundled, created_at, owner_identity_id
 `
 
 type UpdatePolicyModuleParams struct {
@@ -656,6 +824,184 @@ func (q *Queries) UpdatePolicyModule(ctx context.Context, arg UpdatePolicyModule
 		&i.Description,
 		&i.IsBundled,
 		&i.CreatedAt,
+		&i.OwnerIdentityID,
+	)
+	return i, err
+}
+
+const UpdatePolicyModuleVersionDraft = `-- name: UpdatePolicyModuleVersionDraft :one
+UPDATE policy_module_versions SET
+    version = ?1,
+    target_os = ?2,
+    scope = ?3,
+    satisfies = ?4,
+    parameters_schema = ?5,
+    depends_on = ?6,
+    conflicts = ?7,
+    sandbox_profile = ?8,
+    report_schema = ?9,
+    manifest_yaml = ?10
+WHERE id = ?11 AND state = 'draft'
+RETURNING id, module_id, version, state, target_os, scope, satisfies, parameters_schema, depends_on, conflicts, sandbox_profile, report_schema, manifest_yaml, signature_algo, signature_data, signed_by, published_at, published_by, superseded_by_version, created_at
+`
+
+type UpdatePolicyModuleVersionDraftParams struct {
+	Version          string         `json:"version"`
+	TargetOs         string         `json:"target_os"`
+	Scope            string         `json:"scope"`
+	Satisfies        string         `json:"satisfies"`
+	ParametersSchema sql.NullString `json:"parameters_schema"`
+	DependsOn        sql.NullString `json:"depends_on"`
+	Conflicts        sql.NullString `json:"conflicts"`
+	SandboxProfile   string         `json:"sandbox_profile"`
+	ReportSchema     string         `json:"report_schema"`
+	ManifestYaml     string         `json:"manifest_yaml"`
+	ID               int64          `json:"id"`
+}
+
+// Mutates a version's fields. The WHERE state = 'draft' guard makes the
+// immutability rule (ADR-007: published/superseded/revoked versions are
+// frozen) hold atomically even if a Publish races between the service's
+// pre-read and this UPDATE: a non-draft row matches nothing and sqlite's
+// RETURNING yields no row (sql.ErrNoRows), which the service maps to
+// ErrVersionNotDraft.
+func (q *Queries) UpdatePolicyModuleVersionDraft(ctx context.Context, arg UpdatePolicyModuleVersionDraftParams) (PolicyModuleVersion, error) {
+	row := q.db.QueryRowContext(ctx, UpdatePolicyModuleVersionDraft,
+		arg.Version,
+		arg.TargetOs,
+		arg.Scope,
+		arg.Satisfies,
+		arg.ParametersSchema,
+		arg.DependsOn,
+		arg.Conflicts,
+		arg.SandboxProfile,
+		arg.ReportSchema,
+		arg.ManifestYaml,
+		arg.ID,
+	)
+	var i PolicyModuleVersion
+	err := row.Scan(
+		&i.ID,
+		&i.ModuleID,
+		&i.Version,
+		&i.State,
+		&i.TargetOs,
+		&i.Scope,
+		&i.Satisfies,
+		&i.ParametersSchema,
+		&i.DependsOn,
+		&i.Conflicts,
+		&i.SandboxProfile,
+		&i.ReportSchema,
+		&i.ManifestYaml,
+		&i.SignatureAlgo,
+		&i.SignatureData,
+		&i.SignedBy,
+		&i.PublishedAt,
+		&i.PublishedBy,
+		&i.SupersededByVersion,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const UpsertModuleScript = `-- name: UpsertModuleScript :one
+
+INSERT INTO policy_module_scripts (version_id, phase, filename, source, seq)
+VALUES (?1, ?2, ?3, ?4, ?5)
+ON CONFLICT(version_id, phase, seq) DO UPDATE SET
+    filename = excluded.filename,
+    source = excluded.source
+RETURNING id, version_id, phase, filename, source, seq
+`
+
+type UpsertModuleScriptParams struct {
+	VersionID int64  `json:"version_id"`
+	Phase     string `json:"phase"`
+	Filename  string `json:"filename"`
+	Source    string `json:"source"`
+	Seq       int64  `json:"seq"`
+}
+
+// ============================================================================
+// Policy Module Scripts (migration 008)
+// ============================================================================
+// Insert-or-replace the script for (version_id, phase, seq). v1 always
+// writes seq=0 (one script per phase); the seq column exists for a
+// future multi-file phase.
+//
+// UNGUARDED -- only safe to call when the caller has already established
+// the version is a draft (e.g. ForkLatestPublished copying a brand-new
+// draft's scripts forward). Editor-facing script writes MUST go through
+// UpsertModuleScriptGuarded below instead.
+func (q *Queries) UpsertModuleScript(ctx context.Context, arg UpsertModuleScriptParams) (PolicyModuleScript, error) {
+	row := q.db.QueryRowContext(ctx, UpsertModuleScript,
+		arg.VersionID,
+		arg.Phase,
+		arg.Filename,
+		arg.Source,
+		arg.Seq,
+	)
+	var i PolicyModuleScript
+	err := row.Scan(
+		&i.ID,
+		&i.VersionID,
+		&i.Phase,
+		&i.Filename,
+		&i.Source,
+		&i.Seq,
+	)
+	return i, err
+}
+
+const UpsertModuleScriptGuarded = `-- name: UpsertModuleScriptGuarded :one
+INSERT INTO policy_module_scripts (version_id, phase, filename, source, seq)
+SELECT ?1, ?2, ?3, ?4, ?5
+WHERE EXISTS (
+    SELECT 1 FROM policy_module_versions
+    WHERE id = ?1 AND state = 'draft'
+)
+ON CONFLICT(version_id, phase, seq) DO UPDATE SET
+    filename = excluded.filename,
+    source = excluded.source
+RETURNING id, version_id, phase, filename, source, seq
+`
+
+type UpsertModuleScriptGuardedParams struct {
+	VersionID int64  `json:"version_id"`
+	Phase     string `json:"phase"`
+	Filename  string `json:"filename"`
+	Source    string `json:"source"`
+	Seq       int64  `json:"seq"`
+}
+
+// Task 4.3 mandatory fix: the plain UpsertModuleScript above has no
+// draft guard, so a published/superseded/revoked version's scripts could
+// be silently overwritten -- breaking ADR-007 immutability the same way
+// an unguarded version-field UPDATE would. This variant only inserts (or
+// upserts) a row when the target version's state = 'draft'; the WHERE
+// EXISTS subquery is evaluated as part of the same atomic INSERT
+// statement (no separate read-then-write), so it holds even if a Publish
+// races between the service's pre-check and this call. When the version
+// isn't a draft, the SELECT yields zero rows, nothing is inserted, and
+// RETURNING produces no row -- the :one code path surfaces that as
+// sql.ErrNoRows, which the service maps to the typed ErrVersionNotDraft.
+func (q *Queries) UpsertModuleScriptGuarded(ctx context.Context, arg UpsertModuleScriptGuardedParams) (PolicyModuleScript, error) {
+	row := q.db.QueryRowContext(ctx, UpsertModuleScriptGuarded,
+		arg.VersionID,
+		arg.Phase,
+		arg.Filename,
+		arg.Source,
+		arg.Seq,
+	)
+	var i PolicyModuleScript
+	err := row.Scan(
+		&i.ID,
+		&i.VersionID,
+		&i.Phase,
+		&i.Filename,
+		&i.Source,
+		&i.Seq,
 	)
 	return i, err
 }

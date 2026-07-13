@@ -4,11 +4,13 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/pluris/pluris/db"
+	schema "github.com/pluris/pluris/db/schema"
 )
 
 // Database wraps the SQL connection and sqlc queries
@@ -101,6 +103,12 @@ func (d *Database) migrate() error {
 		"db/schema/001_initial.sql",
 		"db/schema/002_identity_ad_compat.sql",
 		"db/schema/003_roles_software_logs.sql",
+		"db/schema/004_dependency_groups.sql",
+		"db/schema/005_role_hierarchy_group_roles.sql",
+		"db/schema/006_condition_builder.sql",
+		"db/schema/007_module_ownership_grants.sql",
+		"db/schema/008_module_scripts.sql",
+		"db/schema/009_group_kinds_rules.sql",
 	}
 
 	for _, migrationFile := range migrations {
@@ -112,16 +120,13 @@ func (d *Database) migrate() error {
 			continue
 		}
 
-		// Try to read schema file from project root
-		schemaSQL, err := os.ReadFile(migrationFile)
+		// Migrations are embedded in the binary (db/schema/embed.go) so
+		// a built console migrates correctly from any working directory.
+		// A missing embedded file is a build defect, never skippable:
+		// silently skipping used to leave fresh installs with no schema.
+		schemaSQL, err := schema.Files.ReadFile(path.Base(migrationFile))
 		if err != nil {
-			// Fallback: try relative to working directory
-			schemaSQL, err = os.ReadFile("../../" + migrationFile)
-			if err != nil {
-				// Skip if migration doesn't exist yet (forward compatibility)
-				// Note: do NOT record this as applied — only record successful executions
-				continue
-			}
+			return fmt.Errorf("embedded migration %s missing: %w", migrationFile, err)
 		}
 
 		if strings.Contains(strings.ToUpper(string(schemaSQL)), "PRAGMA") {

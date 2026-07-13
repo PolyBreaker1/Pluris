@@ -1,0 +1,36 @@
+package templates
+
+import (
+	"github.com/pluris/pluris/db"
+	"strconv"
+)
+
+// RolePickerSelect — the shared hierarchical role picker (Task 5),
+// reused by the Pluris Policy create-role parent select here and by
+// Task 7's user/group role pickers. Renders a <select name={fieldName}>
+// with one <optgroup> per template family and indented options within
+// each family (see rolePickerOptions for the grouping/depth logic).
+// When includeNone is true, a leading "No parent (standalone)" option
+// (value "0") is rendered outside any optgroup.
+templ RolePickerSelect(fieldName string, roles []db.Role, selectedID int64, includeNone bool) {
+	<select name={ fieldName } class="input">
+		if includeNone {
+			if selectedID == 0 {
+				<option value="0" selected>No parent (standalone)</option>
+			} else {
+				<option value="0">No parent (standalone)</option>
+			}
+		}
+		for _, group := range groupRolePickerOptions(rolePickerOptions(roles)) {
+			<optgroup label={ group.Family }>
+				for _, opt := range group.Options {
+					if opt.ID == selectedID {
+						<option value={ strconv.FormatInt(opt.ID, 10) } selected>{ opt.Label }</option>
+					} else {
+						<option value={ strconv.FormatInt(opt.ID, 10) }>{ opt.Label }</option>
+					}
+				}
+			</optgroup>
+		}
+	</select>
+}

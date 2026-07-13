@@ -4,8 +4,9 @@ package policies
 // Preferences (Registry / Files / Shortcuts / Scheduled Tasks / etc).
 //
 // Scope rules:
-//   ScopeUser  — applied at login to the user session (dconf lock, ~/.config).
-//   ScopeBoth  — has a machine-default AND a per-user override chain.
+//
+//	ScopeUser  — applied at login to the user session (dconf lock, ~/.config).
+//	ScopeBoth  — has a machine-default AND a per-user override chain.
 var userPolicies = []Policy{
 	// ---------------------------------------------------------------
 	// User Configuration → Control Panel

@@ -11,30 +11,93 @@ import (
 	"time"
 )
 
+const ListAssignmentsByPolicy = `-- name: ListAssignmentsByPolicy :many
+
+SELECT g.name AS group_name, g.scope AS group_scope, g.disabled AS group_disabled,
+       a.target_type, a.target_id
+FROM configuration_group_bindings b
+JOIN configuration_groups g ON g.id = b.configuration_group_id
+JOIN configuration_group_assignments a ON a.configuration_group_id = g.id
+WHERE b.policy_urn = ?1 AND g.tenant_id = ?2
+ORDER BY g.name
+`
+
+type ListAssignmentsByPolicyParams struct {
+	PolicyUrn string `json:"policy_urn"`
+	TenantID  int64  `json:"tenant_id"`
+}
+
+type ListAssignmentsByPolicyRow struct {
+	GroupName     string `json:"group_name"`
+	GroupScope    string `json:"group_scope"`
+	GroupDisabled bool   `json:"group_disabled"`
+	TargetType    string `json:"target_type"`
+	TargetID      int64  `json:"target_id"`
+}
+
+// Assignments reaching a given catalog policy, for the policy detail
+// page Assignments tab (Task 15).
+func (q *Queries) ListAssignmentsByPolicy(ctx context.Context, arg ListAssignmentsByPolicyParams) ([]ListAssignmentsByPolicyRow, error) {
+	rows, err := q.db.QueryContext(ctx, ListAssignmentsByPolicy, arg.PolicyUrn, arg.TenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListAssignmentsByPolicyRow{}
+	for rows.Next() {
+		var i ListAssignmentsByPolicyRow
+		if err := rows.Scan(
+			&i.GroupName,
+			&i.GroupScope,
+			&i.GroupDisabled,
+			&i.TargetType,
+			&i.TargetID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const ListGroupsForAssetDetail = `-- name: ListGroupsForAssetDetail :many
 
-SELECT g.id, g.tenant_id, g.site_id, g.name, g.slug, g.created_at, g.group_category, g.group_scope, gm.created_at AS added_at FROM groups g
+SELECT g.id, g.tenant_id, g.site_id, g.name, g.slug, g.created_at, g.group_category, g.group_scope, g.description, g.member_kind, g.membership, g.rules_match_mode, gm.created_at AS added_at, gm.source AS source FROM groups g
 INNER JOIN group_memberships gm ON g.id = gm.group_id
 WHERE gm.asset_id = ?1
 ORDER BY g.name
 `
 
 type ListGroupsForAssetDetailRow struct {
-	ID            int64         `json:"id"`
-	TenantID      int64         `json:"tenant_id"`
-	SiteID        sql.NullInt64 `json:"site_id"`
-	Name          string        `json:"name"`
-	Slug          string        `json:"slug"`
-	CreatedAt     time.Time     `json:"created_at"`
-	GroupCategory string        `json:"group_category"`
-	GroupScope    string        `json:"group_scope"`
-	AddedAt       time.Time     `json:"added_at"`
+	ID             int64         `json:"id"`
+	TenantID       int64         `json:"tenant_id"`
+	SiteID         sql.NullInt64 `json:"site_id"`
+	Name           string        `json:"name"`
+	Slug           string        `json:"slug"`
+	CreatedAt      time.Time     `json:"created_at"`
+	GroupCategory  string        `json:"group_category"`
+	GroupScope     string        `json:"group_scope"`
+	Description    string        `json:"description"`
+	MemberKind     string        `json:"member_kind"`
+	Membership     string        `json:"membership"`
+	RulesMatchMode string        `json:"rules_match_mode"`
+	AddedAt        time.Time     `json:"added_at"`
+	Source         string        `json:"source"`
 }
 
 // Group rows for the detail page Groups tabs (Task 9). Same joins as
 // ListGroupsForAsset and ListGroupsForIdentity but each row also carries
 // the membership creation time so the UI can show when the entity was
 // added to the group.
+// gm.source is selected (Task 6.2) so GroupService.ListForAsset can show
+// the membership's real source (direct/rule) instead of a hardcoded
+// "Direct" label.
 func (q *Queries) ListGroupsForAssetDetail(ctx context.Context, assetID sql.NullInt64) ([]ListGroupsForAssetDetailRow, error) {
 	rows, err := q.db.QueryContext(ctx, ListGroupsForAssetDetail, assetID)
 	if err != nil {
@@ -53,7 +116,12 @@ func (q *Queries) ListGroupsForAssetDetail(ctx context.Context, assetID sql.Null
 			&i.CreatedAt,
 			&i.GroupCategory,
 			&i.GroupScope,
+			&i.Description,
+			&i.MemberKind,
+			&i.Membership,
+			&i.RulesMatchMode,
 			&i.AddedAt,
+			&i.Source,
 		); err != nil {
 			return nil, err
 		}
@@ -69,24 +137,31 @@ func (q *Queries) ListGroupsForAssetDetail(ctx context.Context, assetID sql.Null
 }
 
 const ListGroupsForIdentityDetail = `-- name: ListGroupsForIdentityDetail :many
-SELECT g.id, g.tenant_id, g.site_id, g.name, g.slug, g.created_at, g.group_category, g.group_scope, gm.created_at AS added_at FROM groups g
+SELECT g.id, g.tenant_id, g.site_id, g.name, g.slug, g.created_at, g.group_category, g.group_scope, g.description, g.member_kind, g.membership, g.rules_match_mode, gm.created_at AS added_at, gm.source AS source FROM groups g
 INNER JOIN group_memberships gm ON g.id = gm.group_id
 WHERE gm.identity_id = ?1
 ORDER BY g.name
 `
 
 type ListGroupsForIdentityDetailRow struct {
-	ID            int64         `json:"id"`
-	TenantID      int64         `json:"tenant_id"`
-	SiteID        sql.NullInt64 `json:"site_id"`
-	Name          string        `json:"name"`
-	Slug          string        `json:"slug"`
-	CreatedAt     time.Time     `json:"created_at"`
-	GroupCategory string        `json:"group_category"`
-	GroupScope    string        `json:"group_scope"`
-	AddedAt       time.Time     `json:"added_at"`
+	ID             int64         `json:"id"`
+	TenantID       int64         `json:"tenant_id"`
+	SiteID         sql.NullInt64 `json:"site_id"`
+	Name           string        `json:"name"`
+	Slug           string        `json:"slug"`
+	CreatedAt      time.Time     `json:"created_at"`
+	GroupCategory  string        `json:"group_category"`
+	GroupScope     string        `json:"group_scope"`
+	Description    string        `json:"description"`
+	MemberKind     string        `json:"member_kind"`
+	Membership     string        `json:"membership"`
+	RulesMatchMode string        `json:"rules_match_mode"`
+	AddedAt        time.Time     `json:"added_at"`
+	Source         string        `json:"source"`
 }
 
+// gm.source selected for the same reason as ListGroupsForAssetDetail
+// above.
 func (q *Queries) ListGroupsForIdentityDetail(ctx context.Context, identityID sql.NullInt64) ([]ListGroupsForIdentityDetailRow, error) {
 	rows, err := q.db.QueryContext(ctx, ListGroupsForIdentityDetail, identityID)
 	if err != nil {
@@ -105,7 +180,12 @@ func (q *Queries) ListGroupsForIdentityDetail(ctx context.Context, identityID sq
 			&i.CreatedAt,
 			&i.GroupCategory,
 			&i.GroupScope,
+			&i.Description,
+			&i.MemberKind,
+			&i.Membership,
+			&i.RulesMatchMode,
 			&i.AddedAt,
+			&i.Source,
 		); err != nil {
 			return nil, err
 		}
@@ -122,7 +202,7 @@ func (q *Queries) ListGroupsForIdentityDetail(ctx context.Context, identityID sq
 
 const ListRolesForIdentityDetail = `-- name: ListRolesForIdentityDetail :many
 
-SELECT r.id, r.tenant_id, r.slug, r.name, r.description, r.is_builtin, r.template_slug, r.permissions, r.created_at, r.updated_at, ir.assigned_at FROM roles r
+SELECT r.id, r.tenant_id, r.slug, r.name, r.description, r.is_builtin, r.template_slug, r.permissions, r.created_at, r.updated_at, r.parent_role_id, ir.assigned_at FROM roles r
 JOIN identity_roles ir ON ir.role_id = r.id
 WHERE ir.identity_id = ?1
 ORDER BY r.name
@@ -139,6 +219,7 @@ type ListRolesForIdentityDetailRow struct {
 	Permissions  string         `json:"permissions"`
 	CreatedAt    time.Time      `json:"created_at"`
 	UpdatedAt    time.Time      `json:"updated_at"`
+	ParentRoleID sql.NullInt64  `json:"parent_role_id"`
 	AssignedAt   time.Time      `json:"assigned_at"`
 }
 
@@ -164,6 +245,7 @@ func (q *Queries) ListRolesForIdentityDetail(ctx context.Context, identityID int
 			&i.Permissions,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ParentRoleID,
 			&i.AssignedAt,
 		); err != nil {
 			return nil, err

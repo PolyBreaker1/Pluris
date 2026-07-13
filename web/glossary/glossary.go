@@ -5,7 +5,7 @@
 //   - A Windows-trained admin meeting "pam_pwquality" or "AppArmor" for
 //     the first time loses 30 seconds to context-switching. A short
 //     in-product gloss with the AD/Windows analogue keeps them in flow.
-//   - The same data drives docs/for-windows-admins/glossary.md (the
+//   - The same data drives docs/endpoint-management/windows-admins/glossary.md (the
 //     `go run ./cmd/gendocs` target reads this map and emits a markdown
 //     table). One edit, two surfaces.
 //   - lists.glossifyTokens (see web/lists/policy_catalog.go) wraps each
@@ -62,7 +62,7 @@ var All = []Term{
 		OneLine:      "Service that bridges the local system to a remote identity provider (LDAP / Kerberos / Kanidm) — caches credentials, resolves users and groups.",
 		ADEquivalent: "≈ Netlogon + the AD client side of a domain join."},
 	{Key: "kanidm", Category: "auth",
-		OneLine:      "The identity provider Pluris uses by default — replaces what AD does for users, groups, and authentication.",
+		OneLine:      "The planned identity backend Pluris is designed to use by default — will replace what AD does for users, groups, and authentication.",
 		ADEquivalent: "≈ AD DS (Active Directory Domain Services), without the SMB/Kerberos legacy."},
 	{Key: "polkit", Category: "auth",
 		OneLine:      "The framework that decides whether a desktop app can elevate privilege for a single action (mount a disk, install a package).",

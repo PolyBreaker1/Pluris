@@ -99,12 +99,12 @@ type listSpec struct {
 // unified engine (web/static/lists.js) declares its id here so call
 // sites avoid string literals.
 //
-// NOTE — only ListIDPolicyCatalog has a full FieldDef registry today
-// (see policy_catalog.go's init()). The other two IDs are DOM-only:
-// the cg-table and pm-table templates render their columns directly
-// in templ rather than going through Register / FieldsFor. When their
-// columns become user-configurable, add a Register() call and they
-// graduate to "registry-backed".
+// NOTE — ListIDPolicyCatalog (policy_catalog.go) and ListIDConfigGroups
+// (config_groups.go, Task 5.2) have full FieldDef registries.
+// ListIDPolicyModules is still DOM-only: the pm-table template renders
+// its columns directly in templ rather than going through
+// Register / FieldsFor. When its columns become user-configurable, add
+// a Register() call and it graduates to "registry-backed".
 const (
 	ListIDConfigGroups  = "config-groups"
 	ListIDPolicyModules = "policy-modules"

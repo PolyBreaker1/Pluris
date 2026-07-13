@@ -1,6 +1,6 @@
 # Contributing to Pluris
 
-Thanks for your interest. Pluris is pre-beta and moving fast, so the most valuable contributions right now are: trying the quickstart and reporting what breaks, reviewing the data model and policy catalog against real-world AD/Intune experience, and small focused PRs.
+Thanks for your interest. Pluris is pre-beta and moving fast, so the most valuable contributions right now are: getting it running and reporting what breaks, reviewing the data model and policy catalog against real-world AD/Intune experience, and small focused PRs.
 
 ## Build and test
 
@@ -17,15 +17,18 @@ go test -buildvcs=false -count=1 ./...      # must be fully green before any PR
 
 - **Generated code is never edited by hand:** `*_templ.go` comes from `make gen`, `db/*.sql.go` from `sqlc generate`. Edit the `.templ` / `.sql` sources.
 - **Migrations are append-only.** Never modify an existing file in `db/schema/`; add a new numbered migration. SQL comments must be plain ASCII (sqlc parser limitation).
-- **UI work must respect `docs/UX_INVARIANTS.md`**: table columns come from the `web/lists/` registry, detail pages use the `DetailShell` component, parameters are addressed by canonical paths (`entity/section/param`) derived from `catalog/params/`.
+- **UI work must respect the UI invariants** (`docs/endpoint-management/ui/invariants.md`): table columns come from the `web/lists/` registry, detail pages use the `DetailShell` component, parameters are addressed by canonical paths (`entity/section/param`) derived from `catalog/params/`.
 - **Tests use scratch databases** (`t.TempDir()`), never a repo-root path.
 - No new dependencies without discussion in an issue first.
 
 ## Where to start
 
-- `docs/ARCHITECTURE_DECISIONS.md` — why things are the way they are
-- `docs/PARAMETER-REGISTRY.md` — how to add a parameter/column end to end
-- `docs/superpowers/plans/` — the active implementation plan (open tasks)
+- `docs/INDEX.md` — the doc map; start here
+- `docs/endpoint-management/architecture/decisions.md` — why things are the way they are
+- `docs/endpoint-management/concepts/parameters.md` — how to add a parameter/column end to end
+- `docs/development/workflow.md` — how work moves from spec to shipped code
+- `docs/development/handoff.md` — current shipped/in-flight state
+- `docs/history/plans/` — implementation plans, past and in-flight
 
 ## AI-assisted contributions
 

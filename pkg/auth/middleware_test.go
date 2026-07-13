@@ -9,8 +9,11 @@ import (
 
 	"github.com/labstack/echo/v4"
 	"github.com/pluris/pluris/catalog/identities"
+	"github.com/pluris/pluris/catalog/permissions"
 	"github.com/pluris/pluris/db"
+	"github.com/pluris/pluris/pkg/authz"
 	"github.com/pluris/pluris/pkg/database"
+	"github.com/pluris/pluris/pkg/services"
 )
 
 func setupMiddlewareTestDB(t *testing.T) *database.Database {
@@ -186,6 +189,111 @@ func TestRequireAuthIgnoresActiveTenantForNonSuperAdmin(t *testing.T) {
 	}
 }
 
+func TestRequireAuthPopulatesBypassGrantsForSuperAdmin(t *testing.T) {
+	dbase := setupMiddlewareTestDB(t)
+	sessions := NewSessionManager(dbase)
+	ctx := context.Background()
+
+	tenant, _ := dbase.Queries.CreateTenant(ctx, db.CreateTenantParams{Name: "Org", Slug: "org-mw-grants-sa"})
+	identity, _ := dbase.Queries.CreateIdentity(ctx, db.CreateIdentityParams{
+		TenantID: tenant.ID, Username: "sa", Email: "sa@example.com",
+		DisplayName: "SA", Role: "super_admin",
+	})
+	rawToken, _, err := sessions.Create(ctx, identity.ID, "127.0.0.1", "test-agent")
+	if err != nil {
+		t.Fatalf("failed to create session: %v", err)
+	}
+
+	var gotSess *UserSession
+	e := echo.New()
+	e.Use(RequireAuth(dbase, sessions))
+	e.GET("/", func(c echo.Context) error {
+		gotSess = FromContext(c.Request().Context())
+		return c.String(http.StatusOK, "dashboard")
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.AddCookie(&http.Cookie{Name: "pluris_session", Value: rawToken})
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	if gotSess == nil {
+		t.Fatal("expected session in context")
+	}
+	if !gotSess.Grants.Can("identity.create") {
+		t.Fatalf("expected super_admin session grants to bypass, got %v", gotSess.Grants)
+	}
+}
+
+func TestRequireAuthPopulatesEffectiveGrantsForUserRole(t *testing.T) {
+	dbase := setupMiddlewareTestDB(t)
+	sessions := NewSessionManager(dbase)
+	ctx := context.Background()
+
+	tenant, _ := dbase.Queries.CreateTenant(ctx, db.CreateTenantParams{Name: "Org", Slug: "org-mw-grants-user"})
+
+	roleSvc := services.NewRoleService(dbase)
+	if err := roleSvc.EnsureBuiltins(ctx, tenant.ID); err != nil {
+		t.Fatalf("failed to ensure builtin roles: %v", err)
+	}
+	if err := authz.NewService(dbase).EnsureBuiltinGrants(ctx, tenant.ID); err != nil {
+		t.Fatalf("failed to ensure builtin grants: %v", err)
+	}
+
+	identitySvc := services.NewIdentityService(dbase)
+	created, err := identitySvc.Create(ctx, tenant.ID, identities.Identity{
+		Username:    "plainuser",
+		Email:       "plainuser@example.com",
+		DisplayName: "Plain User",
+		Role:        identities.RoleUser,
+	})
+	if err != nil {
+		t.Fatalf("failed to create identity: %v", err)
+	}
+
+	userRole, err := dbase.Queries.GetRoleBySlug(ctx, db.GetRoleBySlugParams{TenantID: tenant.ID, Slug: "user"})
+	if err != nil {
+		t.Fatalf("failed to look up user role: %v", err)
+	}
+	if err := roleSvc.Assign(ctx, created.ID, userRole.ID, created.ID); err != nil {
+		t.Fatalf("failed to assign user role: %v", err)
+	}
+
+	rawToken, _, err := sessions.Create(ctx, created.ID, "127.0.0.1", "test-agent")
+	if err != nil {
+		t.Fatalf("failed to create session: %v", err)
+	}
+
+	var gotSess *UserSession
+	e := echo.New()
+	e.Use(RequireAuth(dbase, sessions))
+	e.GET("/", func(c echo.Context) error {
+		gotSess = FromContext(c.Request().Context())
+		return c.String(http.StatusOK, "dashboard")
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.AddCookie(&http.Cookie{Name: "pluris_session", Value: rawToken})
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	if gotSess == nil {
+		t.Fatal("expected session in context")
+	}
+	if !gotSess.Grants.CanScoped("identity.update", created.ID, created.ID) {
+		t.Fatalf("expected user role to have own-scope identity.update, got %v", gotSess.Grants)
+	}
+	if gotSess.Grants.Can("identity.delete") {
+		t.Fatalf("expected user role to be denied identity.delete, got %v", gotSess.Grants)
+	}
+}
+
 func TestRBACDeniesUserSelfServiceFromScripts(t *testing.T) {
 	e := echo.New()
 	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
@@ -214,6 +322,7 @@ func TestRBACAllowsAdminFromScripts(t *testing.T) {
 		return func(c echo.Context) error {
 			c.SetRequest(c.Request().WithContext(WithSession(c.Request().Context(), &UserSession{
 				IdentityID: 1, Role: identities.RoleAdmin,
+				Grants: authz.Grants(permissions.TemplateGrants("admin")),
 			})))
 			return next(c)
 		}

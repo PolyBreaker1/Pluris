@@ -100,7 +100,7 @@ func TestValidateRejectsMissingFields(t *testing.T) {
 	for _, a := range []Asset{
 		{}, // no ID
 		{ID: "x", Subtype: "nonsense", Payload: ComputerPayload{}},
-		{ID: "x", Subtype: SubtypeComputer},                                          // nil payload
+		{ID: "x", Subtype: SubtypeComputer}, // nil payload
 		{ID: "x", Subtype: SubtypeComputer, Payload: ComputerPayload{}, EnrollmentState: "weird"},
 	} {
 		if err := a.Validate(); err == nil {

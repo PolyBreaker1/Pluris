@@ -1,0 +1,92 @@
+package templates
+
+import (
+	"github.com/pluris/pluris/catalog/identities"
+	"github.com/pluris/pluris/catalog/params"
+	"github.com/pluris/pluris/web/lists"
+)
+
+// UserCreatePage — the full-page "add user" form (spec §6, Task 8). Unlike
+// the old small UserFormPage, this mirrors the standardized user layout
+// (userGeneralTab's section-card grid) with every schema section's
+// editable fields rendered as OPEN <input> elements -- no pencil-toggle
+// editing, since there is nothing to toggle yet. One POST carries every
+// field to UserCreateSubmit, which creates the identity then applies the
+// remaining fields through the same UpdateFields validation path used by
+// the detail page's inline editor. The old UserFormPage remains the only
+// editor for /users/:id/edit.
+templ UserCreatePage(prefill identities.Identity, errorMsg string, csrf string) {
+	@Layout("users", "New user") {
+		@PageHeader("New user", "Fill in the account details. Fields marked * are required.", "", "")
+		<div data-testid="page-user-create">
+			<form method="post" action="/users/new">
+				<input type="hidden" name="_csrf" value={ csrf }/>
+				<div class="asset-detail-hero card" style="display:flex; align-items:center; gap:16px;">
+					<div class="user-avatar" style="width:64px; height:64px; font-size:1.5rem;">{ userCreateInitials(prefill) }</div>
+					<div>
+						<h3 style="margin:0;">New user</h3>
+						<p style="margin:0; color:var(--text-secondary,#666);">The avatar can be set once the account exists.</p>
+					</div>
+				</div>
+				if errorMsg != "" {
+					<div class="auth-error">{ errorMsg }</div>
+				}
+				<div class="asset-detail-grid">
+					{{ schema := params.SchemaIdentity }}
+					for _, sec := range schema.Sections {
+						if sec.Key != "security" {
+							<section class="asset-detail-section card" data-section={ sec.Key }>
+								<div class="section-header">
+									<h4 class="asset-detail-section-title">{ sec.Label }</h4>
+								</div>
+								<dl class="asset-detail-defs">
+									for _, key := range sec.Params {
+										if key != "avatar_url" && (key == "username" || !identities.NonEditableFieldKeys[key]) {
+											{{ def := params.DefByKey(key) }}
+											if def != nil {
+												{{ required := key == "username" || key == "email" }}
+												<dt>
+													<label for={ "ucf-" + key }>
+														{ def.Label }
+														if required {
+															<span aria-hidden="true">*</span>
+														}
+													</label>
+												</dt>
+												<dd>
+													if required {
+														<input id={ "ucf-" + key } class="input" type="text" name={ key } value={ lists.GetIdentityRawValue(key, prefill) } required/>
+													} else {
+														<input id={ "ucf-" + key } class="input" type="text" name={ key } value={ lists.GetIdentityRawValue(key, prefill) }/>
+													}
+												</dd>
+											}
+										}
+									}
+								</dl>
+							</section>
+						}
+					}
+				</div>
+				<div class="detail-action-row" style="position:sticky; bottom:0; background:var(--bg-primary,#fff); padding:12px 0; display:flex; gap:12px;">
+					<button type="submit" class="btn btn-primary">Create user</button>
+					<a href="/users" class="btn">Cancel</a>
+				</div>
+			</form>
+		</div>
+	}
+}
+
+// userCreateInitials mirrors userInitials for the pre-create hero, where
+// user.ID is always 0 -- falls back to "?" when nothing has been typed
+// into given/surname/username yet (all empty on the first GET).
+func userCreateInitials(user identities.Identity) string {
+	if user.Initials != "" {
+		return user.Initials
+	}
+	name := user.ResolvedDisplayName()
+	if name == "" {
+		return "?"
+	}
+	return firstRuneUpper(name)
+}

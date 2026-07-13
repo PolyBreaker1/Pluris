@@ -13,9 +13,11 @@ import (
 	"github.com/labstack/echo/v4"
 
 	"github.com/pluris/pluris/catalog/identities"
+	"github.com/pluris/pluris/catalog/permissions"
 	"github.com/pluris/pluris/catalog/policies"
 	"github.com/pluris/pluris/db"
 	"github.com/pluris/pluris/pkg/auth"
+	"github.com/pluris/pluris/pkg/authz"
 	"github.com/pluris/pluris/pkg/database"
 	"github.com/pluris/pluris/pkg/services"
 )
@@ -69,6 +71,7 @@ func TestUserRoleAssignAuthorization(t *testing.T) {
 		req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationForm)
 		req = req.WithContext(auth.WithSession(req.Context(), &auth.UserSession{
 			IdentityID: actorID, TenantID: tenant.ID, Role: actorRole,
+			Grants: authz.Grants(permissions.TemplateGrants(string(actorRole))),
 		}))
 		rec := httptest.NewRecorder()
 		c := e.NewContext(req, rec)
@@ -146,6 +149,7 @@ func TestUserPolicyAddSubmitCreatesRows(t *testing.T) {
 	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationForm)
 	req = req.WithContext(auth.WithSession(req.Context(), &auth.UserSession{
 		IdentityID: admin.ID, TenantID: tenant.ID, Role: identities.RoleAdmin,
+		Grants: authz.Grants(permissions.TemplateGrants("admin")),
 	}))
 	rec := httptest.NewRecorder()
 	c := e.NewContext(req, rec)

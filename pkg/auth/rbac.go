@@ -3,43 +3,113 @@ package auth
 import (
 	"strings"
 
-	"github.com/pluris/pluris/catalog/identities"
+	"github.com/pluris/pluris/pkg/authz"
 )
 
-// permission mirrors the locked role permission matrix in
-// docs/UX_INVARIANTS.md (§ "Role permission matrix (v1, locked)"). It is
-// intentionally coarse (route-prefix level): row-level self-scoping
-// (e.g. the user role seeing only their own identity/assets) is
-// applied inside the service layer using the session identity, not here.
-// technician mirrors admin except /server-admin.
-var permission = map[string]map[string]bool{
-	"/":               {"super_admin": true, "admin": true, "technician": true, "user": true},
-	"/users":          {"super_admin": true, "admin": true, "technician": true, "user": true},
-	"/assets":         {"super_admin": true, "admin": true, "technician": true, "user": true},
-	"/policy":         {"super_admin": true, "admin": true, "technician": true, "user": true},
-	"/profiles":       {"super_admin": true, "admin": true, "technician": true, "user": true},
-	"/scripts":        {"super_admin": true, "admin": true, "technician": true, "user": false},
-	"/policy/modules": {"super_admin": true, "admin": true, "technician": true, "user": false},
-	"/wine":           {"super_admin": true, "admin": true, "technician": true, "user": true},
-	"/packages":       {"super_admin": true, "admin": true, "technician": true, "user": true},
-	"/server-admin":   {"super_admin": true, "admin": true, "technician": false, "user": false},
-	"/preferences":    {"super_admin": true, "admin": true, "technician": true, "user": true},
-	"/tenant-switch":  {"super_admin": true, "admin": false, "technician": false, "user": false},
+// routePermissionKey is the locked route-prefix -> Pluris Policy
+// permission-key map. It replaces the old hardcoded role matrix: instead
+// of asking "does this role's row say yes for this route", enforcement
+// now asks "does this session's grants include the permission key this
+// route requires". See
+// docs/history/specs/2026-07-08-pluris-policy-authz-design.md
+// section "3. Enforcement" for the design rationale.
+//
+// A value of "" means the route is open to any authenticated session
+// (it carries no gated permission -- this mirrors the old matrix's
+// all-roles-true rows for "/", "/profiles", "/wine", "/packages", and
+// "/preferences").
+//
+// "/policy/modules" and "/scripts" both map to
+// "endpoint_policy.manage_modules": in the old matrix both were
+// technician-and-up (denied to plain users), and scripts are
+// module-adjacent automation -- a script is effectively an unpackaged
+// policy module lifecycle phase, so the same permission gates both.
+var routePermissionKey = map[string]string{
+	"/":       "",
+	"/users":  "identity.view",
+	"/assets": "asset.view",
+	// "/groups" (Task 6.2): the standardized AD-style group list/create/
+	// detail pages. Coarse gate is group.view; individual mutation routes
+	// (create/delete/members/rules) call requirePermission with the more
+	// specific group.* key inside the handler, same two-layer pattern as
+	// "/policy/groups" + endpoint_policy.manage_config_groups.
+	"/groups":         "group.view",
+	"/policy":         "endpoint_policy.view",
+	"/policy/pluris":  "console_access.view_roles",
+	"/policy/modules": "endpoint_policy.manage_modules",
+	"/scripts":        "endpoint_policy.manage_modules",
+	"/profiles":       "",
+	"/wine":           "",
+	"/packages":       "",
+	"/preferences":    "",
+	"/server-admin":   "server_admin.access",
+	"/tenant-switch":  "server_admin.tenant_switch",
+
+	// "/api/config-groups" (Task 5.2): the Configuration Group detail
+	// page's General-tab inline-edit endpoint. Gated on the same key the
+	// mutating /policy/groups handlers check (manage_config_groups) --
+	// like "/api/modules" below, this API path doesn't share the
+	// "/policy" prefix, so without this entry it would fall through to
+	// the open "/" default.
+	"/api/config-groups": "endpoint_policy.manage_config_groups",
+
+	// "/api/modules" (Task 4.3): the module editor's field-update and
+	// script-save endpoints. Gated on the same key as the
+	// "/policy/modules" pages they serve, for parity -- these API paths
+	// do NOT share that prefix, so without this entry they'd fall through
+	// to the open "/" default. The per-module ModuleCanView/Edit/Admin
+	// checks inside the handlers remain the fine-grained authorization;
+	// this route key is the coarse defense-in-depth layer on top.
+	"/api/modules": "endpoint_policy.manage_modules",
+
+	// "/api/params" is deliberately open to any authenticated session
+	// (Task 1.2): the parameter-registry feed is per-grant filtered
+	// inside the handler (params.VisibleDefs), so a caller only ever
+	// receives the subtree their own grants allow — gating the route on
+	// a specific permission would just hide identity params from
+	// identity-only users and asset params from asset-only users.
+	"/api/params": "",
 }
 
-// CanAccess reports whether role may access the route beginning with
-// path. It matches the longest registered prefix (so "/policy/modules"
-// overrides the broader "/policy" entry for admin/user).
-func CanAccess(role identities.Role, path string) bool {
+// RoutePermissionKey returns the Pluris Policy permission key that gates
+// path, using longest-registered-prefix matching (so "/policy/modules"
+// and "/policy/pluris" both win over the broader "/policy" entry, and
+// "/scriptsfoo" still matches the "/scripts" entry -- copied from the old
+// CanAccess's matching loop). Returns "" both when the longest matching
+// prefix is registered as open, and when no registered prefix matches at
+// all (e.g. a path that doesn't start with "/") -- deny-by-default for
+// that latter case is enforced by CanAccessGrants's caller via
+// RequireRole, not here.
+func RoutePermissionKey(path string) string {
 	bestPrefix := ""
-	for prefix := range permission {
+	bestKey := ""
+	found := false
+	for prefix, key := range routePermissionKey {
 		if strings.HasPrefix(path, prefix) && len(prefix) > len(bestPrefix) {
 			bestPrefix = prefix
+			bestKey = key
+			found = true
 		}
 	}
-	if bestPrefix == "" {
-		return false
+	if !found {
+		return ""
 	}
-	allowed, ok := permission[bestPrefix][string(role)]
-	return ok && allowed
+	return bestKey
+}
+
+// CanAccessGrants reports whether grants g may access the route
+// beginning with path. Semantics:
+//   - RoutePermissionKey(path) == "" -> always true (open route, or no
+//     registered prefix matches at all).
+//   - otherwise, access is granted when g carries the bypass grant, or
+//     when the key's stored value is a non-deny grant. Grants.Can
+//     already implements exactly this for both scoped keys ("own"/"all"
+//     count as allowed) and unscoped keys ("yes" counts as allowed), so
+//     a single call covers both cases.
+func CanAccessGrants(g authz.Grants, path string) bool {
+	key := RoutePermissionKey(path)
+	if key == "" {
+		return true
+	}
+	return g.Can(key)
 }

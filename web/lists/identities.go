@@ -107,6 +107,10 @@ func getIdentityParamValue(key string, u identities.Identity) string {
 	switch key {
 	case "display_name":
 		return u.ResolvedDisplayName()
+	case "given_name":
+		return u.GivenName
+	case "surname":
+		return u.Surname
 	case "initials":
 		return u.Initials
 	case "username":

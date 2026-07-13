@@ -1,6 +1,6 @@
 // Package server tests.
 //
-// MOUNT-POINT TESTS (per docs/UX_INVARIANTS.md INV-U6, INV-P2):
+// MOUNT-POINT TESTS (per docs/endpoint-management/ui/invariants.md INV-U6, INV-P2):
 // every route in the locked sidebar must render with the documented
 // `data-testid` anchor for its canonical editor (or page stub, in
 // Increment 1). Adding a route requires adding a row to the testbed
@@ -12,8 +12,10 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -129,7 +131,7 @@ func newTestServerAt(t *testing.T, dbPath string) (*echo.Echo, *http.Cookie) {
 }
 
 // mountPoints is the table of (route → expected data-testid).
-// It is the executable form of docs/UX_INVARIANTS.md §VII Concept Registry.
+// It is the executable form of docs/endpoint-management/ui/invariants.md §VII Concept Registry.
 var mountPoints = []struct {
 	name         string
 	path         string
@@ -144,12 +146,21 @@ var mountPoints = []struct {
 	{name: "assets-servers", path: "/assets/servers", expectStatus: 200, expectTestID: `data-testid="page-assets-servers"`},
 	{name: "assets-printers", path: "/assets/printers", expectStatus: 200, expectTestID: `data-testid="page-assets-printers"`},
 	{name: "assets-desks", path: "/assets/desks", expectStatus: 200, expectTestID: `data-testid="page-assets-desks"`},
+	// AD-style groups (Task 6.2): one canonical list at /groups, surfaced
+	// in the sidebar under both Users ("User Groups", ?kind=identity) and
+	// Assets ("Groups", ?kind=asset).
+	{name: "groups", path: "/groups", expectStatus: 200, expectTestID: `data-testid="page-groups"`},
+	{name: "groups-kind-identity", path: "/groups?kind=identity", expectStatus: 200, expectTestID: `data-testid="page-groups"`},
+	{name: "groups-kind-asset", path: "/groups?kind=asset", expectStatus: 200, expectTestID: `data-testid="page-groups"`},
+	{name: "groups-new", path: "/groups/new", expectStatus: 200, expectTestID: `data-testid="page-group-new"`},
 	{name: "policy-redirect", path: "/policy", expectStatus: 302, redirectsTo: "/policy/catalog"},
 	{name: "policy-catalog", path: "/policy/catalog", expectStatus: 200, expectTestID: `data-testid="page-policy-catalog"`},
 	{name: "policy-groups", path: "/policy/groups", expectStatus: 200, expectTestID: `data-testid="page-policy-groups"`},
 	{name: "policy-modules", path: "/policy/modules", expectStatus: 200, expectTestID: `data-testid="page-policy-modules"`},
 	{name: "policy-modules-defaults", path: "/policy/modules/defaults", expectStatus: 200, expectTestID: `data-testid="page-policy-modules-defaults"`},
 	{name: "policy-modules-sources", path: "/policy/modules/sources", expectStatus: 200, expectTestID: `data-testid="page-policy-modules-sources"`},
+	{name: "dependency-groups", path: "/policy/dependency-groups", expectStatus: 200, expectTestID: `data-testid="page-dependency-groups"`},
+	{name: "pluris-policy", path: "/policy/pluris", expectStatus: 200, expectTestID: `data-testid="page-pluris-policy"`},
 	{name: "profiles", path: "/profiles", expectStatus: 200, expectTestID: `data-testid="page-profiles"`},
 	{name: "scripts", path: "/scripts", expectStatus: 200, expectTestID: `data-testid="page-scripts"`},
 	// Legacy paths preserved for external bookmarks (Policy Modules moved 2026-05-16).
@@ -289,6 +300,45 @@ func TestRequireAuthRedirectsWithoutSession(t *testing.T) {
 	require.Equal(t, "/login", rec.Header().Get("Location"))
 }
 
+// TestParamsAPIUnauthenticatedRedirects proves GET /api/params behaves
+// like every other /api route without a session: RequireAuth 302s to
+// /login before the handler runs (Task 1.2).
+func TestParamsAPIUnauthenticatedRedirects(t *testing.T) {
+	e, _ := newTestServer(t)
+	req := httptest.NewRequest(http.MethodGet, "/api/params", nil) // no cookie
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusFound, rec.Code, "expected 302 redirect to /login without a session cookie")
+	require.Equal(t, "/login", rec.Header().Get("Location"))
+}
+
+// TestParamsAPIAuthenticatedEndToEnd drives GET /api/params through the
+// real middleware chain: 200, JSON content type, non-empty sources (the
+// seeded super_admin bypasses every grant), and the global no-store
+// cache header (no caching surprises for a permission-filtered feed).
+func TestParamsAPIAuthenticatedEndToEnd(t *testing.T) {
+	e, cookie := newTestServer(t)
+	req := httptest.NewRequest(http.MethodGet, "/api/params", nil)
+	req.AddCookie(cookie)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+	require.Contains(t, rec.Header().Get("Content-Type"), "application/json")
+	require.Equal(t, "no-store", rec.Header().Get("Cache-Control"))
+
+	var resp struct {
+		Sources []struct {
+			Entity string `json:"entity"`
+		} `json:"sources"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.Len(t, resp.Sources, 5, "super_admin must see all five entities")
+	require.Equal(t, "computer", resp.Sources[0].Entity)
+	require.Equal(t, "user", resp.Sources[4].Entity)
+}
+
 // TestUserDetailTabsRendered proves the user detail page renders on the
 // standardized DetailShell (Task 8): all 4 tab slugs present, the
 // page-user-detail anchor preserved, and General-tab field values carry
@@ -345,7 +395,9 @@ func TestUserGroupMembershipHandlers(t *testing.T) {
 	req.AddCookie(cookie)
 	page := httptest.NewRecorder()
 	e.ServeHTTP(page, req)
-	require.Contains(t, page.Body.String(), "<td>Engineering</td>", "membership row should render on the Groups tab")
+	// Task 7: the group name is a link into the new group detail page,
+	// not a plain cell.
+	require.Contains(t, page.Body.String(), `<td><a href="/groups/`+strconv.FormatInt(group.ID, 10)+`">Engineering</a></td>`, "membership row should render on the Groups tab")
 
 	// The mutation must leave an audit trail.
 	d, err = database.Open(dbPath)
@@ -376,4 +428,158 @@ func TestUserGroupMembershipHandlers(t *testing.T) {
 	page = httptest.NewRecorder()
 	e.ServeHTTP(page, req)
 	require.NotContains(t, page.Body.String(), "<td>Engineering</td>", "membership row should be gone after remove")
+}
+
+// TestUserFullPageCreate proves the Task 8 full-page create flow end to
+// end through the real Echo instance (CSRF middleware included): GET
+// /users/new renders the standardized layout (not the old small form),
+// POST persists every submitted field across sections and redirects
+// (302) straight to the new user's detail page, and the edit-only
+// endpoint (/users/:id/edit) still round-trips unchanged (the old
+// UserFormPage is untouched by this task).
+func TestUserFullPageCreate(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test_user_full_create.db")
+	e, cookie := newTestServerAt(t, dbPath)
+
+	// GET renders the full layout, not the small form.
+	getReq := httptest.NewRequest(http.MethodGet, "/users/new", nil)
+	getReq.AddCookie(cookie)
+	getRec := httptest.NewRecorder()
+	e.ServeHTTP(getRec, getReq)
+	require.Equal(t, 200, getRec.Code)
+	require.Contains(t, getRec.Body.String(), `data-testid="page-user-create"`)
+	require.Contains(t, getRec.Body.String(), `name="phone_mobile"`)
+
+	// POST creates across identity + organization + contact sections in
+	// one round-trip.
+	rec := doCSRFPost(t, e, "/users/new", "/users/new", url.Values{
+		"username":     {"fullpage"},
+		"email":        {"fullpage@test.local"},
+		"given_name":   {"Full"},
+		"surname":      {"Page"},
+		"title":        {"Staff Engineer"},
+		"phone_mobile": {"555-0100"},
+	}, cookie)
+	require.Equal(t, http.StatusFound, rec.Code, "create should redirect: %s", rec.Body.String())
+	loc := rec.Header().Get("Location")
+	require.True(t, strings.HasPrefix(loc, "/users/"), "redirect target = %q", loc)
+	idStr := strings.TrimPrefix(strings.SplitN(loc, "?", 2)[0], "/users/")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	require.NoError(t, err, "parse id from redirect %q", loc)
+
+	d, err := database.Open(dbPath)
+	require.NoError(t, err, "re-open test db for assertions")
+	row, err := d.Queries.GetIdentity(context.Background(), id)
+	require.NoError(t, err, "created identity should exist")
+	require.Equal(t, "fullpage", row.Username)
+	require.Equal(t, "fullpage@test.local", row.Email)
+	require.Equal(t, "Full Page", row.DisplayName, "display_name should auto-fill from given+surname")
+	require.Equal(t, "Staff Engineer", row.Title.String)
+	require.Equal(t, "555-0100", row.PhoneMobile.String)
+	require.NoError(t, d.Close())
+
+	// The old edit-only form still works unchanged.
+	editReq := httptest.NewRequest(http.MethodGet, "/users/"+idStr+"/edit", nil)
+	editReq.AddCookie(cookie)
+	editRec := httptest.NewRecorder()
+	e.ServeHTTP(editRec, editReq)
+	require.Equal(t, 200, editRec.Code)
+	require.Contains(t, editRec.Body.String(), `data-testid="user-form"`)
+}
+
+// TestPolicyDetailPage proves Task 15: the catalog detail page renders
+// on DetailShell, the old popup is gone from the list page, and unknown
+// policy ids 404.
+func TestPolicyDetailPage(t *testing.T) {
+	e, cookie := newTestServerAt(t, filepath.Join(t.TempDir(), "test_policy_detail.db"))
+
+	get := func(path string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.AddCookie(cookie)
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, req)
+		return rec
+	}
+
+	// A bundled policy the catalog is known to ship.
+	rec := get("/policy/catalog/sec.account.password.min-length")
+	require.Equal(t, 200, rec.Code, "policy detail status")
+	body := rec.Body.String()
+	require.Contains(t, body, `data-testid="page-policy-detail"`)
+	for _, slug := range []string{"general", "modules", "assignments"} {
+		require.Contains(t, body, `data-tab="`+slug+`"`, "missing tab %q", slug)
+	}
+
+	// The popup is gone from the catalog list page.
+	rec = get("/policy/catalog")
+	require.Equal(t, 200, rec.Code)
+	require.NotContains(t, rec.Body.String(), "pdd-dialog", "popup should be deleted")
+
+	// Unknown id 404s.
+	rec = get("/policy/catalog/does.not.exist")
+	require.Equal(t, 404, rec.Code, "unknown policy id should 404")
+}
+
+// TestFieldUpdateCSRFAcceptsHeaderToken is the regression test for the
+// review finding that the field-update JSON API was unreachable through
+// the real middleware chain: web/static/detail.js's saveSectionEdit sends
+// the CSRF token as an X-CSRF-Token header alongside a JSON body (it has
+// no form to carry a "_csrf" field), but the CSRF middleware's TokenLookup
+// used to be "form:_csrf" only, so the middleware itself -- never reaching
+// the handler -- rejected every real save with 400. TokenLookup is now
+// "form:_csrf,header:X-CSRF-Token" (see server.go), so this test drives
+// the ACTUAL Echo instance via e.ServeHTTP (not a direct handler call, the
+// way field_api_test.go's table exercises the handlers) to prove the
+// middleware itself accepts a header-borne token, and still rejects a
+// request with no token at all.
+func TestFieldUpdateCSRFAcceptsHeaderToken(t *testing.T) {
+	e, cookie := newTestServer(t)
+
+	// GET any authenticated page to obtain a fresh CSRF cookie; Echo's
+	// default CSRF middleware uses the double-submit pattern, so the
+	// cookie's value IS the valid token regardless of which page issued it.
+	getReq := httptest.NewRequest(http.MethodGet, "/users", nil)
+	getReq.AddCookie(cookie)
+	getRec := httptest.NewRecorder()
+	e.ServeHTTP(getRec, getReq)
+	require.Equal(t, http.StatusOK, getRec.Code)
+
+	var csrfCookie *http.Cookie
+	for _, c := range getRec.Result().Cookies() {
+		if c.Name == "_csrf" {
+			csrfCookie = c
+		}
+	}
+	require.NotNil(t, csrfCookie, "expected a _csrf cookie from GET /users")
+
+	// admin identity seeded by newTestServer's /setup flow is id 1.
+	body, err := json.Marshal(map[string]interface{}{
+		"section": "identity",
+		"fields":  map[string]string{"email": "updated-admin@test.local"},
+	})
+	require.NoError(t, err)
+
+	postJSON := func(withToken bool) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "/api/users/1/fields", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.AddCookie(cookie)
+		req.AddCookie(csrfCookie)
+		if withToken {
+			req.Header.Set("X-CSRF-Token", csrfCookie.Value)
+		}
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, req)
+		return rec
+	}
+
+	// No token at all: the CSRF middleware must reject before the handler
+	// ever runs.
+	noTokenRec := postJSON(false)
+	require.True(t, noTokenRec.Code == http.StatusBadRequest || noTokenRec.Code == http.StatusForbidden,
+		"missing-token POST should be rejected by CSRF middleware, got %d: %s", noTokenRec.Code, noTokenRec.Body.String())
+
+	// Header-borne token: must now pass the middleware AND reach the
+	// handler successfully.
+	okRec := postJSON(true)
+	require.Equal(t, http.StatusOK, okRec.Code, "header-token POST should succeed end-to-end: %s", okRec.Body.String())
 }

@@ -140,10 +140,10 @@ func mapVersion(v ModuleVersion) extension.Version {
 
 // loadAllAsExtensions is the framework Loader for the policy-module
 // kind. The framework calls this on demand from list / chrome paths;
-// it must stay cheap. v1 wraps each Module in O(1); the existing
-// AllModules() does the I/O equivalent (returns a literal slice).
+// it must stay cheap. v1 wraps each Module in O(1); Catalog() reads
+// through the provider installed by the service layer (Task 4.2).
 func loadAllAsExtensions() []extension.Extension {
-	mods := AllModules()
+	mods := Catalog()
 	out := make([]extension.Extension, 0, len(mods))
 	for _, m := range mods {
 		out = append(out, m.AsExtension())

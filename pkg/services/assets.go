@@ -5,11 +5,20 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/pluris/pluris/catalog/assets"
+	"github.com/pluris/pluris/catalog/params"
 	"github.com/pluris/pluris/db"
 	"github.com/pluris/pluris/pkg/database"
 )
+
+// timeParseDate parses a "YYYY-MM-DD" date string, the format
+// coerceParamValue leaves TypeDate values in and web/lists/assets.go's
+// getAssetParamValue renders them back as.
+func timeParseDate(s string) (time.Time, error) {
+	return time.Parse("2006-01-02", s)
+}
 
 // AssetService handles asset operations
 type AssetService struct {
@@ -138,6 +147,183 @@ func (s *AssetService) ResolveDBID(ctx context.Context, humanOrUUID string) (int
 		return 0, fmt.Errorf("resolve asset db id for %q: %w", humanOrUUID, err)
 	}
 	return dbAsset.ID, nil
+}
+
+// assetColumnBackedKeys is the set of mounted asset param keys backed by
+// a real assets-table column rather than the subtype_payload JSON blob
+// (see UpdateFields doc comment). Membership here, not the param's Type,
+// is what makes a non-hardware-section key editable: TypeString alone
+// would also match structural/computed keys like "uuid" or "vendor" on
+// subtypes where it happens to live in the hardware section, so routing
+// keys off an explicit table keeps identity/enrollment's readonly and
+// TypeLink keys (id, uuid, tenant, site, owner, groups, managed_by,
+// enrollment_state, enrolled_at, last_seen_at, agent_version) rejected.
+var assetColumnBackedKeys = map[string]bool{
+	"description":      true,
+	"lifecycle_state":  true,
+	"vendor":           true,
+	"location":         true,
+	"purchase_date":    true,
+	"warranty_expires": true,
+}
+
+// UpdateFields applies a partial set of param-keyed field updates to
+// assetID, scoped to tenantID and subtype (a mismatch on either --
+// wrong tenant or wrong subtype for this asset's route -- fails closed
+// with ErrFieldNotFound, same as an unknown id). Any mounted section of
+// the subtype schema may be targeted; each submitted key is routed by
+// where it actually lives:
+//   - The subtype schema's "hardware" section merges into the
+//     subtype_payload JSON blob (TypeLink and TypeCompound params are
+//     never editable there -- links resolve through other entities;
+//     compounds have no single scalar value to coerce).
+//   - assetColumnBackedKeys (description, lifecycle_state, vendor,
+//     location, purchase_date, warranty_expires) are real assets-table
+//     columns, applied via UpdateAssetEditableColumns.
+//   - Everything else (id, uuid, tenant, site, owner, groups,
+//     managed_by, enrollment_state, enrolled_at, last_seen_at,
+//     agent_version, ...) is computed, a link, or agent-controlled, and
+//     is rejected with a 400 naming the key -- the detail-page UI marks
+//     these spans data-editable for uniform click-to-copy styling, but
+//     they were never meant to be user-editable through this endpoint.
+//
+// On success, changed payload keys are persisted via UpdateAssetPayload
+// and changed column keys via UpdateAssetEditableColumns (each fetched
+// from the current row first, so a request touching only one column
+// cannot clobber the others), and the list of applied keys is returned.
+func (s *AssetService) UpdateFields(ctx context.Context, tenantID, assetID int64, subtype, section string, fields map[string]string) ([]string, error) {
+	row, err := s.db.Queries.GetAsset(ctx, assetID)
+	if err != nil {
+		return nil, ErrFieldNotFound
+	}
+	if row.TenantID != tenantID || row.Subtype != subtype {
+		return nil, ErrFieldNotFound
+	}
+
+	schema := params.SchemaBySubtype(subtype)
+	if schema == nil {
+		return nil, fmt.Errorf("%w: unknown subtype %q", ErrFieldValidation, subtype)
+	}
+	sec := sectionByKey(schema, section)
+	if sec == nil {
+		return nil, fmt.Errorf("%w: unknown section %q", ErrFieldValidation, section)
+	}
+
+	var payload map[string]interface{}
+	if err := json.Unmarshal([]byte(row.SubtypePayload), &payload); err != nil || payload == nil {
+		payload = make(map[string]interface{})
+	}
+	payloadTouched := false
+
+	cols := db.UpdateAssetEditableColumnsParams{
+		ID:                assetID,
+		Description:       row.Description,
+		LifecycleState:    row.LifecycleState,
+		Vendor:            row.Vendor,
+		Location:          row.Location,
+		PurchaseDate:      row.PurchaseDate,
+		WarrantyExpiresAt: row.WarrantyExpiresAt,
+	}
+	columnsTouched := false
+
+	updated := make([]string, 0, len(fields))
+	for key, raw := range fields {
+		if !sectionHasParam(sec, key) {
+			return nil, fieldErr(key, "not a field of section %q", section)
+		}
+		def := params.DefByKey(key)
+		if def == nil {
+			return nil, fieldErr(key, "unknown parameter")
+		}
+
+		switch {
+		case assetColumnBackedKeys[key]:
+			val, err := coerceParamValue(def, raw)
+			if err != nil {
+				return nil, fieldErr(key, "%s", err)
+			}
+			if err := applyAssetColumnField(&cols, key, val); err != nil {
+				return nil, fieldErr(key, "%s", err)
+			}
+			columnsTouched = true
+		case section == "hardware":
+			if def.Type == params.TypeLink || def.Type == params.TypeCompound {
+				return nil, fieldErr(key, "not editable")
+			}
+			val, err := coerceParamValue(def, raw)
+			if err != nil {
+				return nil, fieldErr(key, "%s", err)
+			}
+			payload[key] = val
+			payloadTouched = true
+		default:
+			return nil, fieldErr(key, "not editable")
+		}
+		updated = append(updated, key)
+	}
+
+	if payloadTouched {
+		encoded, err := json.Marshal(payload)
+		if err != nil {
+			return nil, fmt.Errorf("marshal asset %d payload: %w", assetID, err)
+		}
+		if err := s.db.Queries.UpdateAssetPayload(ctx, db.UpdateAssetPayloadParams{
+			Payload: string(encoded),
+			ID:      assetID,
+		}); err != nil {
+			return nil, fmt.Errorf("update asset %d payload: %w", assetID, err)
+		}
+	}
+	if columnsTouched {
+		if err := s.db.Queries.UpdateAssetEditableColumns(ctx, cols); err != nil {
+			return nil, fmt.Errorf("update asset %d columns: %w", assetID, err)
+		}
+	}
+	return updated, nil
+}
+
+// applyAssetColumnField sets the field on cols corresponding to key,
+// given val already coerced by coerceParamValue to key's ParamDef type
+// (a string for every column-backed key -- see coerceParamValue and
+// assetColumnBackedKeys). An empty raw value clears the column (NULL)
+// rather than erroring, matching the inline-edit UI's "clear and save"
+// affordance. Date keys are parsed as YYYY-MM-DD, the same format
+// web/lists/assets.go's getAssetParamValue renders them in.
+func applyAssetColumnField(cols *db.UpdateAssetEditableColumnsParams, key string, val interface{}) error {
+	s, _ := val.(string)
+	switch key {
+	case "description":
+		cols.Description = sql.NullString{String: s, Valid: s != ""}
+	case "lifecycle_state":
+		cols.LifecycleState = sql.NullString{String: s, Valid: s != ""}
+	case "vendor":
+		cols.Vendor = sql.NullString{String: s, Valid: s != ""}
+	case "location":
+		cols.Location = sql.NullString{String: s, Valid: s != ""}
+	case "purchase_date":
+		if s == "" {
+			cols.PurchaseDate = sql.NullTime{}
+			return nil
+		}
+		t, err := timeParseDate(s)
+		if err != nil {
+			return fmt.Errorf("expected a date (YYYY-MM-DD), got %q", s)
+		}
+		cols.PurchaseDate = sql.NullTime{Time: t, Valid: true}
+	case "warranty_expires":
+		if s == "" {
+			cols.WarrantyExpiresAt = sql.NullTime{}
+			return nil
+		}
+		t, err := timeParseDate(s)
+		if err != nil {
+			return fmt.Errorf("expected a date (YYYY-MM-DD), got %q", s)
+		}
+		cols.WarrantyExpiresAt = sql.NullTime{Time: t, Valid: true}
+	default:
+		return fmt.Errorf("unhandled column-backed key %q", key)
+	}
+	return nil
 }
 
 // convertHumanIDRowToAsset converts db.GetAssetByHumanIDRow to catalog assets.Asset

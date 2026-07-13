@@ -4,9 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"time"
 
 	"github.com/pluris/pluris/catalog/assets"
 	"github.com/pluris/pluris/catalog/identities"
+	"github.com/pluris/pluris/catalog/params"
 	"github.com/pluris/pluris/db"
 	"github.com/pluris/pluris/pkg/database"
 )
@@ -34,6 +36,13 @@ func nullString(v string) sql.NullString {
 		return sql.NullString{}
 	}
 	return sql.NullString{String: v, Valid: true}
+}
+
+func nullTimePtr(t *time.Time) sql.NullTime {
+	if t == nil {
+		return sql.NullTime{}
+	}
+	return sql.NullTime{Time: *t, Valid: true}
 }
 
 // Create inserts a new identity for tenantID.
@@ -124,25 +133,208 @@ func (s *IdentityService) Search(ctx context.Context, tenantID int64, query stri
 // Update writes back the editable fields of an existing identity.
 func (s *IdentityService) Update(ctx context.Context, in identities.Identity) (identities.Identity, error) {
 	row, err := s.db.Queries.UpdateIdentity(ctx, db.UpdateIdentityParams{
-		ID:           in.ID,
-		DisplayName:  in.DisplayName,
-		GivenName:    nullString(in.GivenName),
-		Surname:      nullString(in.Surname),
-		Email:        in.Email,
-		Title:        nullString(in.Title),
-		Department:   nullString(in.Department),
-		Company:      nullString(in.Company),
-		EmployeeID:   nullString(in.EmployeeID),
-		EmployeeType: nullString(in.EmployeeType),
-		ManagerID:    nullInt64(in.ManagerID),
-		PhoneOffice:  nullString(in.PhoneOffice),
-		PhoneMobile:  nullString(in.PhoneMobile),
-		SiteID:       nullInt64(in.SiteID),
+		ID:                   in.ID,
+		DisplayName:          in.DisplayName,
+		GivenName:            nullString(in.GivenName),
+		Surname:              nullString(in.Surname),
+		Initials:             nullString(in.Initials),
+		Email:                in.Email,
+		Title:                nullString(in.Title),
+		Department:           nullString(in.Department),
+		Company:              nullString(in.Company),
+		EmployeeID:           nullString(in.EmployeeID),
+		EmployeeType:         nullString(in.EmployeeType),
+		ManagerID:            nullInt64(in.ManagerID),
+		PhoneOffice:          nullString(in.PhoneOffice),
+		PhoneMobile:          nullString(in.PhoneMobile),
+		PhoneHome:            nullString(in.PhoneHome),
+		Fax:                  nullString(in.Fax),
+		Office:               nullString(in.Office),
+		StreetAddress:        nullString(in.StreetAddress),
+		City:                 nullString(in.City),
+		State:                nullString(in.State),
+		PostalCode:           nullString(in.PostalCode),
+		Country:              nullString(in.Country),
+		CountryCode:          nullString(in.CountryCode),
+		HomeDirectory:        nullString(in.HomeDirectory),
+		HomeDrive:            nullString(in.HomeDrive),
+		ProfilePath:          nullString(in.ProfilePath),
+		LogonScript:          nullString(in.LogonScript),
+		AccountEnabled:       in.AccountEnabled,
+		AccountLocked:        in.AccountLocked,
+		AccountExpiresAt:     nullTimePtr(in.AccountExpiresAt),
+		PasswordNeverExpires: in.PasswordNeverExpires,
+		MustChangePassword:   in.MustChangePassword,
+		Locale:               in.Locale,
+		Timezone:             in.Timezone,
+		Description:          nullString(in.Description),
+		Notes:                nullString(in.Notes),
+		SiteID:               nullInt64(in.SiteID),
+		AvatarUrl:            nullString(in.AvatarURL),
 	})
 	if err != nil {
 		return identities.Identity{}, fmt.Errorf("update identity %d: %w", in.ID, err)
 	}
 	return s.convert(row), nil
+}
+
+// UpdateFields applies a partial set of param-keyed field updates to the
+// identity identified by id, scoped to tenantID (cross-tenant or missing
+// ids fail closed with ErrFieldNotFound). section and each field key are
+// validated against catalog/params.SchemaByPathEntity("user") -- unknown
+// sections/keys, keys the section does not mount, non-editable keys
+// (id/tenant/username/groups/site/manager and other TypeLink params, plus
+// role and the system-managed audit fields), and type-coercion failures
+// all return ErrFieldValidation naming the offending key. On success the
+// identity is persisted via Update and the list of applied keys is
+// returned (handler order is not guaranteed; callers needing a stable
+// order should sort).
+func (s *IdentityService) UpdateFields(ctx context.Context, tenantID, id int64, section string, fields map[string]string) ([]string, error) {
+	identity, err := s.Get(ctx, id)
+	if err != nil {
+		return nil, ErrFieldNotFound
+	}
+	if identity.TenantID != tenantID {
+		return nil, ErrFieldNotFound
+	}
+
+	schema := params.SchemaByPathEntity("user")
+	sec := sectionByKey(schema, section)
+	if sec == nil {
+		return nil, fmt.Errorf("%w: unknown section %q", ErrFieldValidation, section)
+	}
+
+	updated := make([]string, 0, len(fields))
+	for key, raw := range fields {
+		if !sectionHasParam(sec, key) {
+			return nil, fieldErr(key, "not a field of section %q", section)
+		}
+		def := params.DefByKey(key)
+		if def == nil {
+			return nil, fieldErr(key, "unknown parameter")
+		}
+		if !identityFieldEditable(key, def) {
+			return nil, fieldErr(key, "not editable")
+		}
+		val, err := coerceParamValue(def, raw)
+		if err != nil {
+			return nil, fieldErr(key, "%s", err)
+		}
+		if err := applyIdentityField(&identity, key, val); err != nil {
+			return nil, fieldErr(key, "%s", err)
+		}
+		updated = append(updated, key)
+	}
+
+	if _, err := s.Update(ctx, identity); err != nil {
+		return nil, err
+	}
+	return updated, nil
+}
+
+// identityFieldEditable reports whether key can be set through
+// UpdateFields. Rejects every key in identities.NonEditableFieldKeys --
+// the single source of truth shared with the detail UI (see
+// web/templates/users.templ's userGeneralTab) -- plus, as a belt-and-
+// braces guard against future TypeLink params that aren't yet named in
+// that map, every TypeLink param.
+func identityFieldEditable(key string, def *params.ParamDef) bool {
+	if identities.NonEditableFieldKeys[key] {
+		return false
+	}
+	return def.Type != params.TypeLink
+}
+
+// applyIdentityField sets the struct field on identity corresponding to
+// key, given val already coerced by coerceParamValue to key's ParamDef
+// type. This is the reverse of web/lists/identities.go's
+// getIdentityParamValue for the editable-field subset (see
+// identityFieldEditable for what that subset excludes).
+func applyIdentityField(identity *identities.Identity, key string, val interface{}) error {
+	switch key {
+	case "display_name":
+		identity.DisplayName = val.(string)
+	case "given_name":
+		identity.GivenName = val.(string)
+	case "surname":
+		identity.Surname = val.(string)
+	case "initials":
+		identity.Initials = val.(string)
+	case "user_principal_name":
+		identity.UserPrincipalName = val.(string)
+	case "email":
+		identity.Email = val.(string)
+	case "title":
+		identity.Title = val.(string)
+	case "department":
+		identity.Department = val.(string)
+	case "company":
+		identity.Company = val.(string)
+	case "employee_id":
+		identity.EmployeeID = val.(string)
+	case "employee_type":
+		identity.EmployeeType = val.(string)
+	case "phone_office":
+		identity.PhoneOffice = val.(string)
+	case "phone_mobile":
+		identity.PhoneMobile = val.(string)
+	case "phone_home":
+		identity.PhoneHome = val.(string)
+	case "fax":
+		identity.Fax = val.(string)
+	case "office":
+		identity.Office = val.(string)
+	case "street_address":
+		identity.StreetAddress = val.(string)
+	case "city":
+		identity.City = val.(string)
+	case "state":
+		identity.State = val.(string)
+	case "postal_code":
+		identity.PostalCode = val.(string)
+	case "country":
+		identity.Country = val.(string)
+	case "country_code":
+		identity.CountryCode = val.(string)
+	case "home_directory":
+		identity.HomeDirectory = val.(string)
+	case "home_drive":
+		identity.HomeDrive = val.(string)
+	case "profile_path":
+		identity.ProfilePath = val.(string)
+	case "logon_script":
+		identity.LogonScript = val.(string)
+	case "account_enabled":
+		identity.AccountEnabled = val.(bool)
+	case "account_locked":
+		identity.AccountLocked = val.(bool)
+	case "account_expires_at":
+		s := val.(string)
+		if s == "" {
+			identity.AccountExpiresAt = nil
+			return nil
+		}
+		t, err := time.Parse(time.RFC3339, s)
+		if err != nil {
+			return fmt.Errorf("expected an RFC3339 timestamp, got %q", s)
+		}
+		identity.AccountExpiresAt = &t
+	case "password_never_expires":
+		identity.PasswordNeverExpires = val.(bool)
+	case "must_change_password":
+		identity.MustChangePassword = val.(bool)
+	case "locale":
+		identity.Locale = val.(string)
+	case "timezone":
+		identity.Timezone = val.(string)
+	case "description":
+		identity.Description = val.(string)
+	case "notes":
+		identity.Notes = val.(string)
+	default:
+		return fmt.Errorf("field %q is mounted but not supported by UpdateFields", key)
+	}
+	return nil
 }
 
 // ListAssignedAssets returns every asset owned by identityID within tenantID.

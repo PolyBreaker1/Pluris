@@ -6,7 +6,7 @@ import "testing"
 // default: picks the first bundled module that satisfies + supports OS.
 func Test_ResolveBindingModule_PlurisDefault(t *testing.T) {
 	urn := "Computer/WindowsComponents/RemoteAccess/SSH/PasswordAuthDisable"
-	got := ResolveBindingModule("", "", "no-such-tenant", urn, OSLinux, AllModules())
+	got := ResolveBindingModule("", "", "no-such-tenant", urn, OSLinux, testCatalog())
 	if !got.IsResolved() {
 		t.Fatalf("expected a Pluris default, got %+v", got)
 	}
@@ -23,7 +23,7 @@ func Test_ResolveBindingModule_PlurisDefault(t *testing.T) {
 // (in this test they're the same module but Source must say "tenant").
 func Test_ResolveBindingModule_TenantDefault(t *testing.T) {
 	urn := "sec.remote-access.ssh.password-auth" // seeded in init()
-	got := ResolveBindingModule("", "", "", urn, OSLinux, AllModules())
+	got := ResolveBindingModule("", "", "", urn, OSLinux, testCatalog())
 	if got.Source != "tenant" {
 		t.Errorf("want Source=tenant (seeded default), got %q (reason=%q)", got.Source, got.Reason)
 	}
@@ -33,7 +33,7 @@ func Test_ResolveBindingModule_TenantDefault(t *testing.T) {
 // the seeded tenant default.
 func Test_ResolveBindingModule_BindingOverride(t *testing.T) {
 	urn := "sec.remote-access.ssh.password-auth"
-	got := ResolveBindingModule("pluris.sshd.password-auth-disable", "1.1.0", "", urn, OSLinux, AllModules())
+	got := ResolveBindingModule("pluris.sshd.password-auth-disable", "1.1.0", "", urn, OSLinux, testCatalog())
 	if got.Source != "binding" {
 		t.Errorf("want Source=binding, got %q", got.Source)
 	}
@@ -48,7 +48,7 @@ func Test_ResolveBindingModule_BindingOverride(t *testing.T) {
 func Test_ResolveBindingModule_BindingOverrideStaleFallsThrough(t *testing.T) {
 	urn := "sec.remote-access.ssh.password-auth"
 	// Bind to a module that exists but doesn't satisfy this URN.
-	got := ResolveBindingModule("pluris.sshd.base-config", "", "", urn, OSLinux, AllModules())
+	got := ResolveBindingModule("pluris.sshd.base-config", "", "", urn, OSLinux, testCatalog())
 	if got.Source == "binding" {
 		t.Errorf("stale binding override should not resolve as 'binding', got %+v", got)
 	}
@@ -61,7 +61,7 @@ func Test_ResolveBindingModule_BindingOverrideStaleFallsThrough(t *testing.T) {
 // device's OS: returns unresolved.
 func Test_ResolveBindingModule_OSMismatch(t *testing.T) {
 	urn := "sec.remote-access.ssh.password-auth"
-	got := ResolveBindingModule("", "", "", urn, OSWindows, AllModules())
+	got := ResolveBindingModule("", "", "", urn, OSWindows, testCatalog())
 	if got.IsResolved() {
 		t.Errorf("Windows-OS SSH binding should be unresolved, got %+v", got)
 	}

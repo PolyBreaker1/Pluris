@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"database/sql"
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -9,6 +10,7 @@ import (
 
 	"github.com/pluris/pluris/db"
 	"github.com/pluris/pluris/pkg/auth"
+	"github.com/pluris/pluris/pkg/services"
 )
 
 // Group-membership handlers for the detail-page Groups tabs (Task 9).
@@ -55,6 +57,9 @@ func (h *Handler) logGroupEvent(c echo.Context, entityType string, entityID int6
 // AssetGroupAdd adds the asset to the group named by the group_id form
 // value.
 func (h *Handler) AssetGroupAdd(c echo.Context) error {
+	if err := requirePermission(c, "asset.manage_groups"); err != nil {
+		return err
+	}
 	ctx := c.Request().Context()
 	subtype := c.Param("subtype")
 	humanOrUUID := c.Param("id")
@@ -76,6 +81,9 @@ func (h *Handler) AssetGroupAdd(c echo.Context) error {
 
 // AssetGroupRemove removes the asset from the group in the route.
 func (h *Handler) AssetGroupRemove(c echo.Context) error {
+	if err := requirePermission(c, "asset.manage_groups"); err != nil {
+		return err
+	}
 	ctx := c.Request().Context()
 	subtype := c.Param("subtype")
 	humanOrUUID := c.Param("id")
@@ -89,6 +97,11 @@ func (h *Handler) AssetGroupRemove(c echo.Context) error {
 		return err
 	}
 	if err := h.groupSvc.RemoveAssetMember(ctx, group.ID, assetID); err != nil {
+		// Rule-sourced memberships (Task 6.2) can't be removed by hand --
+		// they're managed by the group's dynamic-membership rules.
+		if errors.Is(err, services.ErrMemberNotDirect) {
+			return echo.NewHTTPError(http.StatusConflict, "this membership is managed by the group's rules")
+		}
 		return err
 	}
 	h.logGroupEvent(c, "asset", assetID, "group_removed", group.Name)
@@ -117,6 +130,9 @@ func (h *Handler) resolveTenantIdentity(c echo.Context) (int64, error) {
 // UserGroupAdd adds the user to the group named by the group_id form
 // value.
 func (h *Handler) UserGroupAdd(c echo.Context) error {
+	if err := requirePermission(c, "identity.assign_groups"); err != nil {
+		return err
+	}
 	ctx := c.Request().Context()
 	identityID, err := h.resolveTenantIdentity(c)
 	if err != nil {
@@ -129,12 +145,18 @@ func (h *Handler) UserGroupAdd(c echo.Context) error {
 	if err := h.groupSvc.AddIdentityMember(ctx, group.ID, identityID); err != nil {
 		return err
 	}
+	// Best-effort: group membership can carry group-assigned roles
+	// (RBAC v2), so the identity's privilege cache may now be stale.
+	_ = h.roleSvc.RecomputeForIdentity(ctx, identityID)
 	h.logGroupEvent(c, "identity", identityID, "group_added", group.Name)
 	return c.Redirect(http.StatusFound, "/users/"+strconv.FormatInt(identityID, 10)+"#groups")
 }
 
 // UserGroupRemove removes the user from the group in the route.
 func (h *Handler) UserGroupRemove(c echo.Context) error {
+	if err := requirePermission(c, "identity.assign_groups"); err != nil {
+		return err
+	}
 	ctx := c.Request().Context()
 	identityID, err := h.resolveTenantIdentity(c)
 	if err != nil {
@@ -145,8 +167,14 @@ func (h *Handler) UserGroupRemove(c echo.Context) error {
 		return err
 	}
 	if err := h.groupSvc.RemoveIdentityMember(ctx, group.ID, identityID); err != nil {
+		// Rule-sourced memberships (Task 6.2) can't be removed by hand.
+		if errors.Is(err, services.ErrMemberNotDirect) {
+			return echo.NewHTTPError(http.StatusConflict, "this membership is managed by the group's rules")
+		}
 		return err
 	}
+	// Best-effort: losing membership can drop group-assigned roles.
+	_ = h.roleSvc.RecomputeForIdentity(ctx, identityID)
 	h.logGroupEvent(c, "identity", identityID, "group_removed", group.Name)
 	return c.Redirect(http.StatusFound, "/users/"+strconv.FormatInt(identityID, 10)+"#groups")
 }

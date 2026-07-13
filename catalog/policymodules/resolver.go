@@ -42,8 +42,8 @@ type ResolutionPlan struct {
 //
 // `selected` is the set the user picked (typically one module per
 // binding row in the CG dialog). The catalog parameter lets callers
-// resolve against either AllModules() or a tenant-scoped subset; the
-// mock UI uses AllModules().
+// resolve against either the live catalog (see catalog.go's Catalog())
+// or a tenant-scoped subset.
 func Resolve(selected []string, catalog []Module) (*ResolutionPlan, *ResolveError) {
 	// Index for O(1) lookup.
 	byID := make(map[string]*Module, len(catalog))

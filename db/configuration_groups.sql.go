@@ -23,6 +23,20 @@ func (q *Queries) CountAssignmentsByGroup(ctx context.Context, configurationGrou
 	return count, err
 }
 
+const CountBindingsByModule = `-- name: CountBindingsByModule :one
+SELECT COUNT(*) FROM configuration_group_bindings WHERE module_id = ?1
+`
+
+// Used by the module service's DeleteModule guard: a module referenced
+// by any configuration-group binding may not be deleted (see
+// pkg/services/policymodules.go).
+func (q *Queries) CountBindingsByModule(ctx context.Context, moduleID sql.NullInt64) (int64, error) {
+	row := q.db.QueryRowContext(ctx, CountBindingsByModule, moduleID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const CountConfigurationGroupsByTenant = `-- name: CountConfigurationGroupsByTenant :one
 SELECT COUNT(*) FROM configuration_groups WHERE tenant_id = ?1
 `
@@ -795,6 +809,39 @@ func (q *Queries) UpdateConfigurationGroup(ctx context.Context, arg UpdateConfig
 		&i.Disabled,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const UpdateConfigurationGroupAssignment = `-- name: UpdateConfigurationGroupAssignment :one
+UPDATE configuration_group_assignments SET
+    priority = ?1,
+    enforced = ?2
+WHERE id = ?3
+RETURNING id, configuration_group_id, target_type, target_id, priority, enforced, created_at
+`
+
+type UpdateConfigurationGroupAssignmentParams struct {
+	Priority int64 `json:"priority"`
+	Enforced bool  `json:"enforced"`
+	ID       int64 `json:"id"`
+}
+
+// Updates priority/enforced on an existing assignment. target_type/
+// target_id/group are immutable after creation (remove + re-add to
+// retarget); this only covers the fields the detail-page assignments
+// table lets an admin tweak in place.
+func (q *Queries) UpdateConfigurationGroupAssignment(ctx context.Context, arg UpdateConfigurationGroupAssignmentParams) (ConfigurationGroupAssignment, error) {
+	row := q.db.QueryRowContext(ctx, UpdateConfigurationGroupAssignment, arg.Priority, arg.Enforced, arg.ID)
+	var i ConfigurationGroupAssignment
+	err := row.Scan(
+		&i.ID,
+		&i.ConfigurationGroupID,
+		&i.TargetType,
+		&i.TargetID,
+		&i.Priority,
+		&i.Enforced,
+		&i.CreatedAt,
 	)
 	return i, err
 }

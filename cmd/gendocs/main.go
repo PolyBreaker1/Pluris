@@ -7,14 +7,14 @@
 //
 // Outputs (overwrites in place):
 //
-//	docs/for-windows-admins/concepts.md   ← from web/orientation/All
-//	docs/for-windows-admins/glossary.md   ← from web/glossary/All
+//	docs/endpoint-management/windows-admins/concepts.md   ← from web/orientation/All
+//	docs/endpoint-management/windows-admins/glossary.md   ← from web/glossary/All
 //
 // Hand-written docs that this tool MUST NOT touch:
 //
-//	docs/for-windows-admins/README.md
-//	docs/for-windows-admins/cheatsheet.md
-//	docs/for-windows-admins/concepts/<slug>.md  (if added later)
+//	docs/endpoint-management/windows-admins/README.md
+//	docs/endpoint-management/windows-admins/cheatsheet.md
+//	docs/endpoint-management/windows-admins/concepts/<slug>.md  (if added later)
 //
 // Lock as INV-O3: every concept added to web/orientation and every
 // term added to web/glossary requires re-running this tool. The CI
@@ -32,7 +32,13 @@ import (
 	"github.com/pluris/pluris/web/orientation"
 )
 
-const docsRoot = "docs/for-windows-admins"
+const docsRoot = "docs/endpoint-management/windows-admins"
+
+// orientationBanner is prepended (after the H1 title) to every
+// generated file so a reader lands on the right expectation: this
+// describes the aspirational Pluris experience, not necessarily what
+// is built today.
+const orientationBanner = "> **Orientation content.** This describes the Pluris experience Windows admins are aiming for, including features still in development. For what is built TODAY see docs/product/endpoint-management.md.\n\n"
 
 func main() {
 	if err := writeConcepts(); err != nil {
@@ -52,6 +58,7 @@ func main() {
 func writeConcepts() error {
 	var b strings.Builder
 	b.WriteString("# Pluris concepts — what each screen IS\n\n")
+	b.WriteString(orientationBanner)
 	b.WriteString("Each row is one menu item or tab in the admin console. Click into the screen to act on it; this page tells you what you're looking at, the AD/GP analogue, and the Linux mechanism behind it.\n\n")
 	b.WriteString("> AUTO-GENERATED from `web/orientation/orientation.go`. Edit there, then `go run ./cmd/gendocs`.\n\n")
 	b.WriteString("## Top-level concepts\n\n")
@@ -121,6 +128,7 @@ func writeConcepts() error {
 func writeGlossary() error {
 	var b strings.Builder
 	b.WriteString("# Pluris glossary — Linux & Pluris terms for Windows admins\n\n")
+	b.WriteString(orientationBanner)
 	b.WriteString("Every term you'll meet in the console, with its Active-Directory or Windows-stack analogue. Hover the same term in the UI to see the same gloss inline.\n\n")
 	b.WriteString("> AUTO-GENERATED from `web/glossary/glossary.go`. Edit there, then `go run ./cmd/gendocs`.\n\n")
 

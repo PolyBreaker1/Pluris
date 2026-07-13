@@ -1,0 +1,429 @@
+package templates
+
+import (
+	"github.com/pluris/pluris/catalog/permissions"
+	"github.com/pluris/pluris/db"
+	"github.com/pluris/pluris/pkg/auth"
+	"github.com/pluris/pluris/pkg/authz"
+	"github.com/pluris/pluris/web/lists"
+	"strconv"
+)
+
+// PlurisRoleRow is the list-view model for one role on the Pluris Policy
+// page (Task 5/6/7). GrantedCount is the number of permission keys whose
+// stored value is a non-deny grant ("yes", "own", or "all"). Parent is
+// the parent role's name ("—" when parentless). TemplateFamily feeds the
+// row's search blob (see roleSearchBlob) -- it's the same grouping used
+// by rolePickerOptions (role_picker_helpers.go), re-derived handler-side
+// via roleTemplateFamily (console/handlers/pluris_policy.go) since that
+// grouping rule is unexported here.
+type PlurisRoleRow struct {
+	ID             int64
+	Name           string
+	Slug           string
+	Builtin        bool
+	Members        int64
+	GrantedCount   int
+	Parent         string
+	TemplateFamily string
+}
+
+// roleSearchBlob builds the data-pp-search haystack for one row: name +
+// slug + type + parent + template family. lists.js's contains-mode
+// matcher already lowercases both sides, so no lowercasing needed here.
+func roleSearchBlob(r PlurisRoleRow) string {
+	roleType := "custom"
+	if r.Builtin {
+		roleType = "builtin"
+	}
+	return r.Name + " " + r.Slug + " " + roleType + " " + r.Parent + " " + r.TemplateFamily
+}
+
+// roleTypeAttr is the row's data-pp-type value, matched equals-mode by
+// the toolbar's Builtin/Custom quick filter (mirrors pm-origin).
+func roleTypeAttr(r PlurisRoleRow) string {
+	if r.Builtin {
+		return "builtin"
+	}
+	return "custom"
+}
+
+// PlurisPolicyPage — browsable list of roles (Task 5). Mirrors
+// DependencyGroupsPage's Layout+PageHeader wrapper, and the
+// registry-driven <thead>. The list infra (search + quick filter +
+// count) mirrors configGroupsToolbar/policyModulesList's pm-toolbar
+// exactly (data-pluris-list/data-pluris-filter/data-pluris-count). The
+// former list-level "Clone a builtin role" form is gone -- Create role
+// (name + hierarchical parent picker, POST /policy/pluris) replaces it;
+// Clone itself moved to the role detail page (Task 6). allRoles backs
+// the parent <select> (RolePickerSelect, role_picker.templ) -- it's the
+// same slice the handler used to build rows, passed through raw because
+// the picker needs ParentRoleID/TemplateSlug that PlurisRoleRow doesn't
+// carry.
+templ PlurisPolicyPage(rows []PlurisRoleRow, allRoles []db.Role) {
+	@Layout("policy-pluris", "Pluris Policy") {
+		@PageHeader("Pluris Policy",
+			"Console access control — who may do what in this console, like GLPI profiles.",
+			"", "")
+		{{ csrfToken := auth.CSRFTokenFromContext(ctx) }}
+		{{ listID := lists.ListIDPlurisRoles }}
+		<div data-testid="page-pluris-policy">
+			<section class="pm-toolbar card" data-pluris-list={ listID }>
+				<div class="field field-wide">
+					<label for="pp-search">Search</label>
+					<input
+						id="pp-search"
+						class="input"
+						type="search"
+						autocomplete="off"
+						data-pluris-filter={ listID }
+						data-filter-attr="pp-search"
+						data-filter-mode="contains"
+						data-pluris-highlight="1"
+						placeholder="Filter by name, slug, parent, template…"
+					/>
+				</div>
+				<div class="field">
+					<label for="pp-type">Type</label>
+					<select
+						id="pp-type"
+						class="select"
+						data-pluris-filter={ listID }
+						data-filter-attr="pp-type"
+						data-filter-mode="equals"
+					>
+						<option value="all">All</option>
+						<option value="builtin">Builtin</option>
+						<option value="custom">Custom</option>
+					</select>
+				</div>
+				<div class="field field-action">
+					<label>&nbsp;</label>
+					<span data-pluris-count={ listID } data-template="{visible} of {total} roles"></span>
+				</div>
+				<div class="field field-action">
+					<label>&nbsp;</label>
+					<button type="button" class="btn btn-primary" data-pp-create-toggle>
+						@iconSVG("plus")
+						<span>Create role</span>
+					</button>
+				</div>
+			</section>
+			<section class="asset-detail-section card" id="pp-create-panel" style="display:none; margin:12px 0;">
+				<h4 class="asset-detail-section-title">Create role</h4>
+				<form method="post" action="/policy/pluris" style="display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap;">
+					<input type="hidden" name="_csrf" value={ csrfToken }/>
+					<div class="cg-field">
+						<label for="pp-new-name">Name</label>
+						<input id="pp-new-name" type="text" name="name" class="input" placeholder="New role name" required/>
+					</div>
+					<div class="cg-field">
+						<label for="pp-new-parent">Parent</label>
+						@RolePickerSelect("parent_id", allRoles, 0, true)
+					</div>
+					<button type="submit" class="btn btn-primary">Create</button>
+				</form>
+			</section>
+			@templ.Raw(`<script>
+(function () {
+	var toggle = document.querySelector('[data-pp-create-toggle]');
+	var panel = document.getElementById('pp-create-panel');
+	if (!toggle || !panel) return;
+	toggle.addEventListener('click', function () {
+		panel.style.display = panel.style.display === 'none' ? '' : 'none';
+	});
+})();
+</script>`)
+			<section class="pm-table-wrap card" data-pluris-list={ listID }>
+				@ConceptEmptyState("policy-pluris", listID)
+				<table class="policy-table pluris-list" data-list-id={ listID }>
+					<thead>
+						<tr>
+							for _, f := range lists.FieldsFor(listID) {
+								<th title={ f.Description }>{ f.Label }</th>
+							}
+						</tr>
+					</thead>
+					<tbody>
+						for _, r := range rows {
+							<tr data-role-id={ strconv.FormatInt(r.ID, 10) } data-pp-type={ roleTypeAttr(r) } data-pp-search={ roleSearchBlob(r) }>
+								<td>{ r.Name }</td>
+								<td>
+									if r.Builtin {
+										<span class="asset-chip asset-chip-lifecycle">Builtin</span>
+									} else {
+										<span class="asset-chip asset-chip-enroll-pending">Custom</span>
+									}
+								</td>
+								<td>{ r.Parent }</td>
+								<td>{ strconv.FormatInt(r.Members, 10) }</td>
+								<td>{ strconv.Itoa(r.GrantedCount) } granted</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			</section>
+			@plurisPolicyNavigationScript()
+		</div>
+	}
+}
+
+// plurisPolicyNavigationScript — row click navigates to the role's detail
+// page. Modeled on dependencyGroupsNavigationScript.
+templ plurisPolicyNavigationScript() {
+	@templ.Raw(`<script>
+(function () {
+	document.addEventListener('click', function (e) {
+		if (e.target.closest('a, button, input, select, form')) return;
+		var row = e.target.closest('tr[data-role-id]');
+		if (!row) return;
+		window.location.href = '/policy/pluris/' + encodeURIComponent(row.dataset.roleId);
+	});
+})();
+</script>`)
+}
+
+// PlurisPolicyDetailPage — the standardized DetailShell for a single
+// role: Permissions matrix tab + Members tab.
+//
+// effective is the role's inheritance-resolved matrix (own overrides
+// merged over its parent chain); own is the role's raw, own-overrides-
+// only stored matrix; chain is the role's ancestor chain root-first
+// (empty for parentless roles). Task 4 threads these through so Task 6
+// can build origin badges/parent breadcrumbs without another handler
+// change; the internals below still render off grants (now effective)
+// only -- own/chain are accepted but not yet rendered.
+templ PlurisPolicyDetailPage(role db.Role, effective authz.Grants, own authz.Grants, chain []db.Role, members []db.ListIdentitiesForRoleRow, groups []db.ListGroupsForRoleRow, originByKey map[string]string, inheritedByKey map[string]string, eligibleRoles []db.Role, csrf string) {
+	@DetailShell(
+		"policy-pluris",
+		role.Name+" — Pluris Policy",
+		templ.Attributes{"data-testid": "page-pluris-policy-detail", "data-role-id": strconv.FormatInt(role.ID, 10)},
+		plurisRoleHero(role, chain, len(members), csrf),
+		plurisRoleTabs(role, effective, own, chain, members, groups, originByKey, inheritedByKey, eligibleRoles, csrf),
+	)
+}
+
+// plurisRoleHeroMenu — the hero ⋮ dropdown body: a plain link back to the
+// Settings tab (where Clone actually lives -- see plurisRoleSettingsTab)
+// above the delete form. A text-input form doesn't fit the dropdown's
+// existing menu-item CSS (.hero-dropdown-item has no styling for embedded
+// inputs), so Clone itself is NOT rendered here; this keeps the dropdown
+// free of new CSS/JS while still surfacing the action from the menu.
+templ plurisRoleHeroMenu(role db.Role, memberCount int, csrf string) {
+	<a href="#settings" class="hero-dropdown-item">
+		<svg class="hero-dropdown-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+		Clone… (see Settings)
+	</a>
+	<hr class="hero-dropdown-divider"/>
+	@plurisRoleDeleteAction(role, memberCount, csrf)
+}
+
+// plurisRoleDeleteAction — delete form in the hero ⋮ dropdown. Disabled
+// (with tooltip) when the role is builtin or still has members; mirrors
+// dependencyGroupDeleteAction's markup/classes.
+templ plurisRoleDeleteAction(role db.Role, memberCount int, csrf string) {
+	<form class="hero-dropdown-form" method="post" action={ templ.SafeURL("/policy/pluris/" + strconv.FormatInt(role.ID, 10) + "/delete") } onsubmit="return confirm('Delete this role?')">
+		<input type="hidden" name="_csrf" value={ csrf }/>
+		if role.IsBuiltin {
+			<button type="submit" class="hero-dropdown-item" disabled title="Builtin template — clone to customize">
+				<svg class="hero-dropdown-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+				Delete
+			</button>
+		} else if memberCount > 0 {
+			<button type="submit" class="hero-dropdown-item" disabled title="Remove members first">
+				<svg class="hero-dropdown-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+				Delete
+			</button>
+		} else {
+			<button type="submit" class="hero-dropdown-item">
+				<svg class="hero-dropdown-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+				Delete
+			</button>
+		}
+	</form>
+}
+
+// plurisRoleSettingsTab — General tab: name/description form for custom
+// roles (builtins are read-only/fixed), a parent selector for custom
+// roles (builtins render a static "template root" line -- builtins are
+// always parentless, see authz.Service.SetRoleParent), and the Clone
+// form (works for any role, builtin or custom -- the ⋮ menu links here
+// instead of duplicating a text-input form in the dropdown).
+templ plurisRoleSettingsTab(role db.Role, eligibleRoles []db.Role, csrf string) {
+	<div class="asset-detail-grid">
+		<section class="asset-detail-section card">
+			<h4 class="asset-detail-section-title">General</h4>
+			if role.IsBuiltin {
+				<p>Builtin template — name and description are fixed. Clone below to customize.</p>
+			} else {
+				<form method="post" action={ templ.SafeURL("/policy/pluris/" + strconv.FormatInt(role.ID, 10) + "/settings") } style="display:flex; flex-direction:column; gap:8px; max-width:480px;">
+					<input type="hidden" name="_csrf" value={ csrf }/>
+					<div class="cg-field">
+						<label for="pp-settings-name">Name</label>
+						<input id="pp-settings-name" type="text" name="name" class="input" value={ role.Name } required/>
+					</div>
+					<div class="cg-field">
+						<label for="pp-settings-description">Description</label>
+						<textarea id="pp-settings-description" name="description" class="input">{ role.Description.String }</textarea>
+					</div>
+					<button type="submit" class="btn btn-primary" style="align-self:flex-start;">Save</button>
+				</form>
+			}
+		</section>
+		<section class="asset-detail-section card">
+			<h4 class="asset-detail-section-title">Parent</h4>
+			if role.IsBuiltin {
+				<p>Template root (builtins have no parent).</p>
+			} else {
+				<form method="post" action={ templ.SafeURL("/policy/pluris/" + strconv.FormatInt(role.ID, 10) + "/parent") } style="display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap;">
+					<input type="hidden" name="_csrf" value={ csrf }/>
+					<div class="cg-field">
+						<label for="pp-settings-parent">Parent role</label>
+						@RolePickerSelect("parent_id", eligibleRoles, currentParentID(role), true)
+					</div>
+					<button type="submit" class="btn btn-primary">Apply</button>
+				</form>
+			}
+		</section>
+		<section class="asset-detail-section card" id="settings-clone">
+			<h4 class="asset-detail-section-title">Clone this role</h4>
+			<p>Create a new role starting from this one's current permissions.</p>
+			<form method="post" action={ templ.SafeURL("/policy/pluris/" + strconv.FormatInt(role.ID, 10) + "/clone") } style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+				<input type="hidden" name="_csrf" value={ csrf }/>
+				<input type="text" name="name" class="input" placeholder="New role name" required/>
+				<button type="submit" class="btn btn-primary">Clone</button>
+			</form>
+		</section>
+	</div>
+}
+
+// plurisRolePermissionsTab — the permission matrix. Builtin roles render
+// read-only (every control disabled, no Apply button) with a banner
+// pointing at the Settings tab for Clone; custom roles get a single form
+// posting the whole matrix to PlurisPolicySave. Field names/value
+// vocabulary MUST match parseGrantsForm in
+// console/handlers/pluris_policy.go exactly: "perm_<key>" = none|own|all
+// for scoped actions, "yes" (checkbox present) for unscoped actions.
+//
+// Each row also carries an origin badge (originByKey[fullKey], handler-
+// precomputed: "own" | "inherited from <name>" | "default") and, for
+// parented roles with an own override on that key, a "Reset to
+// inherited" button. The button has no server round-trip: it just writes
+// inheritedByKey[fullKey] (stashed per-control in data-inherited) back
+// into the control via plurisPermissionsResetScript, and the normal
+// Apply/diff-save flow (SaveRoleOverrides) drops the key automatically
+// once its value matches the parent's effective value again.
+templ plurisRolePermissionsTab(role db.Role, grants authz.Grants, originByKey map[string]string, inheritedByKey map[string]string, csrf string) {
+	<div class="asset-detail-grid">
+		if role.IsBuiltin {
+			<section class="asset-detail-section card">
+				<h4 class="asset-detail-section-title">Builtin template — read-only</h4>
+				<p>Clone from the Settings tab to customize.</p>
+			</section>
+		}
+		<form method="post" action={ templ.SafeURL("/policy/pluris/" + strconv.FormatInt(role.ID, 10)) }>
+			<input type="hidden" name="_csrf" value={ csrf }/>
+			for _, domain := range permissions.All() {
+				<section class="asset-detail-section card">
+					<h4 class="asset-detail-section-title">{ domain.Label }</h4>
+					for _, action := range domain.Actions {
+						{{ fullKey := domain.Key + "." + action.Key }}
+						{{ origin := originByKey[fullKey] }}
+						{{ inherited := inheritedByKey[fullKey] }}
+						<div class="cg-field" title={ action.Description }>
+							<label for={ "pluris-perm-" + fullKey }>{ action.Label }</label>
+							if action.Scoped {
+								{{ scope := currentScope(grants, fullKey) }}
+								<select id={ "pluris-perm-" + fullKey } name={ "perm_" + fullKey } class="input" disabled?={ role.IsBuiltin } data-inherited={ inherited }>
+									if scope == "none" {
+										<option value="none" selected>None</option>
+									} else {
+										<option value="none">None</option>
+									}
+									if scope == "own" {
+										<option value="own" selected>Own</option>
+									} else {
+										<option value="own">Own</option>
+									}
+									if scope == "all" {
+										<option value="all" selected>All</option>
+									} else {
+										<option value="all">All</option>
+									}
+								</select>
+							} else {
+								<input id={ "pluris-perm-" + fullKey } type="checkbox" name={ "perm_" + fullKey } value="yes" checked?={ isGranted(grants, fullKey) } disabled?={ role.IsBuiltin } data-inherited={ inherited }/>
+							}
+							<span class="pp-origin-badge" style="font-size:11px; color:var(--text-muted); margin-left:6px;">{ origin }</span>
+							if !role.IsBuiltin && role.ParentRoleID.Valid && origin == "own" {
+								<button type="button" class="btn btn-secondary" data-pp-reset style="font-size:11px; padding:2px 6px; margin-left:6px;">Reset to inherited</button>
+							}
+						</div>
+					}
+				</section>
+			}
+			if !role.IsBuiltin {
+				<button type="submit" class="btn btn-primary" style="margin-top:8px;">Apply</button>
+			}
+		</form>
+		@plurisPermissionsResetScript()
+	</div>
+}
+
+// plurisPermissionsResetScript — the ONE tiny script backing every
+// "Reset to inherited" button (event-delegated, so it works for however
+// many rows render it). Clicking [data-pp-reset] finds its row's control
+// (select or checkbox) and sets it back to that control's own
+// data-inherited value; it does not submit the form -- the existing
+// Apply button/diff-save flow still owns persistence.
+templ plurisPermissionsResetScript() {
+	@templ.Raw(`<script>
+(function () {
+	document.addEventListener('click', function (e) {
+		var btn = e.target.closest('[data-pp-reset]');
+		if (!btn) return;
+		var field = btn.closest('.cg-field');
+		if (!field) return;
+		var control = field.querySelector('select[data-inherited], input[data-inherited]');
+		if (!control) return;
+		var inherited = control.getAttribute('data-inherited') || '';
+		if (control.tagName === 'SELECT') {
+			control.value = inherited;
+		} else {
+			control.checked = inherited === 'yes';
+		}
+	});
+})();
+</script>`)
+}
+
+// plurisRoleMembersTab — direct identity members, plus a second table of
+// groups holding this role (Task 6).
+templ plurisRoleMembersTab(members []db.ListIdentitiesForRoleRow, groups []db.ListGroupsForRoleRow) {
+	@DetailTableFrame(lists.ListIDPlurisRoleMembers, nil) {
+		if len(members) == 0 {
+			@DetailEmptyRow(3, "No members hold this role yet.")
+		} else {
+			for _, m := range members {
+				<tr>
+					<td>{ m.Username }</td>
+					<td>{ m.DisplayName }</td>
+					<td>{ m.Email }</td>
+				</tr>
+			}
+		}
+	}
+	<div style="margin-top:16px;">
+		@DetailTableFrame(lists.ListIDPlurisRoleGroups, nil) {
+			if len(groups) == 0 {
+				@DetailEmptyRow(1, "No groups hold this role yet.")
+			} else {
+				for _, g := range groups {
+					<tr>
+						<td>{ g.Name }</td>
+					</tr>
+				}
+			}
+		}
+	</div>
+}

@@ -1,0 +1,629 @@
+// config_groups.templ — Task 5.2: full standardized pages for
+// Configuration Groups (registry-driven list, create form, DetailShell
+// detail with General / Assignments / Policy Bindings tabs). Replaces
+// the retired ConfigurationGroupDialog popup + catalog/configgroups
+// mock; all data comes from services.ConfigGroupService via
+// console/handlers/config_groups.go.
+package templates
+
+import (
+	"strconv"
+
+	"github.com/pluris/pluris/web/lists"
+)
+
+// 4b. Policy → Configuration Groups (list).
+templ ConfigGroupsPage(rows []ConfigGroupRow) {
+	@Layout("policy-groups", "Configuration Groups") {
+		@PageHeader("Configuration Groups",
+			"Bind policies from the Catalog to targets — computers, users, and groups. Open a group to manage its assignments and policy bindings.",
+			"", "")
+		{{ listID := lists.ListIDConfigGroups }}
+		<div data-testid="page-policy-groups">
+			<section class="pm-toolbar card" data-pluris-list={ listID }>
+				<div class="field field-wide">
+					<label for="cg-search">Search</label>
+					<input
+						id="cg-search"
+						class="input"
+						type="search"
+						autocomplete="off"
+						data-pluris-filter={ listID }
+						data-filter-attr="cg-searchable"
+						data-filter-mode="contains"
+						data-pluris-highlight="1"
+						placeholder="Filter by name, description…"
+					/>
+				</div>
+				<div class="field">
+					<label for="cg-enabled">Status</label>
+					<select
+						id="cg-enabled"
+						class="select"
+						data-pluris-filter={ listID }
+						data-filter-attr="cg-enabled"
+						data-filter-mode="equals"
+					>
+						<option value="all">All</option>
+						<option value="enabled">Enabled</option>
+						<option value="disabled">Disabled</option>
+					</select>
+				</div>
+				<div class="field field-action">
+					<label>&nbsp;</label>
+					<span data-pluris-count={ listID } data-template="{visible} of {total} groups"></span>
+				</div>
+				<div class="field field-action">
+					<label>&nbsp;</label>
+					<a href="/policy/groups/new" class="btn btn-primary">
+						@iconSVG("plus")
+						<span>New configuration group</span>
+					</a>
+				</div>
+			</section>
+			<section class="pm-table-wrap card" data-pluris-list={ listID }>
+				@ConceptEmptyState("policy-groups", listID)
+				<table class="policy-table pluris-list" data-list-id={ listID }>
+					<thead>
+						<tr>
+							for _, f := range lists.FieldsFor(listID) {
+								<th title={ f.Description }>{ f.Label }</th>
+							}
+						</tr>
+					</thead>
+					<tbody>
+						for _, r := range rows {
+							<tr data-cg-row-id={ strconv.FormatInt(r.ID, 10) } data-cg-enabled={ configGroupEnabledAttr(r) } data-cg-searchable={ configGroupSearchBlob(r) }>
+								<td>
+									<div class="cg-name">{ r.Name }</div>
+									if r.Description != "" {
+										<div class="cg-muted">{ r.Description }</div>
+									}
+								</td>
+								<td class="cg-num">{ strconv.FormatInt(r.Assignments, 10) }</td>
+								<td class="cg-num">{ strconv.FormatInt(r.Bindings, 10) }</td>
+								<td>
+									if r.Enabled {
+										<span class="asset-chip asset-chip-enroll-enrolled">Enabled</span>
+									} else {
+										<span class="asset-chip asset-chip-enroll-retired">Disabled</span>
+									}
+								</td>
+								<td>{ configGroupCreatedLabel(r.CreatedAt) }</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			</section>
+			@configGroupsNavigationScript()
+		</div>
+	}
+}
+
+// configGroupsNavigationScript — row click navigates to the group's
+// detail page. Same pattern as dependencyGroupsNavigationScript.
+templ configGroupsNavigationScript() {
+	@templ.Raw(`<script>
+(function () {
+	document.addEventListener('click', function (e) {
+		if (e.target.closest('a, button, input, select, form')) return;
+		var row = e.target.closest('tr[data-cg-row-id]');
+		if (!row) return;
+		window.location.href = '/policy/groups/' + encodeURIComponent(row.dataset.cgRowId);
+	});
+})();
+</script>`)
+}
+
+// ConfigGroupNewPage — standalone create form (name/description), same
+// shape as DependencyGroupNewPage / PolicyModuleNewPage. Creates
+// enabled; everything else (targets, bindings) is added on the detail
+// page after the redirect.
+templ ConfigGroupNewPage(csrf string, errMsg string) {
+	@Layout("policy-groups", "New Configuration Group") {
+		@PageHeader("New Configuration Group", "Create a group, then add targets and policy bindings on its detail page.", "", "")
+		<div data-testid="page-policy-group-new">
+			if errMsg != "" {
+				<div class="auth-error" role="alert">{ errMsg }</div>
+			}
+			<section class="asset-detail-section card" style="max-width:640px;">
+				<form method="post" action="/policy/groups/new">
+					<input type="hidden" name="_csrf" value={ csrf }/>
+					<div class="cg-field">
+						<label for="cg-new-name">Name</label>
+						<input id="cg-new-name" name="name" class="input" required/>
+					</div>
+					<div class="cg-field cg-field-wide">
+						<label for="cg-new-description">Description</label>
+						<textarea id="cg-new-description" name="description" class="input" rows="3"></textarea>
+					</div>
+					<button type="submit" class="btn btn-primary" style="margin-top:8px;">Create</button>
+				</form>
+			</section>
+		</div>
+	}
+}
+
+// ConfigGroupDetailPage — the standardized DetailShell for one
+// Configuration Group. Mounts the shared TargetPickerDialog (moved here
+// from the retired list-page dialog) restricted to the kinds the
+// assignments table can actually store — see
+// configGroupAllowedTargetKinds for why configuration_group is excluded.
+templ ConfigGroupDetailPage(d ConfigGroupDetailData) {
+	@DetailShell(
+		"policy-groups",
+		d.Group.Name+" — Configuration Group",
+		templ.Attributes{"data-testid": "page-policy-group-detail", "data-cg-id": strconv.FormatInt(d.Group.ID, 10), "data-csrf": d.CSRF},
+		configGroupHero(d),
+		configGroupTabs(d),
+	)
+	@TargetPickerDialog(configGroupAllowedTargetKinds(), d.Targets)
+	@configGroupPageScript(d)
+}
+
+// configGroupDeleteAction — delete form in the hero ⋮ dropdown.
+templ configGroupDeleteAction(d ConfigGroupDetailData) {
+	<form class="hero-dropdown-form" method="post" action={ templ.SafeURL(configGroupDetailPath(d.Group.ID) + "/delete") } onsubmit="return confirm('Delete this configuration group? Its assignments and bindings are removed with it.')">
+		<input type="hidden" name="_csrf" value={ d.CSRF }/>
+		<button type="submit" class="hero-dropdown-item">
+			<svg class="hero-dropdown-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+			Delete
+		</button>
+	</form>
+}
+
+// ---- General tab -----------------------------------------------------
+
+// configGroupGeneralTab — per-section inline edit via the shared
+// detail.js contract (data-section + data-save-url + data-editable
+// field-values), saving through POST /api/config-groups/:id/fields.
+templ configGroupGeneralTab(d ConfigGroupDetailData) {
+	<div class="asset-detail-grid">
+		<section class="asset-detail-section card" data-section="general" data-save-url={ "/api/config-groups/" + strconv.FormatInt(d.Group.ID, 10) + "/fields" }>
+			<div class="section-header">
+				<h4 class="asset-detail-section-title">Definition</h4>
+				<div class="section-actions">
+					<button type="button" class="section-edit-btn" onclick="toggleSectionEdit(this)" title="Edit section">
+						<svg class="section-edit-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"></path><path d="m15 5 4 4"></path></svg>
+					</button>
+					<button type="button" class="section-cancel-btn" style="display:none" onclick="cancelSectionEdit(this)">Cancel</button>
+					<button type="button" class="section-save-btn btn-primary" style="display:none" onclick="saveSectionEdit(this)">Save</button>
+				</div>
+			</div>
+			<dl class="asset-detail-defs">
+				<dt>Name</dt>
+				<dd><span class="field-value" data-editable="true" data-field-key="name" data-copy={ d.Group.Name }>{ d.Group.Name }</span></dd>
+				<dt>Description</dt>
+				<dd><span class="field-value" data-editable="true" data-field-key="description" data-copy={ d.Group.Description.String }>{ d.Group.Description.String }</span></dd>
+				<dt>Enabled <span class="cg-hint">(true/false)</span></dt>
+				<dd><span class="field-value" data-editable="true" data-field-key="enabled" data-copy={ strconv.FormatBool(!d.Group.Disabled) }>{ strconv.FormatBool(!d.Group.Disabled) }</span></dd>
+			</dl>
+		</section>
+	</div>
+}
+
+// ---- Assignments tab ---------------------------------------------------
+
+// configGroupAssignmentsTab — table of targets this group is assigned
+// to, plus the "Add target" flow driven by the shared
+// TargetPickerDialog's `target:pick` event (wired in
+// configGroupPageScript).
+templ configGroupAssignmentsTab(d ConfigGroupDetailData) {
+	@DetailTableFrame(lists.ListIDConfigGroupAssignments, configGroupAddTargetAction()) {
+		if len(d.Assignments) == 0 {
+			@DetailEmptyRow(5, "No targets yet. Use “Add target” to assign this group.")
+		} else {
+			for _, a := range d.Assignments {
+				<tr>
+					<td>
+						<div style="display:flex; align-items:center; gap:8px;">
+							<div class={ "cg-target-icon", "tp-row-icon", assignmentTargetIconClass(a.TargetType) }>
+								@iconSVG(assignmentIconKey(a.TargetType))
+							</div>
+							<div>
+								<div class="tp-row-label">{ a.Label }</div>
+								<div class="tp-row-ref font-mono">{ a.TargetType }:{ strconv.FormatInt(a.TargetID, 10) }</div>
+							</div>
+						</div>
+					</td>
+					<td><span class={ assignmentKindChipClass(a.TargetType) }>{ assignmentTypeLabel(a.TargetType) }</span></td>
+					<td colspan="2">
+						<form method="post" action={ templ.SafeURL(configGroupDetailPath(d.Group.ID) + "/assignments/" + strconv.FormatInt(a.ID, 10)) } style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+							<input type="hidden" name="_csrf" value={ d.CSRF }/>
+							<input type="number" name="priority" class="input" value={ strconv.FormatInt(a.Priority, 10) } style="width:80px;" title="Priority — higher wins on conflicts"/>
+							<label style="display:flex; gap:4px; align-items:center;">
+								<input type="checkbox" name="enforced" value="true" checked?={ a.Enforced }/>
+								<span class="cg-hint">Enforced</span>
+							</label>
+							<button type="submit" class="btn btn-sm">Save</button>
+						</form>
+					</td>
+					<td class="pm-row-actions">
+						<form method="post" action={ templ.SafeURL(configGroupDetailPath(d.Group.ID) + "/assignments/" + strconv.FormatInt(a.ID, 10) + "/remove") } onsubmit="return confirm('Remove this target from the group?')">
+							<input type="hidden" name="_csrf" value={ d.CSRF }/>
+							<button type="submit" class="btn btn-sm">Remove</button>
+						</form>
+					</td>
+				</tr>
+			}
+		}
+	}
+	<section class="asset-detail-section card" id="cg-add-assignment" hidden>
+		<h4 class="asset-detail-section-title">Add target</h4>
+		<form method="post" action={ templ.SafeURL(configGroupDetailPath(d.Group.ID) + "/assignments") } style="display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap;">
+			<input type="hidden" name="_csrf" value={ d.CSRF }/>
+			<input type="hidden" name="target_kind" id="cg-assign-kind"/>
+			<input type="hidden" name="target_ref" id="cg-assign-ref"/>
+			<div class="cg-field">
+				<label>Target</label>
+				<div id="cg-assign-label" class="tp-row-label">—</div>
+			</div>
+			<div class="cg-field">
+				<label for="cg-assign-priority">Priority</label>
+				<input id="cg-assign-priority" type="number" name="priority" class="input" value="0" style="width:90px;"/>
+			</div>
+			<label style="display:flex; gap:4px; align-items:center; padding-bottom:8px;">
+				<input type="checkbox" name="enforced" value="true"/>
+				<span class="cg-hint">Enforced</span>
+			</label>
+			<button type="submit" class="btn btn-primary">Add</button>
+		</form>
+	</section>
+}
+
+// configGroupAddTargetAction — the Assignments table's header action:
+// opens the shared TargetPickerDialog (the pick then reveals the
+// #cg-add-assignment form — see configGroupPageScript).
+templ configGroupAddTargetAction() {
+	<button type="button" class="btn btn-primary" data-target-picker-open>
+		@iconSVG("plus")
+		<span>Add target</span>
+	</button>
+}
+
+// ---- Policy Bindings tab -------------------------------------------------
+
+// configGroupBindingsTab — the group's policy bindings. "Add binding" is
+// a flat form (policy <select> from the same catalog/policies.Catalog()
+// source the retired PolicyPickerPage confirm form used — reusing that
+// whole two-step picker page here would have duplicated its GET/confirm
+// flow for no gain on a page that already knows its group). Module
+// override options and the schema-generated parameter inputs come from
+// the #cg-policy-candidates data island (built server-side from real
+// module rows: web/static's shared JS in configGroupPageScript renders
+// text/number/select inputs per the module's parameters_schema, with
+// required keys marked). Binding EDIT is an inline-expand row on the
+// table (NOT a popup): the same JS generator fills a hidden edit row
+// pre-filled from the binding's data attributes.
+templ configGroupBindingsTab(d ConfigGroupDetailData) {
+	@DetailTableFrame(lists.ListIDConfigGroupBindings, configGroupAddBindingAction()) {
+		if len(d.Bindings) == 0 {
+			@DetailEmptyRow(5, "No policy bindings yet. Use “Add binding” to bind a catalog policy.")
+		} else {
+			for _, b := range d.Bindings {
+				<tr
+					data-cg-binding-id={ strconv.FormatInt(b.ID, 10) }
+					data-cg-binding-policy={ b.PolicyURN }
+					data-cg-binding-state={ b.State }
+					data-cg-binding-module={ b.ModuleURN }
+					data-cg-binding-values={ b.ParameterValuesJSON }
+				>
+					<td><code class="font-mono">{ b.PolicyURN }</code></td>
+					<td>{ bindingModuleLabel(b) }</td>
+					<td><span class={ "pm-status", "pm-status-" + bindingStateClass(b.State) }>{ b.State }</span></td>
+					<td class="cg-binding-values font-mono">{ bindingParamsSummary(b.ParameterValuesJSON) }</td>
+					<td class="pm-row-actions">
+						<button type="button" class="btn btn-sm" data-cg-binding-edit={ strconv.FormatInt(b.ID, 10) }>Edit</button>
+						<form method="post" action={ templ.SafeURL(configGroupDetailPath(d.Group.ID) + "/bindings/" + strconv.FormatInt(b.ID, 10) + "/remove") } style="display:inline;" onsubmit="return confirm('Remove this policy binding?')">
+							<input type="hidden" name="_csrf" value={ d.CSRF }/>
+							<button type="submit" class="btn btn-sm">Remove</button>
+						</form>
+					</td>
+				</tr>
+				<tr class="cg-binding-edit-row" data-cg-binding-edit-row={ strconv.FormatInt(b.ID, 10) } hidden>
+					<td colspan="5"><div class="cg-binding-edit-host"></div></td>
+				</tr>
+			}
+		}
+	}
+	<section class="asset-detail-section card" id="cg-add-binding" hidden>
+		<h4 class="asset-detail-section-title">Add binding</h4>
+		<form method="post" action={ templ.SafeURL(configGroupDetailPath(d.Group.ID) + "/bindings") } data-cg-binding-form>
+			<input type="hidden" name="_csrf" value={ d.CSRF }/>
+			<div style="display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap;">
+				<div class="cg-field">
+					<label for="cg-bind-policy">Policy</label>
+					<select id="cg-bind-policy" name="policy_urn" class="input" required data-cg-bind-policy>
+						<option value="">— choose a policy —</option>
+						for _, p := range d.Catalog {
+							<option value={ p.ID }>{ p.Name }</option>
+						}
+					</select>
+				</div>
+				<div class="cg-field">
+					<label for="cg-bind-module">Module</label>
+					<select id="cg-bind-module" name="module_urn" class="input" data-cg-bind-module>
+						<option value="">Default (inherit)</option>
+					</select>
+				</div>
+				<div class="cg-field">
+					<label for="cg-bind-state">State</label>
+					<select id="cg-bind-state" name="state" class="input">
+						<option value="enabled">Enabled</option>
+						<option value="disabled">Disabled</option>
+						<option value="not_configured">Not configured</option>
+					</select>
+				</div>
+			</div>
+			<div data-cg-bind-params class="cg-form-grid" style="margin-top:8px;"></div>
+			<button type="submit" class="btn btn-primary" style="margin-top:8px;">Add binding</button>
+		</form>
+	</section>
+	@templ.Raw("<script type=\"application/json\" id=\"cg-policy-candidates\">" + d.PolicyCandidatesJSON + "</script>")
+}
+
+// configGroupAddBindingAction — Bindings table header action; toggles
+// the #cg-add-binding form (wired in configGroupPageScript).
+templ configGroupAddBindingAction() {
+	<button type="button" class="btn btn-primary" data-cg-binding-add>
+		@iconSVG("plus")
+		<span>Add binding</span>
+	</button>
+}
+
+// bindingStateClass maps a binding state onto the pm-status color set
+// (published=green, draft=amber, revoked=red already exist in CSS).
+func bindingStateClass(state string) string {
+	switch state {
+	case "enabled":
+		return "published"
+	case "disabled":
+		return "revoked"
+	}
+	return "draft"
+}
+
+// assignmentTargetIconClass — saturated icon-circle class per
+// target_type (same palette as the picker's rows).
+func assignmentTargetIconClass(targetType string) string {
+	switch targetType {
+	case "asset", "group":
+		return "tp-icon-computer"
+	case "identity":
+		return "tp-icon-user"
+	}
+	return ""
+}
+
+// configGroupPageScript — the detail page's wiring:
+//
+//   - `target:pick` (from the shared TargetPickerDialog) fills the Add
+//     target form's hidden kind/ref inputs and reveals it.
+//   - "Add binding" toggles the add-binding form; the policy select
+//     populates the module select + parameter inputs from the
+//     #cg-policy-candidates data island (schema-generated fields:
+//     string→text, number→number, boolean→true/false select,
+//     enum→select; required keys marked * + required attr).
+//   - Binding "Edit" expands the row's inline edit form (same field
+//     generator, pre-filled from the row's data attributes).
+//   - On submit, empty non-required parameter inputs are disabled so an
+//     untouched optional number field doesn't 400 server-side.
+templ configGroupPageScript(d ConfigGroupDetailData) {
+	@templ.Raw(`<script>
+(function () {
+	'use strict';
+	function ready(fn) {
+		if (document.readyState === 'loading') {
+			document.addEventListener('DOMContentLoaded', fn, { once: true });
+		} else { fn(); }
+	}
+	ready(init);
+
+function init() {
+	var root = document.querySelector('[data-testid="page-policy-group-detail"]');
+	if (!root) return;
+	var groupID = root.dataset.cgId;
+	var csrf = root.dataset.csrf;
+
+	// ---- Data island: policy URN -> [{urn,title,schema}] -------------
+	var candidates = {};
+	try {
+		var island = document.getElementById('cg-policy-candidates');
+		if (island) candidates = JSON.parse(island.textContent || '{}') || {};
+	} catch (e) { candidates = {}; }
+
+	function parseSchema(raw) {
+		if (!raw) return { properties: {}, required: [] };
+		try {
+			var s = JSON.parse(raw);
+			return { properties: s.properties || {}, required: s.required || [] };
+		} catch (e) {
+			return { properties: {}, required: [] };
+		}
+	}
+
+	function schemaFor(policyURN, moduleURN) {
+		var cands = candidates[policyURN] || [];
+		if (moduleURN) {
+			for (var i = 0; i < cands.length; i++) {
+				if (cands[i].urn === moduleURN) return parseSchema(cands[i].schema);
+			}
+		}
+		// "" = default (inherit): candidates are ordered bundled-first,
+		// matching the server's default-module pick.
+		return cands.length ? parseSchema(cands[0].schema) : { properties: {}, required: [] };
+	}
+
+	// ---- Parameter field generator ------------------------------------
+	function el(tag, attrs, text) {
+		var node = document.createElement(tag);
+		Object.keys(attrs || {}).forEach(function (k) { node.setAttribute(k, attrs[k]); });
+		if (text != null) node.textContent = text;
+		return node;
+	}
+
+	function renderParamFields(host, schema, values) {
+		host.innerHTML = '';
+		values = values || {};
+		var keys = Object.keys(schema.properties);
+		if (keys.length === 0) {
+			host.appendChild(el('p', { class: 'cg-hint' }, 'This module declares no input parameters.'));
+			return;
+		}
+		keys.forEach(function (key) {
+			var def = schema.properties[key] || {};
+			var required = schema.required.indexOf(key) !== -1;
+			var wrap = el('div', { class: 'cg-field' });
+			var label = el('label', {}, key + (required ? ' *' : ''));
+			wrap.appendChild(label);
+			var cur = values[key];
+			var curStr = cur == null ? '' : String(cur);
+			var input;
+			if (Array.isArray(def.enum) && def.enum.length) {
+				input = el('select', { class: 'input' });
+				if (!required) input.appendChild(el('option', { value: '' }, '—'));
+				def.enum.forEach(function (v) {
+					var opt = el('option', { value: v }, v);
+					if (curStr === v) opt.setAttribute('selected', 'selected');
+					input.appendChild(opt);
+				});
+			} else if (def.type === 'boolean') {
+				input = el('select', { class: 'input' });
+				if (!required && curStr === '') input.appendChild(el('option', { value: '', selected: 'selected' }, '—'));
+				['true', 'false'].forEach(function (v) {
+					var opt = el('option', { value: v }, v);
+					if (curStr === v) opt.setAttribute('selected', 'selected');
+					input.appendChild(opt);
+				});
+			} else if (def.type === 'number') {
+				input = el('input', { class: 'input', type: 'number', step: 'any', value: curStr });
+			} else {
+				input = el('input', { class: 'input', type: 'text', value: curStr });
+			}
+			input.setAttribute('name', 'param_' + key);
+			input.setAttribute('data-cg-param', required ? 'required' : 'optional');
+			if (required) input.setAttribute('required', 'required');
+			wrap.appendChild(input);
+			host.appendChild(wrap);
+		});
+	}
+
+	// On submit, drop empty optional params so they don't 400 as
+	// wrong-typed empty strings server-side.
+	document.addEventListener('submit', function (e) {
+		var form = e.target;
+		if (!form.matches('[data-cg-binding-form]')) return;
+		form.querySelectorAll('[data-cg-param="optional"]').forEach(function (inp) {
+			if (inp.value === '') inp.disabled = true;
+		});
+	});
+
+	// ---- Add binding form ---------------------------------------------
+	var addCard = document.getElementById('cg-add-binding');
+	document.addEventListener('click', function (e) {
+		if (e.target.closest('[data-cg-binding-add]') && addCard) {
+			e.preventDefault();
+			addCard.hidden = !addCard.hidden;
+		}
+	});
+
+	function fillModuleSelect(select, policyURN, currentURN) {
+		select.innerHTML = '';
+		select.appendChild(el('option', { value: '' }, 'Default (inherit)'));
+		(candidates[policyURN] || []).forEach(function (c) {
+			var opt = el('option', { value: c.urn }, c.title + ' (' + c.urn + ')');
+			if (c.urn === currentURN) opt.setAttribute('selected', 'selected');
+			select.appendChild(opt);
+		});
+	}
+
+	var addPolicy = document.querySelector('[data-cg-bind-policy]');
+	var addModule = document.querySelector('[data-cg-bind-module]');
+	var addParams = document.querySelector('#cg-add-binding [data-cg-bind-params]');
+	function refreshAddParams() {
+		if (!addPolicy || !addModule || !addParams) return;
+		renderParamFields(addParams, schemaFor(addPolicy.value, addModule.value), {});
+	}
+	if (addPolicy) addPolicy.addEventListener('change', function () {
+		fillModuleSelect(addModule, addPolicy.value, '');
+		refreshAddParams();
+	});
+	if (addModule) addModule.addEventListener('change', refreshAddParams);
+
+	// ---- Inline binding edit -------------------------------------------
+	function buildEditForm(row) {
+		var id = row.dataset.cgBindingId;
+		var policyURN = row.dataset.cgBindingPolicy;
+		var state = row.dataset.cgBindingState;
+		var moduleURN = row.dataset.cgBindingModule || '';
+		var values = {};
+		try { values = JSON.parse(row.dataset.cgBindingValues || '{}') || {}; } catch (e) { values = {}; }
+
+		var form = el('form', { method: 'post', action: '/policy/groups/' + encodeURIComponent(groupID) + '/bindings/' + encodeURIComponent(id), 'data-cg-binding-form': '1', style: 'padding:8px 0;' });
+		var csrfInput = el('input', { type: 'hidden', name: '_csrf', value: csrf });
+		form.appendChild(csrfInput);
+
+		var rowDiv = el('div', { style: 'display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap;' });
+
+		var modWrap = el('div', { class: 'cg-field' });
+		modWrap.appendChild(el('label', {}, 'Module'));
+		var modSelect = el('select', { class: 'input', name: 'module_urn' });
+		fillModuleSelect(modSelect, policyURN, moduleURN);
+		modWrap.appendChild(modSelect);
+		rowDiv.appendChild(modWrap);
+
+		var stateWrap = el('div', { class: 'cg-field' });
+		stateWrap.appendChild(el('label', {}, 'State'));
+		var stateSelect = el('select', { class: 'input', name: 'state' });
+		['enabled', 'disabled', 'not_configured'].forEach(function (v) {
+			var opt = el('option', { value: v }, v);
+			if (v === state) opt.setAttribute('selected', 'selected');
+			stateSelect.appendChild(opt);
+		});
+		stateWrap.appendChild(stateSelect);
+		rowDiv.appendChild(stateWrap);
+		form.appendChild(rowDiv);
+
+		var paramsHost = el('div', { class: 'cg-form-grid', style: 'margin-top:8px;' });
+		form.appendChild(paramsHost);
+		renderParamFields(paramsHost, schemaFor(policyURN, moduleURN), values);
+		modSelect.addEventListener('change', function () {
+			renderParamFields(paramsHost, schemaFor(policyURN, modSelect.value), values);
+		});
+
+		var save = el('button', { type: 'submit', class: 'btn btn-primary', style: 'margin-top:8px;' }, 'Save binding');
+		form.appendChild(save);
+		return form;
+	}
+
+	document.addEventListener('click', function (e) {
+		var btn = e.target.closest('[data-cg-binding-edit]');
+		if (!btn) return;
+		e.preventDefault();
+		var id = btn.getAttribute('data-cg-binding-edit');
+		var editRow = document.querySelector('[data-cg-binding-edit-row="' + id + '"]');
+		var dataRow = document.querySelector('[data-cg-binding-id="' + id + '"]');
+		if (!editRow || !dataRow) return;
+		if (!editRow.hidden) { editRow.hidden = true; return; }
+		var host = editRow.querySelector('.cg-binding-edit-host');
+		host.innerHTML = '';
+		host.appendChild(buildEditForm(dataRow));
+		editRow.hidden = false;
+	});
+
+	// ---- Add target (assignments) ---------------------------------------
+	var assignCard = document.getElementById('cg-add-assignment');
+	document.addEventListener('target:pick', function (e) {
+		var d = e.detail || {};
+		var kindEl = document.getElementById('cg-assign-kind');
+		var refEl = document.getElementById('cg-assign-ref');
+		var labelEl = document.getElementById('cg-assign-label');
+		if (kindEl) kindEl.value = d.kind || '';
+		if (refEl) refEl.value = d.ref || '';
+		if (labelEl) labelEl.textContent = (d.label || d.ref || '—');
+		if (assignCard) assignCard.hidden = false;
+	});
+}
+})();
+</script>`)
+}

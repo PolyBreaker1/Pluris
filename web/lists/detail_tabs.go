@@ -104,3 +104,52 @@ func init() {
 		{Key: "actions", Label: "", Description: "Assignment actions (remove).", Group: "main", DefaultVisible: true},
 	})
 }
+
+// Canonical list IDs for the group detail tabs (Task 7).
+const (
+	ListIDGroupMembers = "group-members"
+	ListIDGroupRoles   = "group-roles"
+)
+
+func init() {
+	// Task 6.2 reshaped the Members tab from identity-only columns
+	// (username/display name/email) to mixed asset+identity member rows
+	// with a source chip and a direct-only remove action.
+	Register(ListIDGroupMembers, "Members", detailTabGroups(), []FieldDef{
+		{Key: "member", Label: "Member", Description: "The asset or user that belongs to this group.", Group: "main", DefaultVisible: true},
+		{Key: "kind", Label: "Kind", Description: "Member kind (asset or user).", Group: "main", DefaultVisible: true},
+		{Key: "source", Label: "Source", Description: "Direct (added by an admin) or Dynamic (computed from the group's rules).", Group: "main", DefaultVisible: true},
+		{Key: "added", Label: "Added", Description: "When the membership was established.", Group: "main", DefaultVisible: true},
+		{Key: "actions", Label: "", Description: "Membership actions (remove; direct members only).", Group: "main", DefaultVisible: true},
+	})
+
+	Register(ListIDGroupRoles, "Roles", detailTabGroups(), []FieldDef{
+		{Key: "role", Label: "Role", Description: "Role assigned to this group; members inherit it.", Group: "main", DefaultVisible: true},
+		{Key: "type", Label: "Type", Description: "Built-in or custom role.", Group: "main", DefaultVisible: true},
+		{Key: "assigned", Label: "Assigned", Description: "When the role was assigned to the group.", Group: "main", DefaultVisible: true},
+		{Key: "actions", Label: "", Description: "Assignment actions (remove).", Group: "main", DefaultVisible: true},
+	})
+}
+
+// Canonical list IDs for the policy detail tabs (Task 15).
+const (
+	ListIDPolicyModulesForPolicy = "policy-modules-for-policy"
+	ListIDPolicyAssignments      = "policy-assignments"
+)
+
+func init() {
+	Register(ListIDPolicyModulesForPolicy, "Modules", detailTabGroups(), []FieldDef{
+		{Key: "module", Label: "Module", Description: "Policy module that can implement this policy.", Group: "main", DefaultVisible: true},
+		{Key: "origin", Label: "Origin", Description: "bundled, tenant-authored, or imported.", Group: "main", DefaultVisible: true},
+		{Key: "version", Label: "Version", Description: "Latest available module version.", Group: "main", DefaultVisible: true},
+		{Key: "status", Label: "Scope", Description: "machine, user, or both.", Group: "main", DefaultVisible: true},
+		{Key: "target_os", Label: "Target OS", Description: "Operating systems the module supports.", Group: "main", DefaultVisible: true},
+	})
+
+	Register(ListIDPolicyAssignments, "Assignments", detailTabGroups(), []FieldDef{
+		{Key: "config_group", Label: "Configuration Group", Description: "Configuration group binding this policy.", Group: "main", DefaultVisible: true},
+		{Key: "target", Label: "Target", Description: "Entity the group is assigned to.", Group: "main", DefaultVisible: true},
+		{Key: "scope", Label: "Scope", Description: "Configuration group scope.", Group: "main", DefaultVisible: true},
+		{Key: "status", Label: "Status", Description: "Assigned or Disabled.", Group: "main", DefaultVisible: true},
+	})
+}

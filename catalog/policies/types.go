@@ -63,11 +63,17 @@ type Policy struct {
 	// "firewalld/nftables", "dconf lock", "systemd unit".
 	LinuxImpl string
 
-	// Custom marks tenant-authored catalog entries created via the
-	// CustomPolicyWizard (ADR-007). Bundled (in-code) entries are
-	// read-only; custom entries can be edited by the originating tenant.
-	// INV-M10: bundled and custom render in the same catalog list,
-	// distinguished only by a small "Custom" chip.
+	// Custom marks tenant-authored catalog entries. Bundled (in-code)
+	// entries are read-only; custom entries can be edited by the
+	// originating tenant. There is no dedicated custom-policy authoring
+	// UI today (the former Custom Policy Wizard was a pure stub — no
+	// save path ever persisted — and was deleted; see
+	// docs/history/specs/2026-07-12-module-persistence-and-param-injection.md).
+	// The module editor (`/policy/modules/new`, `web/templates/policy_module_editor.templ`)
+	// is the canonical place to author a policy module today; a
+	// tenant-authored Catalog Policy entry would need a future editor of
+	// its own. INV-M10: bundled and custom render in the same catalog
+	// list, distinguished only by a small "Custom" chip.
 	Custom bool
 
 	// TenantID — non-empty only when Custom is true. Scopes the entry to
