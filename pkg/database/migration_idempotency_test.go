@@ -2,7 +2,7 @@ package database
 
 import (
 	"context"
-	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/pluris/pluris/db"
@@ -16,10 +16,7 @@ import (
 // (closing and re-opening the same database file) and confirms an
 // identity created before the "restart" still exists after it.
 func TestReopeningDatabasePreservesIdentities(t *testing.T) {
-	dbPath := "test_reopen_preserves_data.db"
-	defer os.Remove(dbPath)
-	defer os.Remove(dbPath + "-shm")
-	defer os.Remove(dbPath + "-wal")
+	dbPath := filepath.Join(t.TempDir(), "test_reopen_preserves_data.db")
 
 	ctx := context.Background()
 

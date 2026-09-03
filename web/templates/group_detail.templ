@@ -291,7 +291,7 @@ templ groupRulesScript() {
 		p.set('operator', detail.operator || '');
 		(detail.values || []).forEach(function (v) { p.append('values', v); });
 		p.set('script_source', detail.scriptSource || '');
-		p.set('script_expect', detail.scriptExpect || '');
+		p.set('script_ref', detail.scriptRef || '');
 		return p.toString();
 	}
 

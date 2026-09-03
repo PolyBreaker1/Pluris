@@ -18,11 +18,21 @@ func TestConditionBuilderDialogRendersTabsAndOperators(t *testing.T) {
 	if !strings.Contains(html, `id="condition-builder"`) {
 		t.Fatalf("missing dialog root id: %s", html)
 	}
-	if !strings.Contains(html, `data-cb-tab="param"`) || !strings.Contains(html, `data-cb-tab="script"`) {
-		t.Fatalf("missing both tabs: %s", html)
+	if !strings.Contains(html, `data-cb-tab="param"`) || !strings.Contains(html, `data-cb-tab="command"`) || !strings.Contains(html, `data-cb-tab="script"`) {
+		t.Fatalf("missing tabs: %s", html)
 	}
-	if !strings.Contains(html, "Parameter") || !strings.Contains(html, "Custom script") {
+	if !strings.Contains(html, "Pluris condition") || !strings.Contains(html, "Bash command") || !strings.Contains(html, ">Script<") {
 		t.Fatalf("missing tab labels: %s", html)
+	}
+	if !strings.Contains(html, `data-cb-allowed-kinds="param,command,script"`) {
+		t.Fatalf("default dialog should allow all three kinds: %s", html)
+	}
+	restricted := renderToString(t, ConditionBuilderDialogWithKinds("param,command"))
+	if !strings.Contains(restricted, `data-cb-allowed-kinds="param,command"`) {
+		t.Fatalf("restricted dialog should carry its kinds attribute: %s", restricted)
+	}
+	if !strings.Contains(html, `id="cb-script-ref"`) || !strings.Contains(html, `id="cb-command-source"`) {
+		t.Fatalf("missing script picker or command input: %s", html)
 	}
 
 	// data-supported-operators must be exactly dependencygroups.AllOperators(),
@@ -38,10 +48,11 @@ func TestConditionBuilderDialogRendersTabsAndOperators(t *testing.T) {
 		t.Fatalf("supported-operators attribute mismatch.\nwant substring: %s\ngot html: %s", wantAttr, html)
 	}
 
-	// Script tab fields.
+	// Script and command tab fields (standardized subject/operator/value).
 	for _, want := range []string{
 		`id="cb-script-source"`, `data-code-editor="bash"`,
-		`id="cb-script-exit-code"`, `id="cb-script-output-equals"`,
+		`id="cb-script-operator"`, `id="cb-script-value"`,
+		`id="cb-command-operator"`, `id="cb-command-value"`,
 	} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("missing script-tab element %q in html: %s", want, html)

@@ -13,14 +13,15 @@ import (
 )
 
 // 4b. Policy → Configuration Groups (list).
-templ ConfigGroupsPage(rows []ConfigGroupRow) {
-	@Layout("policy-groups", "Configuration Groups") {
+templ ConfigGroupsPage(rows []ConfigGroupRow, deleted bool, deleteCopy string, csrf string) {
+	@Layout("policy-groups", "Configuration Groups", "") {
 		@PageHeader("Configuration Groups",
 			"Bind policies from the Catalog to targets — computers, users, and groups. Open a group to manage its assignments and policy bindings.",
 			"", "")
 		{{ listID := lists.ListIDConfigGroups }}
-		<div data-testid="page-policy-groups">
-			<section class="pm-toolbar card" data-pluris-list={ listID }>
+		<div data-testid="page-policy-groups" data-pluris-list={ listID } data-mass-delete-copy={ deleteCopy } data-mass-purge-copy="This permanently deletes the selected configuration groups and cannot be undone.">
+			<input type="hidden" name="_csrf" value={ csrf }/>
+			<section class="pm-toolbar card">
 				<div class="field field-wide">
 					<label for="cg-search">Search</label>
 					<input
@@ -34,6 +35,13 @@ templ ConfigGroupsPage(rows []ConfigGroupRow) {
 						data-pluris-highlight="1"
 						placeholder="Filter by name, description…"
 					/>
+				</div>
+				<div class="field">
+					<label for="cg-state">State</label>
+					<select id="cg-state" class="select" onchange="window.location.href = this.value">
+						<option value={ configGroupListStateHref(false) } selected?={ !deleted }>Active</option>
+						<option value={ configGroupListStateHref(true) } selected?={ deleted }>Deleted</option>
+					</select>
 				</div>
 				<div class="field">
 					<label for="cg-enabled">Status</label>
@@ -53,6 +61,7 @@ templ ConfigGroupsPage(rows []ConfigGroupRow) {
 					<label>&nbsp;</label>
 					<span data-pluris-count={ listID } data-template="{visible} of {total} groups"></span>
 				</div>
+				if !deleted {
 				<div class="field field-action">
 					<label>&nbsp;</label>
 					<a href="/policy/groups/new" class="btn btn-primary">
@@ -60,12 +69,15 @@ templ ConfigGroupsPage(rows []ConfigGroupRow) {
 						<span>New configuration group</span>
 					</a>
 				</div>
+				}
 			</section>
+			@MassActionToolbar(listID, lists.MassActionsFor(listID))
 			<section class="pm-table-wrap card" data-pluris-list={ listID }>
 				@ConceptEmptyState("policy-groups", listID)
-				<table class="policy-table pluris-list" data-list-id={ listID }>
+				<table class="policy-table pluris-list" data-list-id={ listID } data-pluris-select={ listID }>
 					<thead>
 						<tr>
+							@ListSelectHeaderCell(listID)
 							for _, f := range lists.FieldsFor(listID) {
 								<th title={ f.Description }>{ f.Label }</th>
 							}
@@ -73,7 +85,12 @@ templ ConfigGroupsPage(rows []ConfigGroupRow) {
 					</thead>
 					<tbody>
 						for _, r := range rows {
-							<tr data-cg-row-id={ strconv.FormatInt(r.ID, 10) } data-cg-enabled={ configGroupEnabledAttr(r) } data-cg-searchable={ configGroupSearchBlob(r) }>
+							<tr data-cg-row-id={ strconv.FormatInt(r.ID, 10) } data-select-name={ r.Name } data-cg-enabled={ configGroupEnabledAttr(r) } data-cg-searchable={ configGroupSearchBlob(r) } data-row-href={ templ.SafeURL(configGroupRowHref(r.ID, deleted)) }>
+								if deleted {
+									@ListSelectCell(listID, strconv.FormatInt(r.ID, 10), []string{"restore", "purge"})
+								} else {
+									@ListSelectCell(listID, strconv.FormatInt(r.ID, 10), []string{"delete"})
+								}
 								<td>
 									<div class="cg-name">{ r.Name }</div>
 									if r.Description != "" {
@@ -95,24 +112,9 @@ templ ConfigGroupsPage(rows []ConfigGroupRow) {
 					</tbody>
 				</table>
 			</section>
-			@configGroupsNavigationScript()
+			@MassActionConfirmDialog()
 		</div>
 	}
-}
-
-// configGroupsNavigationScript — row click navigates to the group's
-// detail page. Same pattern as dependencyGroupsNavigationScript.
-templ configGroupsNavigationScript() {
-	@templ.Raw(`<script>
-(function () {
-	document.addEventListener('click', function (e) {
-		if (e.target.closest('a, button, input, select, form')) return;
-		var row = e.target.closest('tr[data-cg-row-id]');
-		if (!row) return;
-		window.location.href = '/policy/groups/' + encodeURIComponent(row.dataset.cgRowId);
-	});
-})();
-</script>`)
 }
 
 // ConfigGroupNewPage — standalone create form (name/description), same
@@ -120,7 +122,7 @@ templ configGroupsNavigationScript() {
 // enabled; everything else (targets, bindings) is added on the detail
 // page after the redirect.
 templ ConfigGroupNewPage(csrf string, errMsg string) {
-	@Layout("policy-groups", "New Configuration Group") {
+	@Layout("policy-groups", "New Configuration Group", "/policy/groups") {
 		@PageHeader("New Configuration Group", "Create a group, then add targets and policy bindings on its detail page.", "", "")
 		<div data-testid="page-policy-group-new">
 			if errMsg != "" {

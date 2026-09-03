@@ -9,7 +9,7 @@
 -- "Direct" label.
 SELECT g.*, gm.created_at AS added_at, gm.source AS source FROM groups g
 INNER JOIN group_memberships gm ON g.id = gm.group_id
-WHERE gm.asset_id = @asset_id
+WHERE gm.asset_id = @asset_id AND g.deleted_at IS NULL
 ORDER BY g.name;
 
 -- name: ListGroupsForIdentityDetail :many
@@ -17,7 +17,7 @@ ORDER BY g.name;
 -- above.
 SELECT g.*, gm.created_at AS added_at, gm.source AS source FROM groups g
 INNER JOIN group_memberships gm ON g.id = gm.group_id
-WHERE gm.identity_id = @identity_id
+WHERE gm.identity_id = @identity_id AND g.deleted_at IS NULL
 ORDER BY g.name;
 
 -- Role rows for the user detail Roles tab (Task 11). Same join as
@@ -38,5 +38,5 @@ SELECT g.name AS group_name, g.scope AS group_scope, g.disabled AS group_disable
 FROM configuration_group_bindings b
 JOIN configuration_groups g ON g.id = b.configuration_group_id
 JOIN configuration_group_assignments a ON a.configuration_group_id = g.id
-WHERE b.policy_urn = @policy_urn AND g.tenant_id = @tenant_id
+WHERE b.policy_urn = @policy_urn AND g.tenant_id = @tenant_id AND g.deleted_at IS NULL
 ORDER BY g.name;

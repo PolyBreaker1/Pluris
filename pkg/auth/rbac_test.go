@@ -41,6 +41,7 @@ func TestCanAccessGrantsMatchesLockedRouteMap(t *testing.T) {
 		{"user", "/scripts", false},
 		{"user", "/policy/modules", false},
 		{"user", "/server-admin", false},
+		{"user", "/server-admin/data", false},
 		{"user", "/tenant-switch", false},
 		{"user", "/policy/pluris", false},
 
@@ -57,6 +58,7 @@ func TestCanAccessGrantsMatchesLockedRouteMap(t *testing.T) {
 		{"technician", "/preferences", true},
 		{"technician", "/profiles", true},
 		{"technician", "/server-admin", false},
+		{"technician", "/server-admin/data", false},
 		{"technician", "/tenant-switch", false},
 
 		// admin: everything except /tenant-switch.
@@ -72,6 +74,7 @@ func TestCanAccessGrantsMatchesLockedRouteMap(t *testing.T) {
 		{"admin", "/preferences", true},
 		{"admin", "/profiles", true},
 		{"admin", "/server-admin", true},
+		{"admin", "/server-admin/data", true},
 		{"admin", "/tenant-switch", false},
 
 		// super_admin: everything (bypass).
@@ -87,6 +90,7 @@ func TestCanAccessGrantsMatchesLockedRouteMap(t *testing.T) {
 		{"super_admin", "/preferences", true},
 		{"super_admin", "/profiles", true},
 		{"super_admin", "/server-admin", true},
+		{"super_admin", "/server-admin/data", true},
 		{"super_admin", "/tenant-switch", true},
 	}
 

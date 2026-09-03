@@ -33,6 +33,8 @@ Every parameter in Pluris is addressable by exactly one path: `<entity>/<section
   - Events: `pluris:list-filtered` / `pluris:list-reordered` fired on `document`, `detail = { listId, … }`.
   - Verified live in `web/templates/dependency_groups.templ` and `web/templates/pluris_policy.templ` (`data-pluris-filter` toolbars), and `web/static/lists.js`.
 - **INV-L8.** One table, one `<thead>` per list. Category grouping is `<tr class="cat-divider" data-divider="1" ...><td colspan="99">` rows interleaved between data rows — never a second `<table>` per group.
+- **INV-L10. One row interaction contract.** Navigable rows declare `data-row-href="<canonical-detail-url>"`; `web/static/lists.js` owns click, Ctrl/Cmd-click, and Enter-key navigation and ignores nested interactive controls. A list never adds its own row-click script or a redundant Open/Edit/View action. Separate controls are reserved for actual secondary actions such as clone, delete, or pick.
+- **INV-L11. Theme-safe row readability.** `lists.js` reapplies visible-row alternation after filter/sort operations. `lists.css` consumes only `--list-row-bg`, `--list-row-alt`, and `--list-row-hover`, defined centrally by `Layout`; pages never hardcode their own table-row palette. Hover must be clearly visible without animation or decorative effects.
 
 ## Detail pages — DetailShell is THE layout
 
@@ -41,6 +43,7 @@ There is exactly one detail-page shell: `templates.DetailShell` (`web/templates/
 - `HeroSpec` — breadcrumb (`Crumbs`), name/ID, status `Chips`, a `Defs` quick-facts list, an optional `Visual` (icon/avatar), an optional single hero `Action`, and an optional `DeleteForm` rendered inside the `⋮` dropdown.
 - `TabSpec` — stable `Slug` (drives `data-tab`/`data-panel` and the URL hash), `Label`, server-rendered `Body`.
 - Tab switching, hash deep-linking, the hero `⋮` dropdown, and the per-section inline-edit toggles are all handled by the **one** shared `web/static/detail.js` (INV-L9 discipline extended to detail pages — no per-page tab scripts).
+- **INV-BK — Subordinate-page Back control.** Every `DetailShell` page replaces the duplicated title in the global app header with one restrained Back link. Its deterministic destination is the nearest linked `HeroSpec.Crumbs` segment. The full breadcrumb remains visible inside the page and is the canonical location/path display. Create/edit/picker workflows pass their canonical parent list explicitly. Top-level/list pages keep their title in the app header and do not show Back.
 - `DetailTableFrame(listID, action)` renders the standardized embedded-table frame inside a tab: registry-driven `<thead>` from `lists.FieldsFor(listID)`, an optional single primary action, rows passed as children.
 - Live examples: computer/server/printer/desk detail (`web/templates/pages.templ`), user detail (`web/templates/users.templ`), group detail (`web/templates/group_detail.templ`), policy detail (`web/templates/policy_detail.templ`), dependency-group detail (`web/templates/dependency_groups.templ`), Pluris Policy role detail (`web/templates/pluris_policy.templ`).
 
@@ -103,7 +106,15 @@ Native `<dialog>` popups are reserved for **pickers and small, single-purpose se
 
 ## INV-CB — Condition builder is the sole rule-authoring UI
 
-`ConditionBuilderDialog` (`web/templates/condition_builder.templ` + `web/static/condition-builder.js`) is the one reusable rule-authoring component in the console. Both Dependency Group conditions AND dynamic Group membership rules (`group_membership_rules`, migration 009) are authored through it and evaluated by the SAME engine (`catalog/dependencygroups.EvalGroup` fed by `pkg/services.FactsForAsset`/`FactsForIdentity`) — there is exactly one condition data model, one operator set, and one eval path, never a fork per feature. See `docs/history/specs/2026-07-12-condition-builder-and-script-conditions.md` and `docs/history/specs/2026-07-12-dynamic-groups.md`.
+`ConditionBuilderDialog` (`web/templates/condition_builder.templ` + `web/static/condition-builder.js`) is the one reusable rule-authoring component in the console. Dependency Group conditions, dynamic Group membership rules (`group_membership_rules`, migration 009), AND Policy Module version tests (`module_version_conditions`, migration 011) are all authored through it and evaluated by the SAME engine (`catalog/dependencygroups.EvalGroup`) — exactly one condition data model, one operator set, one eval path, never a fork per feature. Any fourth consumer reuses the same parity columns. See `docs/history/specs/2026-07-12-condition-builder-and-script-conditions.md`, `docs/history/specs/2026-07-12-dynamic-groups.md`, and `docs/history/specs/2026-07-17-modular-module-system-design.md`.
+
+## INV-TEST — Standardized test shape
+
+Every condition, regardless of kind, is **subject · operator · expected value**: `param` (canonical pluris path), `command` (one-line bash whose stdout is compared), `script` (library reference via `script_ref` or inline source, stdout compared). No kind ever gets a bespoke expectation format again — the pre-011 `script_expect` JSON is the cautionary dead column. Validation is one path (`pkg/services.validateConditionPayload`); operator vocabulary is `catalog/dependencygroups.AllOperators()`.
+
+## INV-PMDL — .pmdl is derived, structured columns are truth
+
+A `.pmdl` module package (renamed tar.gz) is generated at export time from the structured DB columns and parsed back INTO structured columns on import. The manifest (`module.yaml`/`version.yaml`, and the `manifest_yaml` cache column) is never a live source of truth inside the console. Imports always land as drafts with `origin='imported'`; publish is an explicit local decision.
 
 ## Testid conventions
 

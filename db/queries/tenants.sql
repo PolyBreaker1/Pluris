@@ -67,21 +67,31 @@ INSERT INTO groups (tenant_id, site_id, name, slug)
 VALUES (@tenant_id, @site_id, @name, @slug) RETURNING *;
 
 -- name: GetGroup :one
+SELECT * FROM groups WHERE id = @id AND deleted_at IS NULL LIMIT 1;
+
+-- name: GetGroupIncludingDeleted :one
 SELECT * FROM groups WHERE id = @id LIMIT 1;
 
 -- name: GetGroupBySlug :one
 SELECT * FROM groups 
-WHERE tenant_id = @tenant_id AND slug = @slug 
+WHERE tenant_id = @tenant_id AND slug = @slug AND deleted_at IS NULL
 LIMIT 1;
 
 -- name: ListGroupsByTenant :many
 SELECT * FROM groups
 WHERE tenant_id = @tenant_id
+  AND deleted_at IS NULL
+ORDER BY name;
+
+-- name: ListDeletedGroupsByTenant :many
+SELECT * FROM groups
+WHERE tenant_id = @tenant_id AND deleted_at IS NOT NULL
 ORDER BY name;
 
 -- name: ListGroupsBySite :many
 SELECT * FROM groups
 WHERE tenant_id = @tenant_id AND site_id = @site_id
+  AND deleted_at IS NULL
 ORDER BY name;
 
 -- name: UpdateGroup :one
@@ -94,12 +104,28 @@ RETURNING *;
 -- name: DeleteGroup :exec
 DELETE FROM groups WHERE id = @id;
 
+-- name: SoftDeleteGroup :execrows
+UPDATE groups
+SET deleted_at = CURRENT_TIMESTAMP, deleted_by = @deleted_by
+WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL;
+
+-- name: RestoreGroup :execrows
+UPDATE groups
+SET deleted_at = NULL, deleted_by = NULL
+WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NOT NULL;
+
+-- name: ListExpiredGroups :many
+SELECT * FROM groups
+WHERE deleted_at IS NOT NULL AND deleted_at <= @cutoff
+ORDER BY deleted_at, id;
+
 -- name: CountGroupsByTenant :one
-SELECT COUNT(*) FROM groups WHERE tenant_id = @tenant_id;
+SELECT COUNT(*) FROM groups WHERE tenant_id = @tenant_id AND deleted_at IS NULL;
 
 -- name: SearchGroups :many
 SELECT * FROM groups
 WHERE tenant_id = @tenant_id
+  AND deleted_at IS NULL
   AND name LIKE '%' || @search || '%'
 ORDER BY name
 LIMIT @limit;
@@ -130,33 +156,39 @@ WHERE group_id = @group_id AND identity_id = @identity_id;
 SELECT g.* FROM groups g
 INNER JOIN group_memberships gm ON g.id = gm.group_id
 WHERE gm.asset_id = @asset_id
+  AND g.deleted_at IS NULL
 ORDER BY g.name;
 
 -- name: ListGroupsForIdentity :many
 SELECT g.* FROM groups g
 INNER JOIN group_memberships gm ON g.id = gm.group_id
 WHERE gm.identity_id = @identity_id
+  AND g.deleted_at IS NULL
 ORDER BY g.name;
 
 -- name: ListAssetsInGroup :many
 SELECT a.* FROM assets a
 INNER JOIN group_memberships gm ON a.id = gm.asset_id
 WHERE gm.group_id = @group_id
+  AND a.deleted_at IS NULL
 ORDER BY a.human_id;
 
 -- name: ListIdentitiesInGroup :many
 SELECT i.* FROM identities i
 INNER JOIN group_memberships gm ON i.id = gm.identity_id
 WHERE gm.group_id = @group_id
+  AND i.deleted_at IS NULL
 ORDER BY i.display_name;
 
 -- name: CountAssetsInGroup :one
-SELECT COUNT(*) FROM group_memberships
-WHERE group_id = @group_id AND asset_id IS NOT NULL;
+SELECT COUNT(*) FROM group_memberships gm
+JOIN assets a ON a.id = gm.asset_id
+WHERE gm.group_id = @group_id AND a.deleted_at IS NULL;
 
 -- name: CountIdentitiesInGroup :one
-SELECT COUNT(*) FROM group_memberships
-WHERE group_id = @group_id AND identity_id IS NOT NULL;
+SELECT COUNT(*) FROM group_memberships gm
+JOIN identities i ON i.id = gm.identity_id
+WHERE gm.group_id = @group_id AND i.deleted_at IS NULL;
 
 -- name: IsAssetInGroup :one
 SELECT EXISTS(

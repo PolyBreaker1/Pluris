@@ -6,6 +6,7 @@
  *   - cat-divider visibility + "M of N" counts
  *   - empty-state toggling
  *   - search highlighting via <mark class="pf-mark">
+ *   - visible-row striping and one row-navigation contract
  *   - tree-leaf integration (hide leaf when its category is empty;
  *     clear sort when a tree leaf is clicked so anchor scroll lands
  *     on a visible divider)
@@ -24,7 +25,8 @@
  *                </th> …</thead>
  *       <tbody>
  *         <tr class="cat-divider" data-row-index="0">…</tr>     // optional
- *         <tr data-row-id="…" data-searchable="…" data-scope="…"
+ *         <tr data-row-id="…" data-row-href="/items/…"
+ *             data-searchable="…" data-scope="…"
  *             data-row-index="1">
  *           <td data-field="name" data-sort="…">…</td>
  *         </tr>
@@ -58,8 +60,11 @@ function ready(fn) {
 ready(init);
 
 function init() {
+    const initializedLists = new Set();
     document.querySelectorAll('[data-pluris-list]').forEach(host => {
-        if (host.dataset.plurisListInit === '1') return;
+        const listId = host.dataset.plurisList;
+        if (!listId || initializedLists.has(listId)) return;
+        initializedLists.add(listId);
         host.dataset.plurisListInit = '1';
         wire(host);
     });
@@ -81,6 +86,7 @@ function wire(host) {
 
     const filterStorageKey = 'pluris.filter.' + listId;
     const sortStorageKey   = 'pluris.sort.'   + listId;
+    const selection = wireSelection(host, listId, tables);
 
     // ---- Restore filter state -----------------------------------------
     try {
@@ -243,10 +249,42 @@ function wire(host) {
             emptyEl.classList.toggle('pf-show', matching === 0);
         }
 
+        applyRowStripes();
+        selection.update();
+
         document.dispatchEvent(new CustomEvent('pluris:list-filtered', {
             detail: { listId: listId, matching: matching, total: total }
         }));
     }
+
+    // Stripe the rows users can currently see. CSS :nth-child cannot do
+    // this correctly after filtering, sorting, or category dividers.
+    function applyRowStripes() {
+        tables.forEach(tbl => {
+            const tbody = tbl.tBodies[0];
+            if (!tbody) return;
+            let visibleIndex = 0;
+            Array.from(tbody.children).forEach(row => {
+                row.classList.remove('pluris-row-alt');
+                if (row.classList.contains('cat-divider') ||
+                    row.classList.contains('pf-hidden') ||
+                    row.classList.contains('sort-hidden') ||
+                    row.hidden) return;
+                if (visibleIndex % 2 === 1) row.classList.add('pluris-row-alt');
+                visibleIndex++;
+            });
+        });
+    }
+
+    // The modern advanced-filter UI shares pf-hidden with this engine
+    // but owns its own controls. Its standard event keeps row parity in
+    // sync without coupling either filter implementation to CSS details.
+    document.addEventListener('pluris:list-visibility-changed', e => {
+        if (e.detail && e.detail.listId === listId) {
+            applyRowStripes();
+            selection.update();
+        }
+    });
 
     // ---- Wire control listeners ---------------------------------------
     const debounced = debounce(() => { applyFilters(); saveFilters(); }, 80);
@@ -419,7 +457,10 @@ function wire(host) {
     });
 
     // ----------------------------------------------------------------
-    // Detail-dialog row-click engine (INV-L10).
+    // Row navigation (INV-L10). Every navigable list row declares its
+    // destination with data-row-href; no per-page navigation script and
+    // no separate Open/Edit action are needed. Interactive content keeps
+    // its own behavior and never opens the row.
     // Opt-in: the host section contains a <dialog data-pluris-detail="<id>">
     // and each row carries data-detail-id="<recordID>". On row click
     // (anywhere outside an interactive element) we open the dialog and
@@ -427,6 +468,30 @@ function wire(host) {
     // script listens for. Buttons / links / inputs / [data-pluris-no-detail]
     // suppress the click — they keep their own handlers.
     // ----------------------------------------------------------------
+    const interactiveSelector =
+        'button, a, input, select, textarea, label, form, details, summary,' +
+        ' [data-pluris-no-detail], [data-pluris-no-row-open]';
+
+    tables.forEach(tbl => {
+        tbl.querySelectorAll('tbody tr[data-row-href]').forEach(row => {
+            if (!row.hasAttribute('tabindex')) row.tabIndex = 0;
+        });
+        tbl.addEventListener('click', e => {
+            if (e.target.closest(interactiveSelector)) return;
+            const row = e.target.closest('tbody tr[data-row-href]');
+            if (!row || !row.dataset.rowHref) return;
+            if (e.ctrlKey || e.metaKey) window.open(row.dataset.rowHref, '_blank', 'noopener');
+            else window.location.assign(row.dataset.rowHref);
+        });
+        tbl.addEventListener('keydown', e => {
+            if (e.key !== 'Enter' || e.target.closest(interactiveSelector)) return;
+            const row = e.target.closest('tbody tr[data-row-href]');
+            if (!row || !row.dataset.rowHref) return;
+            e.preventDefault();
+            window.location.assign(row.dataset.rowHref);
+        });
+    });
+
     const detailDlg = document.querySelector(
         'dialog[data-pluris-detail="' + cssAttr(listId) + '"]');
     if (detailDlg) {
@@ -465,9 +530,7 @@ function wire(host) {
                 // Suppress when the click landed on something interactive
                 // — buttons, links, form controls, anything explicitly
                 // opted out via [data-pluris-no-detail].
-                if (e.target.closest(
-                    'button, a, input, select, textarea, label,' +
-                    ' [data-pluris-no-detail]')) return;
+                if (e.target.closest(interactiveSelector)) return;
                 const row = e.target.closest('tbody tr[data-detail-id]');
                 if (!row) return;
                 e.preventDefault();
@@ -499,6 +562,233 @@ function wire(host) {
     applySort();
     // Re-apply on bfcache restore.
     window.addEventListener('pageshow', applyFilters);
+}
+
+// ----------------------------------------------------------------------
+// Selection and mass actions
+// ----------------------------------------------------------------------
+function wireSelection(host, listId, tables) {
+    const selectableTables = tables.filter(t => t.dataset.plurisSelect === listId);
+    if (!selectableTables.length) return { update: function () {} };
+
+    const selected = new Set();
+    const rowChecks = selectableTables.flatMap(table =>
+        Array.from(table.querySelectorAll('input[data-pluris-select-row="' + cssAttr(listId) + '"]')));
+    const headerChecks = selectableTables.flatMap(table =>
+        Array.from(table.querySelectorAll('input[data-pluris-select-all="' + cssAttr(listId) + '"]')));
+    const toolbar = document.querySelector('[data-mass-action-toolbar="' + cssAttr(listId) + '"]');
+    const dialog = document.getElementById('mass-action-dialog');
+    let reloadOnClose = false;
+    let pendingRun = null;
+
+    function rowFor(check) { return check.closest('tbody tr'); }
+    function isVisible(check) {
+        const row = rowFor(check);
+        return !!row && !row.hidden &&
+            !row.classList.contains('pf-hidden') && !row.classList.contains('sort-hidden');
+    }
+    function selectedItems() {
+        return rowChecks.filter(c => selected.has(c.dataset.selectId)).map(c => {
+            const row = rowFor(c);
+            return {
+                id: c.dataset.selectId,
+                name: (row && row.dataset.selectName) || c.dataset.selectId,
+                caps: new Set((c.dataset.selectCaps || '').split(',').filter(Boolean)),
+                row: row
+            };
+        });
+    }
+    function reasonFor(item, action) {
+        const key = 'selectReason' + action.charAt(0).toUpperCase() + action.slice(1);
+        return (item.row && item.row.dataset[key]) || 'This action is not available for this item.';
+    }
+    function eligibleFor(action) {
+        const items = selectedItems();
+        return {
+            eligible: items.filter(item => item.caps.has(action)),
+            ineligible: items.filter(item => !item.caps.has(action)).map(item => ({
+                id: item.id, name: item.name, reason: reasonFor(item, action)
+            }))
+        };
+    }
+    function update() {
+        rowChecks.forEach(c => { c.checked = selected.has(c.dataset.selectId); });
+        const visible = rowChecks.filter(isVisible);
+        const visibleSelected = visible.filter(c => selected.has(c.dataset.selectId)).length;
+        headerChecks.forEach(c => {
+            c.checked = visible.length > 0 && visibleSelected === visible.length;
+            c.indeterminate = visibleSelected > 0 && visibleSelected < visible.length;
+            c.disabled = visible.length === 0;
+        });
+        if (!toolbar) return;
+        const items = selectedItems();
+        toolbar.hidden = items.length === 0;
+        const count = toolbar.querySelector('[data-mass-selected-count]');
+        if (count) count.textContent = items.length + ' selected';
+        const hiddenCount = items.filter(item => {
+            const check = rowChecks.find(c => c.dataset.selectId === item.id);
+            return check && !isVisible(check);
+        }).length;
+        const hidden = toolbar.querySelector('[data-mass-hidden-count]');
+        if (hidden) {
+            hidden.hidden = hiddenCount === 0;
+            hidden.textContent = hiddenCount ? '(' + hiddenCount + ' hidden by filter)' : '';
+        }
+        toolbar.querySelectorAll('[data-mass-action]').forEach(btn => {
+            const action = btn.dataset.massAction;
+            const eligible = items.filter(item => item.caps.has(action)).length;
+            const label = btn.dataset.massActionLabel || action;
+            const textEl = btn.querySelector('[data-mass-action-text]');
+            if (textEl) textEl.textContent = label + ' (' + eligible + ' of ' + items.length + ')';
+            btn.disabled = eligible === 0;
+        });
+    }
+
+    rowChecks.forEach(check => check.addEventListener('change', () => {
+        if (check.checked) selected.add(check.dataset.selectId);
+        else selected.delete(check.dataset.selectId);
+        update();
+    }));
+    headerChecks.forEach(check => check.addEventListener('change', () => {
+        rowChecks.filter(isVisible).forEach(rowCheck => {
+            if (check.checked) selected.add(rowCheck.dataset.selectId);
+            else selected.delete(rowCheck.dataset.selectId);
+        });
+        update();
+    }));
+
+    if (!toolbar || !dialog) return { update: update };
+    const title = dialog.querySelector('[data-mass-dialog-title]');
+    const body = dialog.querySelector('[data-mass-dialog-body]');
+    const confirm = dialog.querySelector('[data-mass-dialog-confirm]');
+    const closeButtons = dialog.querySelectorAll('[data-mass-dialog-close]');
+
+    function escapeHTML(value) {
+        const div = document.createElement('div');
+        div.textContent = String(value == null ? '' : value);
+        return div.innerHTML;
+    }
+    function itemList(items, className) {
+        const shown = items.slice(0, 10);
+        let html = '<ul' + (className ? ' class="' + className + '"' : '') + '>';
+        shown.forEach(item => { html += '<li>' + escapeHTML(item.name) + '</li>'; });
+        if (items.length > 10) html += '<li>and ' + (items.length - 10) + ' more</li>';
+        return html + '</ul>';
+    }
+    function ineligibleList(items) {
+        if (!items.length) return '';
+        let html = '<h4>Not eligible</h4><ul class="mass-action-ineligible">';
+        items.forEach(item => {
+            html += '<li>' + escapeHTML(item.name) + ': ' + escapeHTML(item.reason) + '</li>';
+        });
+        return html + '</ul>';
+    }
+    function showDialog() {
+        if (dialog.open) {
+            document.body.classList.add('cg-dialog-locked');
+            return;
+        }
+        if (typeof dialog.showModal === 'function') dialog.showModal();
+        else dialog.setAttribute('open', 'open');
+        document.body.classList.add('cg-dialog-locked');
+    }
+    function closeDialog() {
+        if (typeof dialog.close === 'function') dialog.close();
+        else {
+            dialog.removeAttribute('open');
+            if (reloadOnClose) window.location.reload();
+        }
+        document.body.classList.remove('cg-dialog-locked');
+    }
+    function renderConfirmation(config, split) {
+        const copyKey = 'mass' + config.action.charAt(0).toUpperCase() + config.action.slice(1) + 'Copy';
+        const copy = host.dataset[copyKey] || ('This action will affect ' + split.eligible.length + ' selected item(s).');
+        title.textContent = config.label + ' selected items?';
+        body.innerHTML = '<p>' + escapeHTML(copy) + '</p>' +
+            '<h4>Affected items</h4>' + itemList(split.eligible) + ineligibleList(split.ineligible);
+        confirm.hidden = false;
+        confirm.disabled = false;
+    }
+    async function runAction(config, split) {
+        const requestAction = config.action === 'duplicate' ? 'clone' : config.action;
+        title.textContent = config.label + ' results';
+        body.innerHTML = '<p>Working…</p>' + ineligibleList(split.ineligible);
+        confirm.hidden = true;
+        showDialog();
+        try {
+            const csrfInput = document.querySelector('input[name="_csrf"]');
+            const response = await fetch(config.url, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-Token': csrfInput ? csrfInput.value : ''
+                },
+                body: JSON.stringify({ action: requestAction, ids: split.eligible.map(item => item.id) })
+            });
+            const result = await response.json().catch(() => null);
+            if (!response.ok || !result) {
+                throw new Error(result && result.message ? result.message : 'The request failed (' + response.status + ').');
+            }
+            const byID = new Map(split.eligible.map(item => [item.id, item.name]));
+            const ok = Array.isArray(result.ok) ? result.ok : [];
+            const failed = Array.isArray(result.failed) ? result.failed : [];
+            let html = '';
+            if (ok.length) {
+                html += '<h4>Succeeded</h4><ul class="mass-action-result-ok">';
+                ok.forEach(id => { html += '<li>' + escapeHTML(byID.get(id) || id) + '</li>'; });
+                html += '</ul>';
+            }
+            if (failed.length) {
+                html += '<h4>Failed</h4><ul class="mass-action-result-failed">';
+                failed.forEach(item => {
+                    html += '<li>' + escapeHTML(byID.get(item.id) || item.id) + ': ' + escapeHTML(item.reason || 'Unknown error') + '</li>';
+                });
+                html += '</ul>';
+            }
+            body.innerHTML = html + ineligibleList(split.ineligible);
+            reloadOnClose = ok.length > 0;
+        } catch (error) {
+            body.innerHTML = '<div class="mass-action-error" role="alert">' + escapeHTML(error.message) + '</div>' +
+                ineligibleList(split.ineligible);
+        }
+    }
+
+    toolbar.querySelectorAll('[data-mass-action]').forEach(btn => btn.addEventListener('click', () => {
+        const action = btn.dataset.massAction;
+        const split = eligibleFor(action);
+        if (!split.eligible.length) return;
+        const config = {
+            action: action,
+            label: btn.dataset.massActionLabel || action,
+            url: btn.dataset.massActionUrl,
+            danger: btn.dataset.massActionDanger === 'true'
+        };
+        const needsConfirm = action === 'delete' || action === 'purge' || action === 'revoke' || (action === 'duplicate' && split.eligible.length > 1);
+        confirm.className = config.danger ? 'btn btn-danger' : 'btn btn-primary';
+        confirm.textContent = action === 'delete' || action === 'purge' ? 'Delete selected' : config.label;
+        pendingRun = function () { return runAction(config, split); };
+        if (needsConfirm) {
+            renderConfirmation(config, split);
+            showDialog();
+        } else {
+            pendingRun();
+        }
+    }));
+    confirm.addEventListener('click', () => {
+        if (!pendingRun) return;
+        const run = pendingRun;
+        pendingRun = null;
+        run();
+    });
+    closeButtons.forEach(btn => btn.addEventListener('click', closeDialog));
+    dialog.addEventListener('cancel', event => { event.preventDefault(); closeDialog(); });
+    dialog.addEventListener('close', () => {
+        document.body.classList.remove('cg-dialog-locked');
+        if (reloadOnClose) window.location.reload();
+    });
+
+    return { update: update };
 }
 
 // ----------------------------------------------------------------------

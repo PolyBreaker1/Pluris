@@ -371,7 +371,8 @@ func TestConfigGroupFieldUpdate(t *testing.T) {
 	mustHTTPStatus(t, h.ConfigGroupFieldUpdate(cBad), http.StatusBadRequest)
 }
 
-// TestPolicyGroupDelete: delete cascades and redirects to the list.
+// TestPolicyGroupDelete: delete hides the group, preserves its children
+// until the purge boundary, and redirects to the active list.
 func TestPolicyGroupDelete(t *testing.T) {
 	h, tenantID := setupPlurisTestDB(t, "cg_delete_test.db", "cg-delete-tenant")
 	ctx := context.Background()
@@ -402,13 +403,13 @@ func TestPolicyGroupDelete(t *testing.T) {
 	if _, err := h.configGroupSvc.Get(ctx, tenantID, g.ID); err == nil {
 		t.Fatal("group still exists after delete")
 	}
-	// Cascade check: no assignment rows survive the group delete.
+	// References survive soft deletion and are removed only at purge.
 	n, err := h.db.Queries.CountAssignmentsByGroup(ctx, g.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n != 0 {
-		t.Fatalf("assignments not cascaded on delete: %d rows", n)
+	if n != 1 {
+		t.Fatalf("assignment count after soft delete = %d, want 1", n)
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -306,9 +307,9 @@ func TestPolicyModuleClone_BundledToTenant(t *testing.T) {
 	}
 }
 
-// TestPolicyModuleDelete_BlockedWhenReferenced covers the delete-blocked
-// path surfacing via redirect + warn rather than a raw 500.
-func TestPolicyModuleDelete_BlockedWhenReferenced(t *testing.T) {
+// TestPolicyModuleDelete_ReferencedSoftDeletes locks the rule that reference
+// guards apply only at the permanent-delete boundary.
+func TestPolicyModuleDelete_ReferencedSoftDeletes(t *testing.T) {
 	h, d, tenantID := newModuleEditorTestDB(t)
 	ownerID := newEditorIdentity(t, h.db, tenantID, "owner")
 	sess := adminEditorSession(tenantID, ownerID)
@@ -317,9 +318,7 @@ func TestPolicyModuleDelete_BlockedWhenReferenced(t *testing.T) {
 	if _, err := h.moduleSvc.CreateModule(ctx, &tenantID, &ownerID, "tenant.acme.ref", "Ref", ""); err != nil {
 		t.Fatal(err)
 	}
-	// Reference it via a dependency-group link -- the cheapest way to
-	// trigger DeleteModule's ErrModuleReferenced (CountLinksForModule),
-	// same mechanism Task 7's dependency-group linking uses.
+	// Reference it via a dependency-group link.
 	group, err := h.depGroupSvc.Create(ctx, tenantID, "Blocking Group", "")
 	if err != nil {
 		t.Fatal(err)
@@ -327,8 +326,6 @@ func TestPolicyModuleDelete_BlockedWhenReferenced(t *testing.T) {
 	if err := h.depGroupSvc.LinkModule(ctx, tenantID, "tenant.acme.ref", group.ID, "requirement"); err != nil {
 		t.Fatal(err)
 	}
-	_ = d
-
 	req := formRequest(http.MethodPost, "/policy/modules/tenant.acme.ref/delete", url.Values{}, sess)
 	c, rec := newEchoCtx(req)
 	withParams(c, []string{"id"}, []string{"tenant.acme.ref"})
@@ -338,11 +335,15 @@ func TestPolicyModuleDelete_BlockedWhenReferenced(t *testing.T) {
 	if rec.Code != http.StatusFound {
 		t.Fatalf("status = %d, want 302", rec.Code)
 	}
-	if !strings.Contains(rec.Header().Get("Location"), "warn=") {
-		t.Errorf("redirect missing warn: %s", rec.Header().Get("Location"))
+	if rec.Header().Get("Location") != "/policy/modules" {
+		t.Errorf("redirect = %s, want module list", rec.Header().Get("Location"))
 	}
-	if _, err := h.moduleSvc.GetModuleRow(ctx, "tenant.acme.ref"); err != nil {
-		t.Fatalf("module should still exist after blocked delete: %v", err)
+	if _, err := h.moduleSvc.GetModuleRow(ctx, "tenant.acme.ref"); !errors.Is(err, services.ErrModuleNotFound) {
+		t.Fatalf("default module read = %v, want hidden", err)
+	}
+	row, err := d.Queries.GetPolicyModuleByURNIncludingDeleted(ctx, "tenant.acme.ref")
+	if err != nil || row.DeletedAt == nil {
+		t.Fatalf("referenced module was not soft deleted: %+v, %v", row, err)
 	}
 }
 

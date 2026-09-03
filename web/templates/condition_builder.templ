@@ -46,18 +46,33 @@ import (
 //     offer an operator the eval engine doesn't implement.
 //   - Save: dispatches `condition:save` (CustomEvent) on `document` with
 //     `detail = {kind, paramPath, operator, values, scriptSource,
-//     scriptExpect}`. `values` is always a string array (single-operand
+//     scriptRef}`. `values` is always a string array (single-operand
 //     operators serialize to a 1-element array; "exists" serializes to
 //     an empty array). The embedding page owns persistence (e.g. POST to
 //     its condition-add endpoint) — this dialog never calls a save API
 //     itself.
 //   - Cancel / × / Esc: closes the dialog. No event is dispatched.
-//   - Save is disabled until the current tab's inputs are valid: "param"
-//     kind requires a selected param + operator (+ a value when the
-//     operator's `needsValue` is true); "script" kind requires a
-//     non-empty script source.
+//   - Every kind follows the standardized test shape (INV-TEST):
+//     subject → operator → expected value. Save is disabled until the
+//     current tab's inputs are valid: "param" requires a selected param
+//     + operator (+ a value when the operator's `needsValue` is true);
+//     "command" requires a non-empty command line + operator (+ value);
+//     "script" requires a library script pick OR non-empty inline
+//     source, + operator (+ value).
+//   - `data-cb-allowed-kinds` (comma-joined) restricts which tabs a
+//     mounting page offers; the default dialog allows all three.
 templ ConditionBuilderDialog() {
-	<dialog id="condition-builder" class="cb-dialog" data-supported-operators={ joinOperators(dependencygroups.AllOperators()) }>
+	@conditionBuilderDialogKinds("param,command,script")
+}
+
+// ConditionBuilderDialogWithKinds mounts the same dialog restricted to a
+// subset of kinds (comma-joined, e.g. "param,command").
+templ ConditionBuilderDialogWithKinds(kinds string) {
+	@conditionBuilderDialogKinds(kinds)
+}
+
+templ conditionBuilderDialogKinds(kinds string) {
+	<dialog id="condition-builder" class="cb-dialog" data-supported-operators={ joinOperators(dependencygroups.AllOperators()) } data-cb-allowed-kinds={ kinds }>
 		<div class="cb-dialog-inner">
 			<header class="cb-dialog-head">
 				<div>
@@ -69,11 +84,15 @@ templ ConditionBuilderDialog() {
 			<div class="cb-tabs" role="tablist" aria-label="Condition kind">
 				<button type="button" class="cb-tab is-active" data-cb-tab="param" role="tab" aria-selected="true">
 					@iconSVG("search")
-					<span>Parameter</span>
+					<span>Pluris condition</span>
+				</button>
+				<button type="button" class="cb-tab" data-cb-tab="command" role="tab" aria-selected="false">
+					@iconSVG("scripts")
+					<span>Bash command</span>
 				</button>
 				<button type="button" class="cb-tab" data-cb-tab="script" role="tab" aria-selected="false">
 					@iconSVG("scripts")
-					<span>Custom script</span>
+					<span>Script</span>
 				</button>
 			</div>
 			<div class="cb-dialog-body">
@@ -106,25 +125,58 @@ templ ConditionBuilderDialog() {
 						</div>
 					</div>
 				</div>
-				<div class="cb-panel" data-cb-panel="script" hidden>
+				<div class="cb-panel" data-cb-panel="command" hidden>
 					<p class="cg-hint">
-						The script runs sandboxed on the endpoint via the Pluris agent. The condition
-						passes when the script's exit code matches (and, if set, its stdout equals the
-						given text exactly). Until an agent has reported a result, this condition's
-						status shows as "unknown" — it never blocks module rollout on its own.
+						The command runs sandboxed on the endpoint via the Pluris agent. Its stdout is
+						compared using the operator and expected value below; a non-zero exit fails the
+						test. Until an agent has reported a result, this test's status shows as
+						"unknown" — it never blocks module rollout on its own.
 					</p>
 					<div class="cb-field">
-						<label for="cb-script-source">Script source (bash)</label>
+						<label for="cb-command-source">Command</label>
+						<input type="text" id="cb-command-source" class="input font-mono" placeholder="uname -r" autocomplete="off"/>
+					</div>
+					<div class="cb-script-expect-grid">
+						<div class="cb-field">
+							<label for="cb-command-operator">Operator</label>
+							<select id="cb-command-operator" class="input">
+								@cbStdoutOperatorOptions()
+							</select>
+						</div>
+						<div class="cb-field cb-field-wide">
+							<label for="cb-command-value">Expected value</label>
+							<input type="text" id="cb-command-value" class="input" placeholder="Expected stdout"/>
+						</div>
+					</div>
+				</div>
+				<div class="cb-panel" data-cb-panel="script" hidden>
+					<p class="cg-hint">
+						The script runs sandboxed on the endpoint via the Pluris agent. Its stdout is
+						compared using the operator and expected value below; a non-zero exit fails the
+						test. Pick a script from the library, or paste inline source. Until an agent
+						has reported a result, this test's status shows as "unknown".
+					</p>
+					<div class="cb-field">
+						<label for="cb-script-ref">Library script</label>
+						<select id="cb-script-ref" class="input">
+							<option value="">— inline source below —</option>
+						</select>
+						<div class="cg-hint" id="cb-script-ref-empty" hidden>No library scripts yet — paste inline source instead.</div>
+					</div>
+					<div class="cb-field">
+						<label for="cb-script-source">Inline source (bash)</label>
 						<textarea id="cb-script-source" class="input cb-script-source" data-code-editor="bash" rows="8" placeholder="#!/bin/sh&#10;..."></textarea>
 					</div>
 					<div class="cb-script-expect-grid">
 						<div class="cb-field">
-							<label for="cb-script-exit-code">Expected exit code</label>
-							<input type="number" id="cb-script-exit-code" class="input" value="0" step="1"/>
+							<label for="cb-script-operator">Operator</label>
+							<select id="cb-script-operator" class="input">
+								@cbStdoutOperatorOptions()
+							</select>
 						</div>
 						<div class="cb-field cb-field-wide">
-							<label for="cb-script-output-equals">Expected stdout equals (optional)</label>
-							<input type="text" id="cb-script-output-equals" class="input" placeholder="Leave blank to ignore stdout"/>
+							<label for="cb-script-value">Expected value</label>
+							<input type="text" id="cb-script-value" class="input" placeholder="Expected stdout"/>
 						</div>
 					</div>
 				</div>
@@ -171,4 +223,14 @@ func joinOperators(ops []dependencygroups.Operator) string {
 		out = append(out, string(o))
 	}
 	return strings.Join(out, ",")
+}
+
+// cbStdoutOperatorOptions renders the operator <select> options for the
+// command/script tabs from dependencygroups.AllOperators() — the same
+// single source of truth the param tab intersects against, never a
+// hardcoded list.
+templ cbStdoutOperatorOptions() {
+	for _, op := range dependencygroups.AllOperators() {
+		<option value={ string(op) }>{ op.Label() }</option>
+	}
 }

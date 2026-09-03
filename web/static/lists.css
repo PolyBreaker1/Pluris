@@ -4,8 +4,29 @@
  * Per-list overrides (scope stripes, divider gradients, dialog styling)
  * stay in their own templates and layer on top of these base rules.
  *
- * See docs/UX_INVARIANTS.md INV-L9.
+ * See docs/endpoint-management/ui/invariants.md INV-L9/INV-L10.
  */
+
+/* ---- Data-row surface ---------------------------------------------
+ * Alternation, hover and focus are semantic list tokens declared by
+ * Layout. A future theme overrides the tokens once; lists never carry
+ * page-specific row colors. lists.js reapplies .pluris-row-alt after
+ * filtering and sorting so the visible rows always alternate cleanly. */
+table.pluris-list tbody tr:not(.cat-divider) > td {
+    background-color: var(--list-row-bg, #ffffff);
+    transition: background-color 0.12s ease;
+}
+table.pluris-list tbody tr.pluris-row-alt:not(.cat-divider) > td {
+    background-color: var(--list-row-alt, #f4f6f9);
+}
+table.pluris-list tbody tr:not(.cat-divider):hover > td {
+    background-color: var(--list-row-hover, #cbd5e1);
+}
+table.pluris-list tbody tr[data-row-href] { cursor: pointer; }
+table.pluris-list tbody tr[data-row-href]:focus-visible {
+    outline: 2px solid var(--accent, #0099c2);
+    outline-offset: -2px;
+}
 
 /* Hidden by filter (rows + dividers + tree leaves) */
 tr.pf-hidden,
@@ -104,6 +125,45 @@ th.th-sortable.is-sorted-desc .th-sort-btn { color: var(--text); font-weight: 60
     font-size: 13px;
 }
 .concept-empty-cta { margin-top: 8px; }
+
+/* ---- Shared list selection and mass actions ------------------------ */
+.list-select-cell {
+    width: 42px;
+    padding-left: 12px !important;
+    padding-right: 8px !important;
+    text-align: center;
+}
+.list-select-label { display: inline-flex; align-items: center; cursor: pointer; }
+.list-select-label input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
+.mass-action-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin: 0 0 12px;
+    padding: 10px 14px;
+    border-color: var(--accent-border);
+    background: var(--accent-bg);
+}
+.mass-action-toolbar[hidden] { display: none; }
+.mass-action-summary { display: flex; align-items: baseline; gap: 8px; font-size: 13px; }
+.mass-action-summary [data-mass-hidden-count] { color: var(--text-secondary); font-size: 12px; }
+.mass-action-buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+.mass-action-dialog { width: min(620px, 92vw); }
+.mass-action-dialog .cg-dialog-form { max-height: 82vh; }
+.mass-action-dialog h4 { margin: 14px 0 6px; font-size: 12px; }
+.mass-action-dialog ul { margin: 0; padding-left: 20px; }
+.mass-action-dialog li { margin: 4px 0; font-size: 13px; }
+.mass-action-ineligible { color: var(--text-secondary); }
+.mass-action-result-ok { color: #166534; }
+.mass-action-result-failed { color: var(--err); }
+.mass-action-error {
+    padding: 9px 10px;
+    color: #991b1b;
+    background: #fee2e2;
+    border: 1px solid #fecaca;
+    border-radius: 6px;
+}
 
 /* =====================================================================
    Glossary term (INV-O1) — every Linux / Pluris-specific token in user
@@ -306,26 +366,10 @@ th.th-sortable.is-sorted-desc .th-sort-btn { color: var(--text); font-weight: 60
     border-top: 1px solid var(--border, #e2e8f0);
 }
 
-/* Row-click clickable list (INV-L10) — any table the engine wires to a
- * detail dialog gains the .pluris-list-clickable class. The cursor +
- * hover affordance lives here so per-list CSS never duplicates it.
- * Also applies to lists that navigate to a detail page (assets). */
+/* Row-click detail-dialog compatibility (INV-L10). New navigable lists
+ * use data-row-href and the generic rule above. */
 table.pluris-list-clickable tbody tr[data-detail-id] { cursor: pointer; }
-table.pluris-list-clickable tbody tr[data-detail-id]:hover {
-    background: var(--surface-hover, rgba(0, 212, 255, 0.06));
-}
 table.pluris-list-clickable tbody tr[data-detail-id]:focus-visible {
-    outline: 2px solid var(--accent, #00d4ff);
-    outline-offset: -2px;
-}
-/* Asset list rows navigate to a detail page instead of opening a dialog.
- * The .pluris-list-clickable class isn't added by lists.js here (no dialog),
- * so we target the assets list directly. */
-table.pluris-list[data-list-id="assets"] tbody tr[data-detail-id] { cursor: pointer; }
-table.pluris-list[data-list-id="assets"] tbody tr[data-detail-id]:hover {
-    background: var(--surface-hover, rgba(0, 212, 255, 0.06));
-}
-table.pluris-list[data-list-id="assets"] tbody tr[data-detail-id]:focus-visible {
     outline: 2px solid var(--accent, #00d4ff);
     outline-offset: -2px;
 }

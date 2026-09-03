@@ -16,7 +16,7 @@ import (
 // the detail page's inline editor. The old UserFormPage remains the only
 // editor for /users/:id/edit.
 templ UserCreatePage(prefill identities.Identity, errorMsg string, csrf string) {
-	@Layout("users", "New user") {
+	@Layout("users", "New user", "/users") {
 		@PageHeader("New user", "Fill in the account details. Fields marked * are required.", "", "")
 		<div data-testid="page-user-create">
 			<form method="post" action="/users/new">

@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -429,10 +431,7 @@ func TestGroupMutationsCrossTenant404(t *testing.T) {
 	mustHTTPStatus(t, h.GroupDelete(c), http.StatusNotFound)
 }
 
-// (9) Delete guard: a group still targeted by a Configuration Group
-// assignment (polymorphic target_type='group' reference, no FK) is
-// protected with 409; an unreferenced group deletes and cascades its
-// membership rows.
+// (9) Reference integrity applies at permanent deletion, not soft deletion.
 func TestGroupDeleteReferencedGuard(t *testing.T) {
 	h, tenantID := setupPlurisTestDB(t, "groups_delete_test.db", "groups-delete-tenant")
 	ctx := context.Background()
@@ -450,9 +449,17 @@ func TestGroupDeleteReferencedGuard(t *testing.T) {
 
 	c, _ := groupPageCtx(e, newFormReq(http.MethodPost, "/groups/"+gid+"/delete", url.Values{}),
 		adminSession(tenantID), [][2]string{{"id", gid}})
-	mustHTTPStatus(t, h.GroupDelete(c), http.StatusConflict)
+	if err := h.GroupDelete(c); err != nil {
+		t.Fatalf("soft delete referenced group: %v", err)
+	}
+	if _, err := h.groupSvc.Get(ctx, g.ID); err == nil {
+		t.Fatal("soft-deleted group remains visible")
+	}
+	if err := h.groupSvc.PermanentlyDelete(ctx, tenantID, g.ID); !errors.Is(err, services.ErrGroupReferenced) {
+		t.Fatalf("permanent delete = %v, want ErrGroupReferenced", err)
+	}
 
-	// Remove the assignment; delete now succeeds.
+	// Remove the assignment; permanent deletion now succeeds.
 	assignments, err := h.configGroupSvc.ListAssignments(ctx, tenantID, cg.ID)
 	if err != nil || len(assignments) != 1 {
 		t.Fatalf("list assignments: %v (%d)", err, len(assignments))
@@ -460,16 +467,11 @@ func TestGroupDeleteReferencedGuard(t *testing.T) {
 	if err := h.configGroupSvc.RemoveAssignment(ctx, tenantID, cg.ID, assignments[0].ID); err != nil {
 		t.Fatalf("remove assignment: %v", err)
 	}
-	c2, rec2 := groupPageCtx(e, newFormReq(http.MethodPost, "/groups/"+gid+"/delete", url.Values{}),
-		adminSession(tenantID), [][2]string{{"id", gid}})
-	if err := h.GroupDelete(c2); err != nil {
-		t.Fatalf("GroupDelete: %v", err)
+	if err := h.groupSvc.PermanentlyDelete(ctx, tenantID, g.ID); err != nil {
+		t.Fatalf("permanent delete after removing reference: %v", err)
 	}
-	if rec2.Code != http.StatusFound {
-		t.Fatalf("status = %d, want 302", rec2.Code)
-	}
-	if _, err := h.groupSvc.Get(ctx, g.ID); err == nil {
-		t.Error("group should be gone after delete")
+	if _, err := h.db.Queries.GetGroupIncludingDeleted(ctx, g.ID); !errors.Is(err, sql.ErrNoRows) {
+		t.Errorf("group remains after permanent delete: %v", err)
 	}
 }
 

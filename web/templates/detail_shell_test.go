@@ -37,6 +37,8 @@ func TestDetailShellRendersTabsAndPanels(t *testing.T) {
 		`data-tab="general"`, `data-tab="groups"`,
 		`data-panel="general"`, `data-panel="groups"`,
 		"asset-detail-hero", "dev-1", "comp.acme.hq.0001",
+		`class="app-header-back"`, `href="/assets/computers"`,
+		`class="asset-detail-crumb"`,
 		"asset-detail-tab is-active", // first tab active
 		`data-testid="page-test"`,    // spread attrs land on the wrapper
 	} {
@@ -50,6 +52,20 @@ func TestDetailShellRendersTabsAndPanels(t *testing.T) {
 	}
 	if got := strings.Count(html, "detail-tab-panel is-active"); got != 1 {
 		t.Fatalf("expected exactly 1 active panel, got %d", got)
+	}
+}
+
+func TestDetailBackHrefUsesNearestLinkedCrumb(t *testing.T) {
+	crumbs := []Crumb{
+		{Label: "Policy", Href: "/policy/catalog"},
+		{Label: "Catalog", Href: "/policy/catalog?scope=user"},
+		{Label: "Change the system time"},
+	}
+	if got := detailBackHref(crumbs); got != "/policy/catalog?scope=user" {
+		t.Fatalf("detailBackHref() = %q, want nearest linked crumb", got)
+	}
+	if got := detailBackHref([]Crumb{{Label: "Only"}}); got != "" {
+		t.Fatalf("detailBackHref() without links = %q, want empty", got)
 	}
 }
 

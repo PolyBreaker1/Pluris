@@ -1,0 +1,75 @@
+package templates
+
+import (
+	"strings"
+
+	"github.com/pluris/pluris/web/lists"
+)
+
+templ ListSelectHeaderCell(listID string) {
+	<th class="list-select-cell list-select-header">
+		<label class="list-select-label">
+			<input type="checkbox" data-pluris-select-all={ listID } aria-label="Select all visible items"/>
+			<span class="sr-only">Select all visible items</span>
+		</label>
+	</th>
+}
+
+templ ListSelectCell(listID, itemID string, caps []string) {
+	<td class="list-select-cell" data-pluris-no-row-open>
+		<label class="list-select-label">
+			<input
+				type="checkbox"
+				data-pluris-select-row={ listID }
+				data-select-id={ itemID }
+				data-select-caps={ strings.Join(caps, ",") }
+				aria-label={ "Select " + itemID }
+			/>
+			<span class="sr-only">Select { itemID }</span>
+		</label>
+	</td>
+}
+
+templ MassActionToolbar(listID string, actions []lists.MassAction) {
+	<div class="mass-action-toolbar card" data-mass-action-toolbar={ listID } hidden>
+		<div class="mass-action-summary">
+			<strong data-mass-selected-count>0 selected</strong>
+			<span data-mass-hidden-count hidden></span>
+		</div>
+		<div class="mass-action-buttons">
+			for _, action := range actions {
+				<button
+					type="button"
+					class={ "btn btn-secondary", templ.KV("btn-danger", action.Danger) }
+					data-mass-action={ action.Key }
+					data-mass-action-label={ action.Label }
+					data-mass-action-url={ action.URL }
+					data-mass-action-danger={ action.Danger }
+				>
+					@iconSVG(action.Icon)
+					<span data-mass-action-text>{ action.Label } (0 of 0)</span>
+				</button>
+			}
+		</div>
+	</div>
+}
+
+templ MassActionConfirmDialog() {
+	<dialog id="mass-action-dialog" class="mass-action-dialog cg-dialog" aria-labelledby="mass-action-title">
+		<div class="cg-dialog-form">
+			<header class="cg-dialog-head">
+				<div>
+					<div class="crumb">Mass action</div>
+					<h3 id="mass-action-title" data-mass-dialog-title>Confirm action</h3>
+				</div>
+				<button type="button" class="cg-dialog-close" data-mass-dialog-close aria-label="Close">×</button>
+			</header>
+			<div class="cg-dialog-body" data-mass-dialog-body></div>
+			<footer class="cg-dialog-foot">
+				<button type="button" class="btn btn-secondary" data-mass-dialog-close>Cancel</button>
+				<div class="cg-foot-spacer"></div>
+				<button type="button" class="btn btn-primary" data-mass-dialog-confirm>Confirm</button>
+			</footer>
+		</div>
+	</dialog>
+}

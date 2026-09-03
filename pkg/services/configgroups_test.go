@@ -140,7 +140,7 @@ func TestConfigGroupCRUDAndTenantIsolation(t *testing.T) {
 		t.Fatalf("ListByTenant: %v %+v", err, list)
 	}
 
-	if err := svc.Delete(ctx, ten1, g.ID); err != nil {
+	if err := svc.Delete(ctx, ten1, g.ID, 0); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
 	if _, err := svc.Get(ctx, ten1, g.ID); !errors.Is(err, services.ErrConfigGroupNotFound) {

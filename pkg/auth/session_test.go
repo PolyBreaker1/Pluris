@@ -2,7 +2,7 @@ package auth
 
 import (
 	"context"
-	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -12,12 +12,7 @@ import (
 
 func setupAuthTestDB(t *testing.T) (*database.Database, db.Identity) {
 	t.Helper()
-	dbPath := "test_auth_session.db"
-	t.Cleanup(func() {
-		os.Remove(dbPath)
-		os.Remove(dbPath + "-shm")
-		os.Remove(dbPath + "-wal")
-	})
+	dbPath := filepath.Join(t.TempDir(), "test_auth_session.db")
 	database, err := database.Open(dbPath)
 	if err != nil {
 		t.Fatalf("failed to open database: %v", err)

@@ -64,6 +64,12 @@ func TestPolicyModulesRendersSeededModules(t *testing.T) {
 	if !strings.Contains(body, "pluris.sshd.password-auth-disable") {
 		t.Errorf("response missing seeded module URN")
 	}
+	if !strings.Contains(body, `data-row-href="/policy/modules/pluris.sshd.password-auth-disable"`) {
+		t.Errorf("module row must use the shared row-navigation contract")
+	}
+	if strings.Contains(body, ">View</a>") || strings.Contains(body, ">Edit</span>") {
+		t.Errorf("module list must not render a redundant Open/Edit/View action")
+	}
 
 	// Confirm the module actually landed in the DB (not just something
 	// the handler happened to render): SeedBundled is idempotent, so a

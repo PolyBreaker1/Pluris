@@ -59,7 +59,7 @@ func TestCreateLinkAndDeleteGuard(t *testing.T) {
 	}
 	// Builtin delete is refused.
 	gs, _ := svc.ListByTenant(ctx, ten)
-	if err := svc.Delete(ctx, gs[0].ID); !errors.Is(err, services.ErrBuiltinProtected) {
+	if err := svc.Delete(ctx, ten, gs[0].ID, 0); !errors.Is(err, services.ErrBuiltinProtected) {
 		t.Fatalf("want ErrBuiltinProtected, got %v", err)
 	}
 	// Custom group create + condition + link.
@@ -78,7 +78,7 @@ func TestCreateLinkAndDeleteGuard(t *testing.T) {
 		t.Fatalf("links=%v err=%v", links, err)
 	}
 	// Custom group deletes fine.
-	if err := svc.Delete(ctx, g.ID); err != nil {
+	if err := svc.Delete(ctx, ten, g.ID, 0); err != nil {
 		t.Fatal(err)
 	}
 }

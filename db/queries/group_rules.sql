@@ -21,8 +21,8 @@ WHERE id = @id;
 -- ============================================================================
 
 -- name: CreateGroupMembershipRule :one
-INSERT INTO group_membership_rules (group_id, kind, param_path, operator, value_json, script_source, script_expect, seq)
-VALUES (@group_id, @kind, @param_path, @operator, @value_json, @script_source, @script_expect, @seq)
+INSERT INTO group_membership_rules (group_id, kind, param_path, operator, value_json, script_source, script_ref, script_expect, seq)
+VALUES (@group_id, @kind, @param_path, @operator, @value_json, @script_source, @script_ref, @script_expect, @seq)
 RETURNING *;
 
 -- name: ListRulesForGroup :many

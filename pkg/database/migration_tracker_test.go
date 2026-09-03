@@ -1,17 +1,14 @@
 package database
 
 import (
-	"os"
+	"path/filepath"
 	"testing"
 )
 
 // TestMigrationsRecordedAndRunOnce: after Open, schema_migrations has one
 // row per migration file; reopening does not error and does not add rows.
 func TestMigrationsRecordedAndRunOnce(t *testing.T) {
-	dbPath := "test_migration_tracker.db"
-	defer os.Remove(dbPath)
-	defer os.Remove(dbPath + "-shm")
-	defer os.Remove(dbPath + "-wal")
+	dbPath := filepath.Join(t.TempDir(), "test_migration_tracker.db")
 
 	d1, err := Open(dbPath)
 	if err != nil {

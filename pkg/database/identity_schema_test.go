@@ -1,15 +1,12 @@
 package database
 
 import (
-	"os"
+	"path/filepath"
 	"testing"
 )
 
 func TestIdentitySchemaHasRichColumns(t *testing.T) {
-	dbPath := "test_identity_schema.db"
-	defer os.Remove(dbPath)
-	defer os.Remove(dbPath + "-shm")
-	defer os.Remove(dbPath + "-wal")
+	dbPath := filepath.Join(t.TempDir(), "test_identity_schema.db")
 
 	database, err := Open(dbPath)
 	if err != nil {

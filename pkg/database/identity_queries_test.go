@@ -3,7 +3,7 @@ package database
 import (
 	"context"
 	"database/sql"
-	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -11,10 +11,7 @@ import (
 )
 
 func TestIdentityQueriesCRUD(t *testing.T) {
-	dbPath := "test_identity_queries.db"
-	defer os.Remove(dbPath)
-	defer os.Remove(dbPath + "-shm")
-	defer os.Remove(dbPath + "-wal")
+	dbPath := filepath.Join(t.TempDir(), "test_identity_queries.db")
 
 	database, err := Open(dbPath)
 	if err != nil {

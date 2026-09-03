@@ -295,12 +295,12 @@ func TestDependencyGroupConditionAddScriptViaForm(t *testing.T) {
 		return rec, h.DependencyGroupConditionAdd(c)
 	}
 
-	src := "#!/bin/sh\ntest -f /etc/foo.conf"
-	expect := `{"exit_code":0,"output_equals":"ok"}`
+	src := "#!/bin/sh\ncat /etc/foo.conf"
 	rec, err := post(url.Values{
 		"kind":          {"script"},
 		"script_source": {src},
-		"script_expect": {expect},
+		"operator":      {"contains"},
+		"values":        {"ok"},
 	})
 	if err != nil {
 		t.Fatalf("script condition add failed: %v", err)
@@ -309,20 +309,36 @@ func TestDependencyGroupConditionAddScriptViaForm(t *testing.T) {
 		t.Fatalf("script condition add status = %d, want 302", rec.Code)
 	}
 
+	crec, err := post(url.Values{
+		"kind":          {"command"},
+		"script_source": {"uname -r"},
+		"operator":      {"contains"},
+		"values":        {"3"},
+	})
+	if err != nil {
+		t.Fatalf("command condition add failed: %v", err)
+	}
+	if crec.Code != http.StatusFound {
+		t.Fatalf("command condition add status = %d, want 302", crec.Code)
+	}
+
 	g, err := h.depGroupSvc.Get(ctx, group.ID)
 	if err != nil {
 		t.Fatalf("get group: %v", err)
 	}
-	if len(g.Conditions) != 1 {
-		t.Fatalf("want 1 condition, got %d", len(g.Conditions))
+	if len(g.Conditions) != 2 {
+		t.Fatalf("want 2 conditions, got %d", len(g.Conditions))
 	}
 	cond := g.Conditions[0]
-	if string(cond.Kind) != "script" || cond.ScriptSource != src || cond.ScriptExpect != expect {
+	if string(cond.Kind) != "script" || cond.ScriptSource != src || string(cond.Operator) != "contains" || len(cond.Values) != 1 || cond.Values[0] != "ok" {
 		t.Fatalf("script condition round-trip mismatch: %+v", cond)
+	}
+	if string(g.Conditions[1].Kind) != "command" || g.Conditions[1].ScriptSource != "uname -r" {
+		t.Fatalf("command condition round-trip mismatch: %+v", g.Conditions[1])
 	}
 
 	// Empty script source must 400.
-	if _, err := post(url.Values{"kind": {"script"}, "script_source": {""}}); err == nil {
+	if _, err := post(url.Values{"kind": {"script"}, "script_source": {""}, "operator": {"exists"}}); err == nil {
 		t.Fatal("empty script_source should be rejected")
 	} else if he, ok := err.(*echo.HTTPError); !ok || he.Code != http.StatusBadRequest {
 		t.Fatalf("empty script_source: want 400 HTTPError, got %v", err)

@@ -10,7 +10,7 @@ import (
 // a selected policy renders the confirm form. Policies do not declare a
 // parameter schema yet, so the form states that and binds no values.
 templ PolicyPickerPage(entityName string, backHref string, postHref string, selected *policies.Policy, csrfToken string) {
-	@Layout("policy", "Add policy — "+entityName) {
+	@Layout("policy", "Add policy — "+entityName, backHref) {
 		<div class="page-content" data-testid="page-policy-picker">
 			@PageHeader("Add policy to "+entityName, "Pick a policy from the catalog; it will be bound in a direct configuration group for this entity.", "", "")
 			if selected == nil {

@@ -158,7 +158,7 @@ func ruleAsCondition(r db.GroupMembershipRule) db.DependencyGroupCondition {
 	return db.DependencyGroupCondition{
 		ID: r.ID, GroupID: r.GroupID, ParamPath: r.ParamPath, Operator: r.Operator,
 		ValueJson: r.ValueJson, Seq: r.Seq, Kind: r.Kind,
-		ScriptSource: r.ScriptSource, ScriptExpect: r.ScriptExpect,
+		ScriptSource: r.ScriptSource, ScriptRef: r.ScriptRef, ScriptExpect: r.ScriptExpect,
 	}
 }
 

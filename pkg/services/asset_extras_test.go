@@ -3,6 +3,8 @@ package services
 import (
 	"context"
 	"database/sql"
+	"errors"
+	"strconv"
 	"testing"
 
 	"github.com/pluris/pluris/catalog/identities"
@@ -85,5 +87,88 @@ func TestAssetDescriptionAndManagedByRoundTrip(t *testing.T) {
 	}
 	if list[0].ManagedBy != "Alice Smith" {
 		t.Fatalf("list row: expected ManagedBy %q, got %q", "Alice Smith", list[0].ManagedBy)
+	}
+}
+
+func TestAssetSoftDeleteRestoreImmediateAndPurge(t *testing.T) {
+	database, tenantID := setupIdentityTestDB(t)
+	ctx := context.Background()
+	svc := NewAssetService(database)
+	retention := NewRetentionService(database)
+	create := func(id, uuid string) db.Asset {
+		t.Helper()
+		row, err := database.Queries.CreateAsset(ctx, db.CreateAssetParams{
+			Uuid: uuid, TenantID: tenantID, Subtype: "computer", SubtypePayload: `{"hostname":"` + id + `"}`,
+			EnrollmentState: "enrolled", HumanID: sql.NullString{String: id, Valid: true},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return row
+	}
+
+	soft := create("comp.soft", "asset-soft")
+	if err := svc.Delete(ctx, tenantID, soft.HumanID.String, 77); err != nil {
+		t.Fatal(err)
+	}
+	active, err := svc.ListBySubtype(ctx, tenantID, "computer")
+	if err != nil || len(active) != 0 {
+		t.Fatalf("active list after delete = %+v, %v", active, err)
+	}
+	deleted, err := svc.ListDeletedBySubtype(ctx, tenantID, "computer")
+	if err != nil || len(deleted) != 1 {
+		t.Fatalf("deleted list = %+v, %v", deleted, err)
+	}
+	if got, err := svc.GetByID(ctx, soft.HumanID.String); err != nil || got != nil {
+		t.Fatalf("default get after delete = %+v, %v", got, err)
+	}
+	targets, err := NewTargetService(database).Catalog(ctx, tenantID, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, target := range targets {
+		if target.Ref == strconv.FormatInt(soft.ID, 10) {
+			t.Fatalf("soft-deleted asset leaked into target picker: %+v", target)
+		}
+	}
+	if err := svc.Restore(ctx, tenantID, soft.HumanID.String); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := svc.GetByID(ctx, soft.HumanID.String); err != nil || got == nil {
+		t.Fatalf("get after restore = %+v, %v", got, err)
+	}
+
+	if _, err := retention.UpdateSetting(ctx, EntityKindAsset, RetentionModeImmediate, nil, 77); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Delete(ctx, tenantID, soft.HumanID.String, 77); err != nil {
+		t.Fatal(err)
+	}
+	_, err = database.Queries.GetAssetForDeletion(ctx, db.GetAssetForDeletionParams{TenantID: tenantID, Identifier: soft.HumanID})
+	if !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("immediate lookup = %v, want sql.ErrNoRows", err)
+	}
+
+	if _, err := retention.UpdateSetting(ctx, EntityKindAsset, RetentionModeSoft, nil, 77); err != nil {
+		t.Fatal(err)
+	}
+	expired := create("comp.expired", "asset-expired")
+	if err := svc.Delete(ctx, tenantID, expired.HumanID.String, 77); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Conn().ExecContext(ctx, "UPDATE assets SET deleted_at = datetime('now', '-2 days') WHERE id = ?", expired.ID); err != nil {
+		t.Fatal(err)
+	}
+	results, err := retention.PurgeExpired(ctx)
+	if err != nil || len(results) != 0 {
+		t.Fatalf("NULL asset window purge = %+v, %v", results, err)
+	}
+	days := int64(1)
+	if _, err := retention.UpdateSetting(ctx, EntityKindAsset, RetentionModeSoft, &days, 77); err != nil {
+		t.Fatal(err)
+	}
+	results, err = retention.PurgeExpired(ctx)
+	if err != nil || len(results) != 1 || results[0].EntityKind != EntityKindAsset || !results[0].Purged {
+		t.Fatalf("asset purge = %+v, %v", results, err)
 	}
 }

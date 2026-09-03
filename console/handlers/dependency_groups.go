@@ -44,7 +44,14 @@ func (h *Handler) DependencyGroups(c echo.Context) error {
 	if err := h.depGroupSvc.EnsureBuiltins(ctx, sess.TenantID); err != nil {
 		return err
 	}
-	groups, err := h.depGroupSvc.ListByTenant(ctx, sess.TenantID)
+	deleted := c.QueryParam("state") == "deleted"
+	var groups []dependencygroups.Group
+	var err error
+	if deleted {
+		groups, err = h.depGroupSvc.ListDeletedByTenant(ctx, sess.TenantID)
+	} else {
+		groups, err = h.depGroupSvc.ListByTenant(ctx, sess.TenantID)
+	}
 	if err != nil {
 		return err
 	}
@@ -63,7 +70,11 @@ func (h *Handler) DependencyGroups(c echo.Context) error {
 			UsedBy:           count,
 		})
 	}
-	return render(c, templates.DependencyGroupsPage(rows))
+	setting, err := h.retentionSvc.GetSetting(ctx, services.EntityKindDependencyGroup)
+	if err != nil {
+		return err
+	}
+	return render(c, templates.DependencyGroupsPage(rows, deleted, services.RetentionDeleteCopy(setting, "dependency groups"), csrfTokenFrom(c)))
 }
 
 // DependencyGroupDetail renders a single dependency group on the
@@ -143,7 +154,8 @@ func (h *Handler) DependencyGroupDelete(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := h.depGroupSvc.Delete(ctx, row.ID); err != nil {
+	sess := auth.FromContext(ctx)
+	if err := h.depGroupSvc.Delete(ctx, sess.TenantID, row.ID, sess.IdentityID); err != nil {
 		if errors.Is(err, services.ErrBuiltinProtected) {
 			return echo.NewHTTPError(http.StatusBadRequest, "builtin groups cannot be deleted")
 		}
@@ -176,7 +188,7 @@ func dependencyGroupConditionOperatorAllowed(op string) bool {
 // against (dependencygroups.AllOperators now covers string/numeric/regex
 // operators, not just in/not_in/exists) and added an optional "kind" form
 // field (default "param" when absent) plus optional script_source/
-// script_expect fields for kind="script".
+// script_ref fields for kind="script"/"command".
 //
 // Values encoding (Task 2.3): "values" is read via c.FormParams(), i.e.
 // as REPEATED form keys — one "values=" pair per element — rather than a
@@ -202,7 +214,7 @@ func (h *Handler) DependencyGroupConditionAdd(c echo.Context) error {
 	paramPath := c.FormValue("param_path")
 	operator := c.FormValue("operator")
 	scriptSource := c.FormValue("script_source")
-	scriptExpect := c.FormValue("script_expect")
+	scriptRef := c.FormValue("script_ref")
 
 	if kind == string(dependencygroups.KindParam) {
 		if _, _, _, err := params.ResolvePath(paramPath); err != nil {
@@ -220,13 +232,13 @@ func (h *Handler) DependencyGroupConditionAdd(c echo.Context) error {
 	for i, v := range formParams["values"] {
 		values[i] = strings.TrimSpace(v)
 	}
-	if err := h.depGroupSvc.AddCondition(ctx, row.ID, paramPath, operator, values, kind, scriptSource, scriptExpect); err != nil {
+	if err := h.depGroupSvc.AddCondition(ctx, row.ID, paramPath, operator, values, kind, scriptSource, scriptRef); err != nil {
 		switch {
 		case errors.Is(err, services.ErrInvalidConditionKind),
 			errors.Is(err, services.ErrInvalidOperator),
 			errors.Is(err, services.ErrParamPathRequired),
 			errors.Is(err, services.ErrScriptSourceRequired),
-			errors.Is(err, services.ErrInvalidScriptExpect):
+			errors.Is(err, services.ErrScriptSourceAmbiguous):
 			return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 		}
 		return err

@@ -318,7 +318,7 @@ func TestDependencyGroupDetailMountsConditionBuilder(t *testing.T) {
 	if err := h.depGroupSvc.AddCondition(ctx, group.ID, "computer/hardware/os_family", "in", []string{"linux"}, "param", "", ""); err != nil {
 		t.Fatalf("seed param condition: %v", err)
 	}
-	if err := h.depGroupSvc.AddCondition(ctx, group.ID, "", "", nil, "script", "#!/bin/sh\nexit 0", `{"exit_code":0}`); err != nil {
+	if err := h.depGroupSvc.AddCondition(ctx, group.ID, "", "exists", nil, "script", "#!/bin/sh\nexit 0", ""); err != nil {
 		t.Fatalf("seed script condition: %v", err)
 	}
 
@@ -369,8 +369,8 @@ func TestDependencyGroupDetailMountsConditionBuilder(t *testing.T) {
 	if !strings.Contains(body, "OS family · is any of · linux") {
 		t.Errorf("param condition row should render a human-readable summary; body lacks it")
 	}
-	if !strings.Contains(body, "Custom script · expected exit 0") {
-		t.Error("script condition row should render the script summary")
+	if !strings.Contains(body, "Script · #!/bin/sh") {
+		t.Error("script condition row should render the standardized script summary")
 	}
 	if !strings.Contains(body, "#!/bin/sh") {
 		t.Error("script condition row should render a source excerpt (first line)")

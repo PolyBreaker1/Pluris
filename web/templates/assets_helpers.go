@@ -37,7 +37,7 @@ func subtypeFromSlug(slug string) assets.Subtype {
 // routes (plural: "computers", "servers", "printers", "desks"). Mirrors
 // assetListNavigationScript's inline JS map ('computer':'computers', …)
 // and is the inverse of subtypeFromSlug. Falls back to slug+"s" for any
-// future subtype that isn't special-cased, matching the JS fallback.
+// future subtype that isn't special-cased.
 func assetSubtypeSlug(s assets.Subtype) string {
 	switch s {
 	case assets.SubtypeComputer:

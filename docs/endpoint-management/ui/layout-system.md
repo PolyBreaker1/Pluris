@@ -5,7 +5,9 @@
 
 ## Page shell — `Layout`
 
-`templates.Layout(active, title)` (`web/templates/layout.templ`) is the outermost wrapper for every page: dark sidebar (`.sidebar`, brand chrome) + light content area (`.app-content`). It loads the fixed asset set once — `/static/lists.css`, `/static/filters-modern.css`, `/static/lists.js`, `/static/filters-modern.js`, `/static/detail.js` (all `defer`) — plus Tailwind CDN, Inter/JetBrains Mono fonts, and htmx. All CSS custom properties (`--chrome-*`, `--paper*`, `--accent*`, semantic `--ok/--warn/--err/--info`) are declared once in `:root` inside this file; no page defines its own palette.
+`templates.Layout(active, title, backHref)` (`web/templates/layout.templ`) is the outermost wrapper for every page: dark sidebar (`.sidebar`, brand chrome) + light content area (`.app-content`). It loads the fixed asset set once — `/static/lists.css`, `/static/filters-modern.css`, `/static/lists.js`, `/static/filters-modern.js`, `/static/detail.js` (all `defer`) — plus Tailwind CDN, Inter/JetBrains Mono fonts, and htmx. All CSS custom properties (`--chrome-*`, `--paper*`, `--accent*`, semantic `--ok/--warn/--err/--info`, and list-surface `--list-row-*`) are declared once in `:root` inside this file; no page defines its own palette.
+
+`backHref == ""` keeps the page title in the app header and is the standard for top-level/list pages. `DetailShell` supplies the nearest linked breadcrumb as `backHref`, replacing the redundant app-header title with a compact Back link while leaving the complete breadcrumb inside the page untouched. Create/edit/picker workflows pass their canonical parent list explicitly.
 
 Scroll discipline: `.app-content` is the **only** scroll container in the layout (`overflow: auto`). `<main>` must never get `overflow: hidden` — that would hijack `position: sticky` from descendants (see the comment at `layout.templ:85`). Page content sits in `.page-content` (24px/28px padding) for padded sections, or unwrapped for full-width sections like tables (`.page-content-full` / no wrapper) — tables intentionally flow to the natural bottom of the page with no nested scroll box (condensed from now-deleted documents on natural table flow and earlier layout improvements — full text in git history — both superseded by this section).
 
@@ -19,7 +21,7 @@ See [[invariants]] for the invariant; this section is the shape.
 
 ```
 DetailShell(activeNav, title, attrs, hero HeroSpec, tabs []TabSpec)
-  └─ Layout(activeNav, title)
+  └─ Layout(activeNav, title, nearest linked breadcrumb)
        └─ .asset-detail { attrs... }         ← attrs carries data-testid + entity-id
             ├─ .asset-detail-crumb            ← hero.Crumbs, "›" separated
             ├─ .asset-detail-hero             ← glass card
@@ -59,7 +61,8 @@ Every list page (Computers, Users, Configuration Groups, Dependency Groups, Plur
    - `<select data-pluris-filter="<listId>" data-filter-attr="..." data-filter-mode="equals">` for quick filters (e.g. type/scope dropdowns).
    - A count chip: `<span data-pluris-count="<listId>" data-template="{visible} of {total}">`.
 3. The `<table class="pluris-list" data-list-id="<listId>">` itself, columns from the `web/lists/` registry, sortable headers per INV-L9, category dividers per INV-L8 where the list is grouped (e.g. Policy Catalog by GP category).
-4. Row-click navigation: rows don't wrap an `<a>` (keeps the row a normal `<tr>` for the filter/sort engine); a small per-page inline script (or a shared helper) adds a `click` listener on `tr[data-*-id]` that does `location.href = ...`. This is the one narrow exemption INV-L9 allows for "row-specific navigation" — the filter/sort/divider machinery itself is still 100% the shared engine.
+4. Row interaction: a navigable `<tr>` declares `data-row-href="<canonical-detail-url>"`. The shared `lists.js` provides click/Ctrl-or-Cmd-click/Enter navigation and ignores nested controls. There are no per-page row-navigation scripts and no separate Open/Edit/View button; action columns contain only real secondary operations.
+5. Readability: visible rows alternate using the shared `--list-row-bg` / `--list-row-alt` theme tokens, and hover uses `--list-row-hover`. The engine recalculates parity after filtering and sorting, so visible rows remain correctly striped.
 
 Reference implementations: `web/templates/dependency_groups.templ` (list at `/policy/dependency-groups`) and `web/templates/pluris_policy.templ` (list at `/policy/pluris`) — both carry the full `data-pluris-filter` toolbar contract and are the pattern to copy for new lists (per `docs/history/specs/2026-07-09-rbac-v2-design.md` task 5, "standardized lists").
 

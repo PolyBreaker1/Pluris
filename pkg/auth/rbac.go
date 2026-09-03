@@ -33,17 +33,18 @@ var routePermissionKey = map[string]string{
 	// (create/delete/members/rules) call requirePermission with the more
 	// specific group.* key inside the handler, same two-layer pattern as
 	// "/policy/groups" + endpoint_policy.manage_config_groups.
-	"/groups":         "group.view",
-	"/policy":         "endpoint_policy.view",
-	"/policy/pluris":  "console_access.view_roles",
-	"/policy/modules": "endpoint_policy.manage_modules",
-	"/scripts":        "endpoint_policy.manage_modules",
-	"/profiles":       "",
-	"/wine":           "",
-	"/packages":       "",
-	"/preferences":    "",
-	"/server-admin":   "server_admin.access",
-	"/tenant-switch":  "server_admin.tenant_switch",
+	"/groups":            "group.view",
+	"/policy":            "endpoint_policy.view",
+	"/policy/pluris":     "console_access.view_roles",
+	"/policy/modules":    "endpoint_policy.manage_modules",
+	"/scripts":           "endpoint_policy.manage_modules",
+	"/profiles":          "",
+	"/wine":              "",
+	"/packages":          "",
+	"/preferences":       "",
+	"/server-admin":      "server_admin.access",
+	"/server-admin/data": "server_admin.manage_data",
+	"/tenant-switch":     "server_admin.tenant_switch",
 
 	// "/api/config-groups" (Task 5.2): the Configuration Group detail
 	// page's General-tab inline-edit endpoint. Gated on the same key the
@@ -69,6 +70,13 @@ var routePermissionKey = map[string]string{
 	// a specific permission would just hide identity params from
 	// identity-only users and asset params from asset-only users.
 	"/api/params": "",
+
+	// "/api/scripts" is the Scripts-library feed the condition builder's
+	// script picker reads. Open to any authenticated session for the
+	// same reason "/api/params" is: it returns only names/ids, and the
+	// pages that consume it are themselves permission-gated. Returns []
+	// until the Scripts library ships.
+	"/api/scripts": "",
 }
 
 // RoutePermissionKey returns the Pluris Policy permission key that gates

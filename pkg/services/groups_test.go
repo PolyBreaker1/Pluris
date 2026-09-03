@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"testing"
 
 	"github.com/pluris/pluris/catalog/identities"
@@ -102,5 +103,75 @@ func TestGroupMembershipRoundTrip(t *testing.T) {
 	}
 	if len(userRows) != 0 {
 		t.Fatalf("identity still in %d groups after remove", len(userRows))
+	}
+}
+
+func TestGroupSoftDeleteRestoreImmediateAndReferencedPurge(t *testing.T) {
+	database, tenantID := setupIdentityTestDB(t)
+	ctx := context.Background()
+	svc := NewGroupService(database)
+	retention := NewRetentionService(database)
+	group, err := svc.Create(ctx, tenantID, "Recycle group", "", MemberKindMixed, MembershipStatic, "security", "global")
+	if err != nil {
+		t.Fatal(err)
+	}
+	configSvc := NewConfigGroupService(database, NewPolicyModuleService(database))
+	configGroup, err := configSvc.Create(ctx, tenantID, "References group", "", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assignment, err := configSvc.AddAssignment(ctx, tenantID, configGroup.ID, "group", group.ID, 0, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Delete(ctx, tenantID, group.ID, 88); err != nil {
+		t.Fatalf("referenced soft delete: %v", err)
+	}
+	if groups, err := svc.ListByTenant(ctx, tenantID); err != nil || len(groups) != 0 {
+		t.Fatalf("active groups after delete = %+v, %v", groups, err)
+	}
+	if groups, err := svc.ListDeletedByTenant(ctx, tenantID); err != nil || len(groups) != 1 {
+		t.Fatalf("deleted groups = %+v, %v", groups, err)
+	}
+	if err := svc.Restore(ctx, tenantID, group.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Get(ctx, group.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Delete(ctx, tenantID, group.ID, 88); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Conn().ExecContext(ctx, "UPDATE groups SET deleted_at = datetime('now', '-2 days') WHERE id = ?", group.ID); err != nil {
+		t.Fatal(err)
+	}
+	days := int64(1)
+	if _, err := retention.UpdateSetting(ctx, EntityKindGroup, RetentionModeSoft, &days, 88); err != nil {
+		t.Fatal(err)
+	}
+	results, err := retention.PurgeExpired(ctx)
+	if err != nil || len(results) != 1 || !results[0].Skipped || !errors.Is(results[0].Err, ErrGroupReferenced) {
+		t.Fatalf("referenced group purge = %+v, %v", results, err)
+	}
+	if err := configSvc.RemoveAssignment(ctx, tenantID, configGroup.ID, assignment.ID); err != nil {
+		t.Fatal(err)
+	}
+	results, err = retention.PurgeExpired(ctx)
+	if err != nil || len(results) != 1 || !results[0].Purged {
+		t.Fatalf("group purge after reference removal = %+v, %v", results, err)
+	}
+
+	immediate, err := svc.Create(ctx, tenantID, "Immediate group", "", MemberKindMixed, MembershipStatic, "security", "global")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := retention.UpdateSetting(ctx, EntityKindGroup, RetentionModeImmediate, nil, 88); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Delete(ctx, tenantID, immediate.ID, 88); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Queries.GetGroupIncludingDeleted(ctx, immediate.ID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("immediate group lookup = %v", err)
 	}
 }

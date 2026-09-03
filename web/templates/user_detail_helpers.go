@@ -39,7 +39,7 @@ func userInitials(user identities.Identity) string {
 // could not be applied via UpdateFields after the identity was already
 // created (see console/handlers/handlers.go's UserCreateSubmit); it
 // renders as a dismissible banner reusing hero.Action's slot.
-func userDetailHero(user identities.Identity, csrfToken string, warn string) HeroSpec {
+func userDetailHero(user identities.Identity, csrfToken string, warn string, deleteCopy string) HeroSpec {
 	chips := []Chip{{Label: user.Role.Label(), Class: "asset-chip-role"}}
 	if user.AccountEnabled {
 		chips = append(chips, Chip{Label: "Enabled", Class: "asset-chip-enroll-enrolled"})
@@ -86,7 +86,7 @@ func userDetailHero(user identities.Identity, csrfToken string, warn string) Her
 		Defs:       defs,
 		Visual:     userAvatar(user),
 		Action:     action,
-		DeleteForm: userDeleteDropdownItem(user, csrfToken),
+		DeleteForm: userDeleteDropdownItem(user, csrfToken, deleteCopy),
 	}
 }
 

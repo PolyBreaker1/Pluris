@@ -61,7 +61,7 @@ func roleTypeAttr(r PlurisRoleRow) string {
 // the picker needs ParentRoleID/TemplateSlug that PlurisRoleRow doesn't
 // carry.
 templ PlurisPolicyPage(rows []PlurisRoleRow, allRoles []db.Role) {
-	@Layout("policy-pluris", "Pluris Policy") {
+	@Layout("policy-pluris", "Pluris Policy", "") {
 		@PageHeader("Pluris Policy",
 			"Console access control — who may do what in this console, like GLPI profiles.",
 			"", "")
@@ -146,7 +146,7 @@ templ PlurisPolicyPage(rows []PlurisRoleRow, allRoles []db.Role) {
 					</thead>
 					<tbody>
 						for _, r := range rows {
-							<tr data-role-id={ strconv.FormatInt(r.ID, 10) } data-pp-type={ roleTypeAttr(r) } data-pp-search={ roleSearchBlob(r) }>
+							<tr data-role-id={ strconv.FormatInt(r.ID, 10) } data-pp-type={ roleTypeAttr(r) } data-pp-search={ roleSearchBlob(r) } data-row-href={ templ.SafeURL("/policy/pluris/" + strconv.FormatInt(r.ID, 10)) }>
 								<td>{ r.Name }</td>
 								<td>
 									if r.Builtin {
@@ -163,24 +163,8 @@ templ PlurisPolicyPage(rows []PlurisRoleRow, allRoles []db.Role) {
 					</tbody>
 				</table>
 			</section>
-			@plurisPolicyNavigationScript()
 		</div>
 	}
-}
-
-// plurisPolicyNavigationScript — row click navigates to the role's detail
-// page. Modeled on dependencyGroupsNavigationScript.
-templ plurisPolicyNavigationScript() {
-	@templ.Raw(`<script>
-(function () {
-	document.addEventListener('click', function (e) {
-		if (e.target.closest('a, button, input, select, form')) return;
-		var row = e.target.closest('tr[data-role-id]');
-		if (!row) return;
-		window.location.href = '/policy/pluris/' + encodeURIComponent(row.dataset.roleId);
-	});
-})();
-</script>`)
 }
 
 // PlurisPolicyDetailPage — the standardized DetailShell for a single

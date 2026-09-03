@@ -38,6 +38,7 @@ var builtinTemplates = map[string]map[string]string{
 		"console_access.manage_permissions":      "yes",
 
 		"server_admin.access":        "yes",
+		"server_admin.manage_data":   "yes",
 		"server_admin.tenant_switch": "yes",
 	},
 	"admin": {
@@ -73,6 +74,7 @@ var builtinTemplates = map[string]map[string]string{
 		"console_access.manage_permissions":      "yes",
 
 		"server_admin.access":        "yes",
+		"server_admin.manage_data":   "yes",
 		"server_admin.tenant_switch": "no",
 	},
 	"technician": {
@@ -108,6 +110,7 @@ var builtinTemplates = map[string]map[string]string{
 		"console_access.manage_permissions":      "no",
 
 		"server_admin.access":        "no",
+		"server_admin.manage_data":   "no",
 		"server_admin.tenant_switch": "no",
 	},
 	"user": {
@@ -143,6 +146,7 @@ var builtinTemplates = map[string]map[string]string{
 		"console_access.manage_permissions":      "no",
 
 		"server_admin.access":        "no",
+		"server_admin.manage_data":   "no",
 		"server_admin.tenant_switch": "no",
 	},
 }

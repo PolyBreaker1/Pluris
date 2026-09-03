@@ -17,26 +17,36 @@ INSERT INTO configuration_groups (
 ) RETURNING *;
 
 -- name: GetConfigurationGroup :one
+SELECT * FROM configuration_groups WHERE id = @id AND deleted_at IS NULL LIMIT 1;
+
+-- name: GetConfigurationGroupIncludingDeleted :one
 SELECT * FROM configuration_groups WHERE id = @id LIMIT 1;
 
 -- name: GetConfigurationGroupByName :one
 SELECT * FROM configuration_groups 
-WHERE tenant_id = @tenant_id AND name = @name 
+WHERE tenant_id = @tenant_id AND name = @name AND deleted_at IS NULL
 LIMIT 1;
 
 -- name: ListConfigurationGroupsByTenant :many
 SELECT * FROM configuration_groups 
 WHERE tenant_id = @tenant_id 
+  AND deleted_at IS NULL
+ORDER BY name
+LIMIT @limit OFFSET @offset;
+
+-- name: ListDeletedConfigurationGroupsByTenant :many
+SELECT * FROM configuration_groups
+WHERE tenant_id = @tenant_id AND deleted_at IS NOT NULL
 ORDER BY name
 LIMIT @limit OFFSET @offset;
 
 -- name: ListEnabledConfigurationGroups :many
 SELECT * FROM configuration_groups 
-WHERE tenant_id = @tenant_id AND disabled = FALSE
+WHERE tenant_id = @tenant_id AND disabled = FALSE AND deleted_at IS NULL
 ORDER BY name;
 
 -- name: CountConfigurationGroupsByTenant :one
-SELECT COUNT(*) FROM configuration_groups WHERE tenant_id = @tenant_id;
+SELECT COUNT(*) FROM configuration_groups WHERE tenant_id = @tenant_id AND deleted_at IS NULL;
 
 -- name: UpdateConfigurationGroup :one
 UPDATE configuration_groups SET
@@ -51,9 +61,25 @@ RETURNING *;
 -- name: DeleteConfigurationGroup :exec
 DELETE FROM configuration_groups WHERE id = @id;
 
+-- name: SoftDeleteConfigurationGroup :execrows
+UPDATE configuration_groups
+SET deleted_at = CURRENT_TIMESTAMP, deleted_by = @deleted_by
+WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL;
+
+-- name: RestoreConfigurationGroup :execrows
+UPDATE configuration_groups
+SET deleted_at = NULL, deleted_by = NULL
+WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NOT NULL;
+
+-- name: ListExpiredConfigurationGroups :many
+SELECT * FROM configuration_groups
+WHERE deleted_at IS NOT NULL AND deleted_at <= @cutoff
+ORDER BY deleted_at, id;
+
 -- name: SearchConfigurationGroups :many
 SELECT * FROM configuration_groups
 WHERE tenant_id = @tenant_id
+  AND deleted_at IS NULL
   AND (name LIKE '%' || @search || '%' OR description LIKE '%' || @search || '%')
 ORDER BY name
 LIMIT @limit;
@@ -100,7 +126,7 @@ ORDER BY b.policy_urn;
 SELECT b.*, g.name as group_name
 FROM configuration_group_bindings b
 JOIN configuration_groups g ON g.id = b.configuration_group_id
-WHERE b.module_id = @module_id;
+WHERE b.module_id = @module_id AND g.deleted_at IS NULL;
 
 -- name: CountBindingsByModule :one
 -- Used by the module service's DeleteModule guard: a module referenced
@@ -167,14 +193,14 @@ ORDER BY target_type, target_id;
 SELECT a.*, g.name as group_name, g.scope as group_scope
 FROM configuration_group_assignments a
 JOIN configuration_groups g ON g.id = a.configuration_group_id
-WHERE a.target_type = @target_type AND a.target_id = @target_id
+WHERE a.target_type = @target_type AND a.target_id = @target_id AND g.deleted_at IS NULL
 ORDER BY a.priority DESC;
 
 -- name: ListConfigGroupsForAsset :many
 SELECT DISTINCT g.*
 FROM configuration_groups g
 JOIN configuration_group_assignments a ON a.configuration_group_id = g.id
-WHERE g.disabled = FALSE
+WHERE g.disabled = FALSE AND g.deleted_at IS NULL
   AND ((a.target_type = 'asset' AND a.target_id = @asset_id)
    OR (a.target_type = 'group' AND a.target_id IN (
        SELECT gm.group_id FROM group_memberships gm WHERE gm.asset_id = @asset_id

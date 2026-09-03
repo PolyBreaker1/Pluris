@@ -15,6 +15,7 @@ import (
 	"github.com/a-h/templ"
 	"github.com/labstack/echo/v4"
 
+	"github.com/pluris/pluris/catalog/assets"
 	"github.com/pluris/pluris/catalog/dependencygroups"
 	"github.com/pluris/pluris/catalog/identities"
 	"github.com/pluris/pluris/catalog/params"
@@ -38,6 +39,7 @@ type Handler struct {
 	moduleSvc      *services.PolicyModuleService
 	targetSvc      *services.TargetService
 	configGroupSvc *services.ConfigGroupService
+	retentionSvc   *services.RetentionService
 	authzSvc       *authz.Service
 	sessions       *auth.SessionManager
 }
@@ -55,6 +57,7 @@ func New(db *database.Database) *Handler {
 		moduleSvc:      moduleSvc,
 		targetSvc:      services.NewTargetService(db),
 		configGroupSvc: services.NewConfigGroupService(db, moduleSvc),
+		retentionSvc:   services.NewRetentionService(db),
 		authzSvc:       authz.NewService(db),
 		sessions:       auth.NewSessionManager(db),
 	}
@@ -80,12 +83,22 @@ func (h *Handler) Users(c echo.Context) error {
 	sess := auth.FromContext(ctx)
 	tenantID := sess.TenantID
 
-	rows, err := h.identitySvc.List(ctx, tenantID, 200, 0)
+	deleted := c.QueryParam("state") == "deleted"
+	var rows []identities.Identity
+	var err error
+	if deleted {
+		rows, err = h.identitySvc.ListDeleted(ctx, tenantID, 200, 0)
+	} else {
+		rows, err = h.identitySvc.List(ctx, tenantID, 200, 0)
+	}
 	if err != nil {
 		return err
 	}
-
-	return render(c, templates.UsersPage(rows))
+	setting, err := h.retentionSvc.GetSetting(ctx, services.EntityKindIdentity)
+	if err != nil {
+		return err
+	}
+	return render(c, templates.UsersPage(rows, deleted, services.RetentionDeleteCopy(setting, "users"), csrfTokenFrom(c)))
 }
 
 // UserDetail renders the full-page detail view of a single user, including
@@ -141,7 +154,11 @@ func (h *Handler) UserDetail(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	return render(c, templates.UserDetailPage(user, assigned, csrfTokenFrom(c), groups, allGroups, roles, allRoles, viaGroupRoles, applied, c.QueryParam("warn")))
+	setting, err := h.retentionSvc.GetSetting(ctx, services.EntityKindIdentity)
+	if err != nil {
+		return err
+	}
+	return render(c, templates.UserDetailPage(user, assigned, csrfTokenFrom(c), groups, allGroups, roles, allRoles, viaGroupRoles, applied, c.QueryParam("warn"), services.RetentionDeleteCopy(setting, "user")))
 }
 
 // UserNewShow renders the full-page "add user" form (Task 8, spec §6):
@@ -367,10 +384,11 @@ func (h *Handler) UserDeleteSubmit(c echo.Context) error {
 	if sess := auth.FromContext(ctx); sess != nil && sess.IdentityID == id {
 		return echo.NewHTTPError(http.StatusBadRequest, "you cannot delete your own account")
 	}
-	if err := h.identitySvc.Delete(ctx, id); err != nil {
+	sess := auth.FromContext(ctx)
+	if err := h.identitySvc.Delete(ctx, sess.TenantID, id, sess.IdentityID); err != nil {
 		return err
 	}
-	if sess := auth.FromContext(ctx); sess != nil {
+	if sess != nil {
 		_ = h.db.Queries.InsertActivity(ctx, db.InsertActivityParams{
 			TenantID: sess.TenantID, EntityType: "identity", EntityID: id,
 			Event:           "user_deleted",
@@ -412,13 +430,22 @@ func (h *Handler) assetsPage(c echo.Context, subtypeSlug, subtypeValue string) e
 	sess := auth.FromContext(ctx)
 	tenantID := sess.TenantID
 
-	// Fetch assets from database
-	assets, err := h.assetSvc.ListBySubtype(ctx, tenantID, subtypeValue)
+	deleted := c.QueryParam("state") == "deleted"
+	var assetRows []assets.Asset
+	var err error
+	if deleted {
+		assetRows, err = h.assetSvc.ListDeletedBySubtype(ctx, tenantID, subtypeValue)
+	} else {
+		assetRows, err = h.assetSvc.ListBySubtype(ctx, tenantID, subtypeValue)
+	}
 	if err != nil {
 		return err
 	}
-
-	return render(c, templates.AssetsPage(subtypeSlug, assets))
+	setting, err := h.retentionSvc.GetSetting(ctx, services.EntityKindAsset)
+	if err != nil {
+		return err
+	}
+	return render(c, templates.AssetsPage(subtypeSlug, assetRows, deleted, services.RetentionDeleteCopy(setting, "assets"), csrfTokenFrom(c)))
 }
 
 // AssetDetail renders the full-page detail view of a single asset.
@@ -587,6 +614,7 @@ func (h *Handler) PolicyCatalog(c echo.Context) error {
 func (h *Handler) PolicyModules(c echo.Context) error {
 	ctx := c.Request().Context()
 	sess := auth.FromContext(ctx)
+	deleted := c.QueryParam("state") == "deleted"
 	// Best-effort: a fresh tenant may not have builtins seeded yet. Errors
 	// here shouldn't block rendering the page.
 	_ = h.depGroupSvc.EnsureBuiltins(ctx, sess.TenantID)
@@ -599,7 +627,12 @@ func (h *Handler) PolicyModules(c echo.Context) error {
 	for _, g := range groups {
 		byID[g.ID] = g
 	}
-	mods, err := h.moduleSvc.ListModules(ctx, sess.TenantID)
+	var mods []policymodules.Module
+	if deleted {
+		mods, err = h.moduleSvc.ListDeletedModules(ctx, sess.TenantID)
+	} else {
+		mods, err = h.moduleSvc.ListModules(ctx, sess.TenantID)
+	}
 	if err != nil {
 		return err
 	}
@@ -625,7 +658,11 @@ func (h *Handler) PolicyModules(c echo.Context) error {
 		deps[m.ID] = dv
 	}
 	isAdmin := sess.Role == identities.RoleAdmin || sess.Role == identities.RoleSuperAdmin
-	return render(c, templates.PolicyModulesPage("library", mods, nil, deps, groups, csrfTokenFrom(c), isAdmin))
+	setting, err := h.retentionSvc.GetSetting(ctx, services.EntityKindPolicyModule)
+	if err != nil {
+		return err
+	}
+	return render(c, templates.PolicyModulesPage("library", mods, nil, deps, groups, csrfTokenFrom(c), isAdmin, deleted, services.RetentionDeleteCopy(setting, "policy modules")))
 }
 func (h *Handler) PolicyModulesDefaults(c echo.Context) error {
 	ctx := c.Request().Context()
@@ -636,10 +673,10 @@ func (h *Handler) PolicyModulesDefaults(c echo.Context) error {
 		return err
 	}
 	defaults := policymodules.TenantDefaults("")
-	return render(c, templates.PolicyModulesPage("defaults", mods, defaults, nil, nil, "", false))
+	return render(c, templates.PolicyModulesPage("defaults", mods, defaults, nil, nil, "", false, false, ""))
 }
 func (h *Handler) PolicyModulesSources(c echo.Context) error {
-	return render(c, templates.PolicyModulesPage("sources", nil, nil, nil, nil, "", false))
+	return render(c, templates.PolicyModulesPage("sources", nil, nil, nil, nil, csrfTokenFrom(c), false, false, c.QueryParam("warn")))
 }
 
 // Profiles renders the profile-list + editor page (item 5 in the sidebar).

@@ -118,6 +118,10 @@ func (s *GroupService) ListByTenant(ctx context.Context, tenantID int64) ([]db.G
 	return s.db.Queries.ListGroupsByTenant(ctx, tenantID)
 }
 
+func (s *GroupService) ListDeletedByTenant(ctx context.Context, tenantID int64) ([]db.Group, error) {
+	return s.db.Queries.ListDeletedGroupsByTenant(ctx, tenantID)
+}
+
 // Get returns one group; used by handlers to verify tenant ownership
 // before mutating memberships.
 func (s *GroupService) Get(ctx context.Context, groupID int64) (db.Group, error) {
@@ -178,20 +182,46 @@ func (s *GroupService) Create(ctx context.Context, tenantID int64, name, descrip
 	})
 }
 
-// Delete removes a group after checking the polymorphic references the
-// schema can't cascade for us: Configuration Group assignments with
-// target_type='group' still pointing at this group block deletion with
-// ErrGroupReferenced (see that error's doc comment). group_memberships,
-// group_membership_rules and group_roles all cascade via their FKs.
-func (s *GroupService) Delete(ctx context.Context, groupID int64) error {
-	refs, err := s.db.Queries.CountConfigGroupAssignmentsForGroupTarget(ctx, groupID)
+// Delete follows the group retention setting. Reference guards apply only at
+// the permanent boundary.
+func (s *GroupService) Delete(ctx context.Context, tenantID, groupID, actorID int64) error {
+	group, err := s.db.Queries.GetGroupIncludingDeleted(ctx, groupID)
+	if err != nil || group.TenantID != tenantID {
+		return ErrGroupNotFound
+	}
+	setting, err := s.db.Queries.GetRetentionSetting(ctx, EntityKindGroup)
+	if err != nil {
+		return err
+	}
+	if setting.Mode == RetentionModeImmediate {
+		return hardDeleteGroup(ctx, s.db.Queries, groupID)
+	}
+	_, err = s.db.Queries.SoftDeleteGroup(ctx, db.SoftDeleteGroupParams{DeletedBy: actorID, ID: groupID, TenantID: tenantID})
+	return err
+}
+
+func (s *GroupService) Restore(ctx context.Context, tenantID, groupID int64) error {
+	_, err := s.db.Queries.RestoreGroup(ctx, db.RestoreGroupParams{ID: groupID, TenantID: tenantID})
+	return err
+}
+
+func (s *GroupService) PermanentlyDelete(ctx context.Context, tenantID, groupID int64) error {
+	group, err := s.db.Queries.GetGroupIncludingDeleted(ctx, groupID)
+	if err != nil || group.TenantID != tenantID {
+		return ErrGroupNotFound
+	}
+	return hardDeleteGroup(ctx, s.db.Queries, groupID)
+}
+
+func hardDeleteGroup(ctx context.Context, q *db.Queries, groupID int64) error {
+	refs, err := q.CountConfigGroupAssignmentsForGroupTarget(ctx, groupID)
 	if err != nil {
 		return err
 	}
 	if refs > 0 {
 		return ErrGroupReferenced
 	}
-	return s.db.Queries.DeleteGroup(ctx, groupID)
+	return q.DeleteGroup(ctx, groupID)
 }
 
 // GroupMemberRow is one row on the group detail Members tab: either an

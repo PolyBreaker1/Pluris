@@ -6,7 +6,7 @@ package templates
 // in the rest via the existing inline per-section edit (assetGeneralTab).
 // Mirrors DependencyGroupNewPage's standalone-form shape.
 templ AssetNewPage(subtype string, csrf string, errorMsg string) {
-	@Layout("assets-"+subtype, "New "+assetsSingularLabel(subtype)) {
+	@Layout("assets-"+subtype, "New "+assetsSingularLabel(subtype), "/assets/"+subtype) {
 		<div class="page-content">
 			@PageHeader("New "+assetsSingularLabel(subtype), "Create a minimal "+assetsSingularLabel(subtype)+" record, then fill in the rest on its detail page.", "", "")
 		</div>

@@ -33,9 +33,12 @@ type FieldUpdateRequest struct {
 }
 
 // FieldUpdateResponse is the 200 OK body: the param keys actually
-// applied, sorted for deterministic output.
+// applied, sorted for deterministic output. Warning carries a
+// non-blocking advisory (e.g. an unknown policy URN in satisfies) the
+// client surfaces without failing the save.
 type FieldUpdateResponse struct {
 	Updated []string `json:"updated"`
+	Warning string   `json:"warning,omitempty"`
 }
 
 // UserFieldUpdate handles POST /api/users/:id/fields. Route-level RBAC

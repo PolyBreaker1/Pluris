@@ -35,7 +35,7 @@ SELECT
     json_extract(a.subtype_payload, '$.name') as to_asset_name
 FROM asset_links l
 JOIN assets a ON a.id = l.to_asset_id
-WHERE l.from_asset_id = @from_asset_id
+WHERE l.from_asset_id = @from_asset_id AND a.deleted_at IS NULL
 ORDER BY l.relation, a.human_id;
 
 -- name: ListLinksToAsset :many
@@ -47,7 +47,7 @@ SELECT
     json_extract(a.subtype_payload, '$.name') as from_asset_name
 FROM asset_links l
 JOIN assets a ON a.id = l.from_asset_id
-WHERE l.to_asset_id = @to_asset_id
+WHERE l.to_asset_id = @to_asset_id AND a.deleted_at IS NULL
 ORDER BY l.relation, a.human_id;
 
 -- name: ListLinksByRelation :many
@@ -59,6 +59,7 @@ FROM asset_links l
 JOIN assets fa ON fa.id = l.from_asset_id
 JOIN assets ta ON ta.id = l.to_asset_id
 WHERE l.tenant_id = @tenant_id AND l.relation = @relation
+  AND fa.deleted_at IS NULL AND ta.deleted_at IS NULL
 ORDER BY fa.human_id, ta.human_id;
 
 -- name: ListAllLinksForAsset :many
@@ -70,7 +71,8 @@ SELECT
 FROM asset_links l
 JOIN assets fa ON fa.id = l.from_asset_id
 JOIN assets ta ON ta.id = l.to_asset_id
-WHERE l.from_asset_id = @asset_id OR l.to_asset_id = @asset_id
+WHERE (l.from_asset_id = @asset_id OR l.to_asset_id = @asset_id)
+  AND fa.deleted_at IS NULL AND ta.deleted_at IS NULL
 ORDER BY l.relation;
 
 -- name: CountLinksForAsset :one

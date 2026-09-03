@@ -1,6 +1,11 @@
 package templates
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/pluris/pluris/pkg/auth"
+	"github.com/pluris/pluris/pkg/authz"
+)
 
 // findMenuItem locates a top-level Menu item by Key. Fails the test if absent.
 func findMenuItem(t *testing.T, key string) MenuItem {
@@ -12,6 +17,20 @@ func findMenuItem(t *testing.T, key string) MenuItem {
 	}
 	t.Fatalf("menu item %q not found in Menu", key)
 	return MenuItem{}
+}
+
+func TestDataManagementMenuPermission(t *testing.T) {
+	serverAdmin := findMenuItem(t, "server-admin")
+	if len(serverAdmin.Children) == 0 || serverAdmin.Children[0].Key != "server-admin-data" {
+		t.Fatalf("Data Management must be the first Server Administration child: %+v", serverAdmin.Children)
+	}
+	child := serverAdmin.Children[0]
+	if MenuItemVisible(&auth.UserSession{Grants: authz.Grants{}}, child) {
+		t.Fatal("Data Management visible without grant")
+	}
+	if !MenuItemVisible(&auth.UserSession{Grants: authz.Grants{"server_admin.manage_data": "yes"}}, child) {
+		t.Fatal("Data Management hidden with grant")
+	}
 }
 
 // TestSidebarActiveMatching is table-driven over every `active` value

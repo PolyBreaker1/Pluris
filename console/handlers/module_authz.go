@@ -103,6 +103,20 @@ func (h *Handler) resolveTenantModuleByURN(ctx context.Context, sess *auth.UserS
 	return row, nil
 }
 
+func (h *Handler) resolveTenantModuleByURNIncludingDeleted(ctx context.Context, sess *auth.UserSession, urn string) (db.PolicyModule, error) {
+	row, err := h.moduleSvc.GetModuleRowIncludingDeleted(ctx, urn)
+	if err != nil {
+		if errors.Is(err, services.ErrModuleNotFound) {
+			return db.PolicyModule{}, echo.NewHTTPError(http.StatusNotFound, "module not found")
+		}
+		return db.PolicyModule{}, err
+	}
+	if !row.IsBundled && (!row.TenantID.Valid || row.TenantID.Int64 != sess.TenantID) {
+		return db.PolicyModule{}, echo.NewHTTPError(http.StatusNotFound, "module not found")
+	}
+	return row, nil
+}
+
 // resolveModuleVersion loads a version row by its numeric :vid route
 // param and verifies it belongs to mod (cross-module ids 404).
 func (h *Handler) resolveModuleVersion(c echo.Context, mod db.PolicyModule) (db.PolicyModuleVersion, error) {

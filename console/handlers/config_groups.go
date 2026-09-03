@@ -51,7 +51,14 @@ func (h *Handler) resolveTenantConfigGroup(c echo.Context, idRaw string) (db.Con
 func (h *Handler) PolicyGroups(c echo.Context) error {
 	ctx := c.Request().Context()
 	sess := auth.FromContext(ctx)
-	groups, err := h.configGroupSvc.ListByTenant(ctx, sess.TenantID)
+	deleted := c.QueryParam("state") == "deleted"
+	var groups []db.ConfigurationGroup
+	var err error
+	if deleted {
+		groups, err = h.configGroupSvc.ListDeletedByTenant(ctx, sess.TenantID)
+	} else {
+		groups, err = h.configGroupSvc.ListByTenant(ctx, sess.TenantID)
+	}
 	if err != nil {
 		return err
 	}
@@ -75,7 +82,11 @@ func (h *Handler) PolicyGroups(c echo.Context) error {
 			CreatedAt:   g.CreatedAt,
 		})
 	}
-	return render(c, templates.ConfigGroupsPage(rows))
+	setting, err := h.retentionSvc.GetSetting(ctx, services.EntityKindConfigurationGroup)
+	if err != nil {
+		return err
+	}
+	return render(c, templates.ConfigGroupsPage(rows, deleted, services.RetentionDeleteCopy(setting, "configuration groups"), csrfTokenFrom(c)))
 }
 
 // PolicyGroupNew renders the create form.
@@ -266,7 +277,7 @@ func (h *Handler) PolicyGroupDelete(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := h.configGroupSvc.Delete(ctx, sess.TenantID, row.ID); err != nil {
+	if err := h.configGroupSvc.Delete(ctx, sess.TenantID, row.ID, sess.IdentityID); err != nil {
 		return err
 	}
 	return c.Redirect(http.StatusFound, "/policy/groups")

@@ -16,6 +16,10 @@ import (
 // dependency group. Builtins are editable but not deletable.
 var ErrBuiltinProtected = errors.New("builtin dependency group cannot be deleted")
 
+var ErrDependencyGroupReferenced = errors.New("dependency group is referenced by policy modules")
+
+var ErrDependencyGroupNotFound = errors.New("dependency group not found")
+
 // ErrBuiltinMatchModeProtected mirrors ErrBuiltinProtected for
 // SetMatchMode: builtins must keep match_mode="all" (the semantics their
 // seed conditions were authored against), so changing it is refused the
@@ -39,10 +43,16 @@ var ErrParamPathRequired = errors.New("param path is required")
 // empty script source.
 var ErrScriptSourceRequired = errors.New("script source is required")
 
-// ErrInvalidScriptExpect is returned when a script-kind condition's
-// script_expect isn't valid JSON, or has keys other than the two the
-// agent contract defines: exit_code (number) and output_equals (string).
-var ErrInvalidScriptExpect = errors.New("invalid script_expect: must be JSON with only exit_code (number) and/or output_equals (string) keys")
+// ErrInvalidScriptExpect is retained for callers that still map it to
+// HTTP errors; since migration 011 the standardized operator/value
+// expectation replaced script_expect, so only ErrScriptSourceAmbiguous
+// class failures reference the script payload now.
+var ErrInvalidScriptExpect = errors.New("invalid script_expect: superseded by operator/value expectations")
+
+// ErrScriptSourceAmbiguous is returned when a script-kind condition
+// supplies both an inline source and a library script reference, or
+// neither.
+var ErrScriptSourceAmbiguous = errors.New("script condition requires exactly one of inline source or script reference")
 
 // ErrInvalidMatchMode is returned when SetMatchMode receives a mode
 // outside "all"/"any".
@@ -59,44 +69,54 @@ func validConditionOperator(op string) bool {
 	return false
 }
 
-// validateScriptExpect parses raw as JSON and rejects anything but the
-// two keys the agent contract defines (exit_code as a JSON number,
-// output_equals as a JSON string). An empty raw defaults to
-// {"exit_code":0}, returned as the canonical JSON to persist.
-func validateScriptExpect(raw string) (string, error) {
-	if strings.TrimSpace(raw) == "" {
-		return `{"exit_code":0}`, nil
+// conditionPayload is the kind-agnostic input every condition writer
+// (dependency groups, dynamic group rules, module version tests)
+// validates through validateConditionPayload — one validation path for
+// the one condition model (INV-CB / INV-TEST).
+type conditionPayload struct {
+	Kind         string
+	ParamPath    string
+	Operator     string
+	ScriptSource string
+	ScriptRef    string
+}
+
+// validateConditionPayload enforces the standardized test shape
+// (subject, operator, expected value) across all kinds. It returns the
+// canonical kind (empty defaults to param). Every kind requires a valid
+// operator; param requires a param path; command requires an inline
+// command line; script requires exactly one of inline source or a
+// library script reference.
+func validateConditionPayload(p conditionPayload) (string, error) {
+	kind := p.Kind
+	if kind == "" {
+		kind = string(dependencygroups.KindParam)
 	}
-	var m map[string]json.RawMessage
-	if err := json.Unmarshal([]byte(raw), &m); err != nil {
-		return "", ErrInvalidScriptExpect
+	if !validConditionOperator(p.Operator) {
+		return "", ErrInvalidOperator
 	}
-	for k, v := range m {
-		switch k {
-		case "exit_code":
-			// Must be a bare JSON number, not a quoted numeric string:
-			// json.Number decoding tolerates `"0"`, so reject any raw
-			// token that isn't a number literal before decoding.
-			tok := strings.TrimSpace(string(v))
-			if tok == "" || tok[0] == '"' {
-				return "", ErrInvalidScriptExpect
-			}
-			var n json.Number
-			dec := json.NewDecoder(strings.NewReader(tok))
-			dec.UseNumber()
-			if err := dec.Decode(&n); err != nil {
-				return "", ErrInvalidScriptExpect
-			}
-		case "output_equals":
-			var s string
-			if err := json.Unmarshal(v, &s); err != nil {
-				return "", ErrInvalidScriptExpect
-			}
-		default:
-			return "", ErrInvalidScriptExpect
+	switch dependencygroups.ConditionKind(kind) {
+	case dependencygroups.KindParam:
+		if p.ParamPath == "" {
+			return "", ErrParamPathRequired
 		}
+	case dependencygroups.KindCommand:
+		if strings.TrimSpace(p.ScriptSource) == "" {
+			return "", ErrScriptSourceRequired
+		}
+	case dependencygroups.KindScript:
+		hasSource := strings.TrimSpace(p.ScriptSource) != ""
+		hasRef := strings.TrimSpace(p.ScriptRef) != ""
+		if hasSource == hasRef {
+			if !hasSource {
+				return "", ErrScriptSourceRequired
+			}
+			return "", ErrScriptSourceAmbiguous
+		}
+	default:
+		return "", ErrInvalidConditionKind
 	}
-	return raw, nil
+	return kind, nil
 }
 
 // isUniqueErr matches SQLite UNIQUE violations so concurrent first
@@ -211,7 +231,7 @@ func (s *DependencyGroupService) toGroup(ctx context.Context, row db.DependencyG
 		}
 		g.Conditions = append(g.Conditions, dependencygroups.Condition{
 			ID: c.ID, ParamPath: c.ParamPath, Operator: dependencygroups.Operator(c.Operator), Values: vals,
-			Kind: dependencygroups.ConditionKind(c.Kind), ScriptSource: c.ScriptSource, ScriptExpect: c.ScriptExpect,
+			Kind: dependencygroups.ConditionKind(c.Kind), ScriptSource: c.ScriptSource, ScriptRef: c.ScriptRef, ScriptExpect: c.ScriptExpect,
 		})
 	}
 	return g, nil
@@ -229,6 +249,22 @@ func (s *DependencyGroupService) ListByTenant(ctx context.Context, tenantID int6
 			return nil, err
 		}
 		out = append(out, g)
+	}
+	return out, nil
+}
+
+func (s *DependencyGroupService) ListDeletedByTenant(ctx context.Context, tenantID int64) ([]dependencygroups.Group, error) {
+	rows, err := s.db.Queries.ListDeletedDependencyGroupsByTenant(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]dependencygroups.Group, 0, len(rows))
+	for _, row := range rows {
+		group, err := s.toGroup(ctx, row)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, group)
 	}
 	return out, nil
 }
@@ -258,51 +294,70 @@ func (s *DependencyGroupService) Update(ctx context.Context, id int64, name, des
 	})
 }
 
-func (s *DependencyGroupService) Delete(ctx context.Context, id int64) error {
-	row, err := s.db.Queries.GetDependencyGroup(ctx, id)
-	if err != nil {
-		return err
+func (s *DependencyGroupService) Delete(ctx context.Context, tenantID, id, actorID int64) error {
+	row, err := s.db.Queries.GetDependencyGroupIncludingDeleted(ctx, id)
+	if err != nil || row.TenantID != tenantID {
+		return ErrDependencyGroupNotFound
 	}
 	if row.IsBuiltin {
 		return ErrBuiltinProtected
 	}
-	return s.db.Queries.DeleteDependencyGroup(ctx, id)
+	setting, err := s.db.Queries.GetRetentionSetting(ctx, EntityKindDependencyGroup)
+	if err != nil {
+		return err
+	}
+	if setting.Mode == RetentionModeImmediate {
+		return hardDeleteDependencyGroup(ctx, s.db.Queries, id)
+	}
+	_, err = s.db.Queries.SoftDeleteDependencyGroup(ctx, db.SoftDeleteDependencyGroupParams{
+		DeletedBy: actorID, ID: id, TenantID: tenantID,
+	})
+	return err
 }
 
-// AddCondition appends a condition to a group. kind is "param" (default,
-// when empty) or "script":
-//
-//   - kind="param" requires a non-empty paramPath and an operator from
-//     dependencygroups.AllOperators(); scriptSource/scriptExpect are
-//     ignored (stored empty).
-//   - kind="script" requires a non-empty scriptSource; scriptExpect must
-//     be empty (defaults to {"exit_code":0}) or JSON with only
-//     "exit_code" (number) / "output_equals" (string) keys; paramPath/
-//     operator/values are ignored (stored as given, but unused by eval —
-//     see catalog/dependencygroups.Condition.Kind's doc comment).
-func (s *DependencyGroupService) AddCondition(ctx context.Context, groupID int64, paramPath, operator string, values []string, kind, scriptSource, scriptExpect string) error {
-	if kind == "" {
-		kind = string(dependencygroups.KindParam)
+func (s *DependencyGroupService) Restore(ctx context.Context, tenantID, id int64) error {
+	row, err := s.db.Queries.GetDependencyGroupIncludingDeleted(ctx, id)
+	if err != nil || row.TenantID != tenantID {
+		return ErrDependencyGroupNotFound
 	}
-	switch dependencygroups.ConditionKind(kind) {
-	case dependencygroups.KindParam:
-		if paramPath == "" {
-			return ErrParamPathRequired
-		}
-		if !validConditionOperator(operator) {
-			return ErrInvalidOperator
-		}
-	case dependencygroups.KindScript:
-		if scriptSource == "" {
-			return ErrScriptSourceRequired
-		}
-		validated, err := validateScriptExpect(scriptExpect)
-		if err != nil {
-			return err
-		}
-		scriptExpect = validated
-	default:
-		return ErrInvalidConditionKind
+	_, err = s.db.Queries.RestoreDependencyGroup(ctx, db.RestoreDependencyGroupParams{ID: id, TenantID: tenantID})
+	return err
+}
+
+func (s *DependencyGroupService) PermanentlyDelete(ctx context.Context, tenantID, id int64) error {
+	row, err := s.db.Queries.GetDependencyGroupIncludingDeleted(ctx, id)
+	if err != nil || row.TenantID != tenantID {
+		return ErrDependencyGroupNotFound
+	}
+	if row.IsBuiltin {
+		return ErrBuiltinProtected
+	}
+	return hardDeleteDependencyGroup(ctx, s.db.Queries, id)
+}
+
+func hardDeleteDependencyGroup(ctx context.Context, queries *db.Queries, id int64) error {
+	count, err := queries.CountLinksForGroup(ctx, id)
+	if err != nil {
+		return err
+	}
+	if count != 0 {
+		return ErrDependencyGroupReferenced
+	}
+	return queries.DeleteDependencyGroup(ctx, id)
+}
+
+// AddCondition appends a condition to a group. Every kind follows the
+// standardized test shape (validateConditionPayload): param requires a
+// paramPath, command requires an inline command in scriptSource, script
+// requires exactly one of scriptSource/scriptRef; operator and values
+// carry the expectation for all kinds.
+func (s *DependencyGroupService) AddCondition(ctx context.Context, groupID int64, paramPath, operator string, values []string, kind, scriptSource, scriptRef string) error {
+	kind, err := validateConditionPayload(conditionPayload{
+		Kind: kind, ParamPath: paramPath, Operator: operator,
+		ScriptSource: scriptSource, ScriptRef: scriptRef,
+	})
+	if err != nil {
+		return err
 	}
 
 	conds, err := s.db.Queries.ListConditionsForGroup(ctx, groupID)
@@ -312,7 +367,7 @@ func (s *DependencyGroupService) AddCondition(ctx context.Context, groupID int64
 	vals, _ := json.Marshal(values)
 	_, err = s.db.Queries.CreateDependencyGroupCondition(ctx, db.CreateDependencyGroupConditionParams{
 		GroupID: groupID, ParamPath: paramPath, Operator: operator, ValueJson: string(vals), Seq: int64(len(conds)),
-		Kind: kind, ScriptSource: scriptSource, ScriptExpect: scriptExpect,
+		Kind: kind, ScriptSource: scriptSource, ScriptRef: scriptRef, ScriptExpect: "",
 	})
 	return err
 }

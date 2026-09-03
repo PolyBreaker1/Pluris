@@ -110,18 +110,15 @@ func (s *GroupService) SetGroupMeta(ctx context.Context, groupID int64, descript
 
 // AddRule appends a dynamic-membership rule to a group, reusing the
 // EXACT same validation DependencyGroupService.AddCondition applies
-// (validConditionOperator / validateScriptExpect, dependencygroups.go —
-// same package, so called directly rather than duplicated): kind
-// defaults to "param" when empty; kind="param" requires a paramPath and
-// an operator from dependencygroups.AllOperators(); kind="script"
-// requires a scriptSource and a valid (or empty-defaulting)
-// scriptExpect. Only a dynamic group ("membership"="dynamic") may hold
-// rules — a static group's AddRule call fails closed with
-// ErrGroupNotDynamic rather than silently accepting a rule with no
-// effect. On success, EvaluateDynamicMembership runs immediately (rule
-// save is a trigger point per the design), reconciling rule-sourced
-// members against the now-current rule set.
-func (s *GroupService) AddRule(ctx context.Context, groupID int64, kind, paramPath, operator string, values []string, scriptSource, scriptExpect string) (db.GroupMembershipRule, error) {
+// (validateConditionPayload, dependencygroups.go — same package, so
+// called directly rather than duplicated). Only a dynamic group
+// ("membership"="dynamic") may hold rules — a static group's AddRule
+// call fails closed with ErrGroupNotDynamic rather than silently
+// accepting a rule with no effect. On success,
+// EvaluateDynamicMembership runs immediately (rule save is a trigger
+// point per the design), reconciling rule-sourced members against the
+// now-current rule set.
+func (s *GroupService) AddRule(ctx context.Context, groupID int64, kind, paramPath, operator string, values []string, scriptSource, scriptRef string) (db.GroupMembershipRule, error) {
 	group, err := s.db.Queries.GetGroup(ctx, groupID)
 	if err != nil {
 		return db.GroupMembershipRule{}, err
@@ -130,28 +127,12 @@ func (s *GroupService) AddRule(ctx context.Context, groupID int64, kind, paramPa
 		return db.GroupMembershipRule{}, ErrGroupNotDynamic
 	}
 
-	if kind == "" {
-		kind = string(dependencygroups.KindParam)
-	}
-	switch dependencygroups.ConditionKind(kind) {
-	case dependencygroups.KindParam:
-		if paramPath == "" {
-			return db.GroupMembershipRule{}, ErrParamPathRequired
-		}
-		if !validConditionOperator(operator) {
-			return db.GroupMembershipRule{}, ErrInvalidOperator
-		}
-	case dependencygroups.KindScript:
-		if scriptSource == "" {
-			return db.GroupMembershipRule{}, ErrScriptSourceRequired
-		}
-		validated, err := validateScriptExpect(scriptExpect)
-		if err != nil {
-			return db.GroupMembershipRule{}, err
-		}
-		scriptExpect = validated
-	default:
-		return db.GroupMembershipRule{}, ErrInvalidConditionKind
+	kind, err = validateConditionPayload(conditionPayload{
+		Kind: kind, ParamPath: paramPath, Operator: operator,
+		ScriptSource: scriptSource, ScriptRef: scriptRef,
+	})
+	if err != nil {
+		return db.GroupMembershipRule{}, err
 	}
 
 	existing, err := s.db.Queries.ListRulesForGroup(ctx, groupID)
@@ -161,7 +142,7 @@ func (s *GroupService) AddRule(ctx context.Context, groupID int64, kind, paramPa
 	vals, _ := json.Marshal(values)
 	rule, err := s.db.Queries.CreateGroupMembershipRule(ctx, db.CreateGroupMembershipRuleParams{
 		GroupID: groupID, Kind: kind, ParamPath: paramPath, Operator: operator, ValueJson: string(vals),
-		ScriptSource: scriptSource, ScriptExpect: scriptExpect, Seq: int64(len(existing)),
+		ScriptSource: scriptSource, ScriptRef: scriptRef, ScriptExpect: "", Seq: int64(len(existing)),
 	})
 	if err != nil {
 		return db.GroupMembershipRule{}, err
@@ -281,7 +262,7 @@ func (s *GroupService) EvaluateDynamicMembership(ctx context.Context, groupID in
 		_ = json.Unmarshal([]byte(r.ValueJson), &vals)
 		depGroup.Conditions = append(depGroup.Conditions, dependencygroups.Condition{
 			ID: r.ID, ParamPath: r.ParamPath, Operator: dependencygroups.Operator(r.Operator), Values: vals,
-			Kind: dependencygroups.ConditionKind(r.Kind), ScriptSource: r.ScriptSource, ScriptExpect: r.ScriptExpect,
+			Kind: dependencygroups.ConditionKind(r.Kind), ScriptSource: r.ScriptSource, ScriptRef: r.ScriptRef, ScriptExpect: r.ScriptExpect,
 		})
 	}
 

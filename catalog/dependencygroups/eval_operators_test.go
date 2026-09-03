@@ -121,41 +121,51 @@ func TestAllOperatorsHaveLabels(t *testing.T) {
 // --- script conditions ---
 
 func TestEvalScriptConditionUnknownWithoutResult(t *testing.T) {
-	c := Condition{ID: 42, Kind: KindScript, ScriptSource: "exit 0", ScriptExpect: `{"exit_code":0}`}
+	c := Condition{ID: 42, Kind: KindScript, ScriptSource: "exit 0", Operator: OpExists}
 	got := evalCondition(c, map[string]string{})
 	if got != "unknown" {
 		t.Fatalf("want unknown without script_result fact, got %s", got)
 	}
 }
 
-func TestEvalScriptConditionPass(t *testing.T) {
-	c := Condition{ID: 42, Kind: KindScript}
-	got := evalCondition(c, map[string]string{"script_result/42": "pass"})
+func TestEvalScriptConditionStdoutOperatorPass(t *testing.T) {
+	c := Condition{ID: 42, Kind: KindScript, Operator: OpContains, Values: []string{"3"}}
+	got := evalCondition(c, map[string]string{"script_result/42": "6.3.0-generic"})
 	if got != "pass" {
 		t.Fatalf("want pass, got %s", got)
 	}
 }
 
-func TestEvalScriptConditionFail(t *testing.T) {
-	c := Condition{ID: 42, Kind: KindScript}
-	got := evalCondition(c, map[string]string{"script_result/42": "fail"})
+func TestEvalScriptConditionStdoutOperatorFail(t *testing.T) {
+	c := Condition{ID: 42, Kind: KindScript, Operator: OpEquals, Values: []string{"expected"}}
+	got := evalCondition(c, map[string]string{"script_result/42": "actual"})
 	if got != "fail" {
 		t.Fatalf("want fail, got %s", got)
 	}
 }
 
-func TestEvalScriptConditionGarbageValueIsUnknown(t *testing.T) {
-	c := Condition{ID: 42, Kind: KindScript}
-	got := evalCondition(c, map[string]string{"script_result/42": "maybe"})
-	if got != "unknown" {
-		t.Fatalf("want unknown for garbage script_result value, got %s", got)
+func TestEvalScriptConditionExitFailSentinel(t *testing.T) {
+	c := Condition{ID: 42, Kind: KindScript, Operator: OpContains, Values: []string{"anything"}}
+	got := evalCondition(c, map[string]string{"script_result/42": ExitFailSentinel})
+	if got != "fail" {
+		t.Fatalf("want fail on non-zero exit regardless of operator, got %s", got)
+	}
+}
+
+func TestEvalCommandConditionSameContract(t *testing.T) {
+	c := Condition{ID: 7, Kind: KindCommand, ScriptSource: "uname -r", Operator: OpContains, Values: []string{"3"}}
+	if got := evalCondition(c, map[string]string{"script_result/7": "3.10.0"}); got != "pass" {
+		t.Fatalf("command pass: got %s", got)
+	}
+	if got := evalCondition(c, map[string]string{}); got != "unknown" {
+		t.Fatalf("command unreported: want unknown, got %s", got)
 	}
 }
 
 func TestEvalScriptConditionKeyedByID(t *testing.T) {
 	// A script_result fact for a different condition ID must not leak in.
-	c := Condition{ID: 1, Kind: KindScript}
-	got := evalCondition(c, map[string]string{"script_result/2": "pass"})
+	c := Condition{ID: 1, Kind: KindScript, Operator: OpExists}
+	got := evalCondition(c, map[string]string{"script_result/2": "output"})
 	if got != "unknown" {
 		t.Fatalf("want unknown when only a different condition's script_result is present, got %s", got)
 	}
@@ -169,10 +179,10 @@ func TestEvalScriptConditionKeyedByID(t *testing.T) {
 // exercised above.
 
 func TestMatchModeAllPrecedence(t *testing.T) {
-	pass := Condition{ID: 1, Kind: KindScript}
-	fail := Condition{ID: 2, Kind: KindScript}
-	unknown := Condition{ID: 3, Kind: KindScript}
-	facts := map[string]string{"script_result/1": "pass", "script_result/2": "fail"}
+	pass := Condition{ID: 1, Kind: KindScript, Operator: OpExists}
+	fail := Condition{ID: 2, Kind: KindScript, Operator: OpExists}
+	unknown := Condition{ID: 3, Kind: KindScript, Operator: OpExists}
+	facts := map[string]string{"script_result/1": "output", "script_result/2": ExitFailSentinel}
 
 	cases := []struct {
 		name  string
@@ -197,10 +207,10 @@ func TestMatchModeAllPrecedence(t *testing.T) {
 }
 
 func TestMatchModeAnyPrecedence(t *testing.T) {
-	pass := Condition{ID: 1, Kind: KindScript}
-	fail := Condition{ID: 2, Kind: KindScript}
-	unknown := Condition{ID: 3, Kind: KindScript}
-	facts := map[string]string{"script_result/1": "pass", "script_result/2": "fail"}
+	pass := Condition{ID: 1, Kind: KindScript, Operator: OpExists}
+	fail := Condition{ID: 2, Kind: KindScript, Operator: OpExists}
+	unknown := Condition{ID: 3, Kind: KindScript, Operator: OpExists}
+	facts := map[string]string{"script_result/1": "output", "script_result/2": ExitFailSentinel}
 
 	cases := []struct {
 		name  string
@@ -228,8 +238,8 @@ func TestMatchModeAnyPrecedence(t *testing.T) {
 // a Group with MatchMode unset (as every pre-Task-2.1 in-memory Group
 // literal is) must behave exactly like MatchAll.
 func TestMatchModeZeroValueBehavesAsAll(t *testing.T) {
-	fail := Condition{ID: 2, Kind: KindScript}
-	facts := map[string]string{"script_result/2": "fail"}
+	fail := Condition{ID: 2, Kind: KindScript, Operator: OpExists}
+	facts := map[string]string{"script_result/2": ExitFailSentinel}
 	g := Group{Conditions: []Condition{fail}} // MatchMode zero value
 	if got := evalGroup(g, facts); got != "fail" {
 		t.Fatalf("zero-value MatchMode: want fail (same as explicit all), got %s", got)

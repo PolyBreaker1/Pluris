@@ -86,6 +86,7 @@ var domains = []Domain{
 		Label: "Server Administration",
 		Actions: []Action{
 			{Key: "access", Label: "Access server administration", Description: "Access server administration", Scoped: false},
+			{Key: "manage_data", Label: "Manage data retention", Description: "Configure deletion modes and retention windows", Scoped: false},
 			{Key: "tenant_switch", Label: "Switch tenants", Description: "Switch tenants", Scoped: false},
 		},
 	},

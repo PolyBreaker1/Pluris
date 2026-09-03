@@ -131,6 +131,12 @@ func (s *ConfigGroupService) ListByTenant(ctx context.Context, tenantID int64) (
 	})
 }
 
+func (s *ConfigGroupService) ListDeletedByTenant(ctx context.Context, tenantID int64) ([]db.ConfigurationGroup, error) {
+	return s.db.Queries.ListDeletedConfigurationGroupsByTenant(ctx, db.ListDeletedConfigurationGroupsByTenantParams{
+		TenantID: tenantID, Limit: 10000, Offset: 0,
+	})
+}
+
 // UpdateFields applies a partial name/description/enabled update (the
 // General tab's inline-edit field API -- see
 // console/handlers/field_api.go's FieldUpdateRequest/Response shape,
@@ -183,9 +189,31 @@ func (s *ConfigGroupService) UpdateFields(ctx context.Context, tenantID, id int6
 // Delete removes a group; ON DELETE CASCADE on both child tables
 // (db/schema/001_initial.sql) takes its bindings and assignments with
 // it, so no explicit child cleanup is needed here.
-func (s *ConfigGroupService) Delete(ctx context.Context, tenantID, id int64) error {
-	if _, err := s.Get(ctx, tenantID, id); err != nil {
+func (s *ConfigGroupService) Delete(ctx context.Context, tenantID, id, actorID int64) error {
+	row, err := s.db.Queries.GetConfigurationGroupIncludingDeleted(ctx, id)
+	if err != nil || row.TenantID != tenantID {
+		return ErrConfigGroupNotFound
+	}
+	setting, err := s.db.Queries.GetRetentionSetting(ctx, EntityKindConfigurationGroup)
+	if err != nil {
 		return err
+	}
+	if setting.Mode == RetentionModeImmediate {
+		return s.db.Queries.DeleteConfigurationGroup(ctx, id)
+	}
+	_, err = s.db.Queries.SoftDeleteConfigurationGroup(ctx, db.SoftDeleteConfigurationGroupParams{DeletedBy: actorID, ID: id, TenantID: tenantID})
+	return err
+}
+
+func (s *ConfigGroupService) Restore(ctx context.Context, tenantID, id int64) error {
+	_, err := s.db.Queries.RestoreConfigurationGroup(ctx, db.RestoreConfigurationGroupParams{ID: id, TenantID: tenantID})
+	return err
+}
+
+func (s *ConfigGroupService) PermanentlyDelete(ctx context.Context, tenantID, id int64) error {
+	row, err := s.db.Queries.GetConfigurationGroupIncludingDeleted(ctx, id)
+	if err != nil || row.TenantID != tenantID {
+		return ErrConfigGroupNotFound
 	}
 	return s.db.Queries.DeleteConfigurationGroup(ctx, id)
 }

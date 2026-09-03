@@ -2,6 +2,8 @@
 
 > Spec-by-example for the Policy Module format defined in ADR-006 (see [[decisions]]). **Not wired into the agent yet** — this directory exists only as a reference shape against which the runtime will be tested in Phase 2.
 
+> **Superseded for interchange (2026-07-17):** the shipping export/import format is now **`.pmdl`** (a renamed tar.gz: `module.yaml` + `<version>/version.yaml` + `<version>/scripts/<phase>/<seq>_<file>`), generated from the console's structured columns and importable on the Modules ▸ Sources page. This directory's layout predates migration 008 (old `enforce/validate/rollback` phases, version-level `runtime`) and is kept only as historical reference. See `docs/history/specs/2026-07-17-modular-module-system-design.md`.
+
 ## Layout
 
 ```

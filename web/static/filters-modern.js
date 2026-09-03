@@ -229,6 +229,10 @@ function init() {
         if (emptyState) {
             emptyState.classList.toggle('active', visibleCount === 0);
         }
+
+        document.dispatchEvent(new CustomEvent('pluris:list-visibility-changed', {
+            detail: { listId: listId, matching: visibleCount, total: totalCount }
+        }));
     }
 
     function matchQuickFilter(row, filter) {

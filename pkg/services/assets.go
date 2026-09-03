@@ -68,6 +68,56 @@ func (s *AssetService) ListBySubtype(ctx context.Context, tenantID int64, subtyp
 	return result, nil
 }
 
+// ListDeletedBySubtype is the explicit recycle-bin view. Normal asset reads
+// remain active-only.
+func (s *AssetService) ListDeletedBySubtype(ctx context.Context, tenantID int64, subtype string) ([]assets.Asset, error) {
+	rows, err := s.db.Queries.ListDeletedAssetsBySubtype(ctx, db.ListDeletedAssetsBySubtypeParams{
+		TenantID: tenantID, Subtype: subtype, Limit: 10000, Offset: 0,
+	})
+	if err != nil {
+		return nil, err
+	}
+	result := make([]assets.Asset, len(rows))
+	for i, row := range rows {
+		result[i] = convertDBAssetToAsset(row)
+	}
+	return result, nil
+}
+
+// Delete follows the asset retention setting.
+func (s *AssetService) Delete(ctx context.Context, tenantID int64, identifier string, actorID int64) error {
+	row, err := s.db.Queries.GetAssetForDeletion(ctx, db.GetAssetForDeletionParams{TenantID: tenantID, Identifier: sql.NullString{String: identifier, Valid: true}})
+	if err != nil {
+		return err
+	}
+	setting, err := s.db.Queries.GetRetentionSetting(ctx, EntityKindAsset)
+	if err != nil {
+		return err
+	}
+	if setting.Mode == RetentionModeImmediate {
+		return s.db.Queries.DeleteAsset(ctx, row.ID)
+	}
+	_, err = s.db.Queries.SoftDeleteAsset(ctx, db.SoftDeleteAssetParams{DeletedBy: actorID, ID: row.ID, TenantID: tenantID})
+	return err
+}
+
+func (s *AssetService) Restore(ctx context.Context, tenantID int64, identifier string) error {
+	row, err := s.db.Queries.GetAssetForDeletion(ctx, db.GetAssetForDeletionParams{TenantID: tenantID, Identifier: sql.NullString{String: identifier, Valid: true}})
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Queries.RestoreAsset(ctx, db.RestoreAssetParams{ID: row.ID, TenantID: tenantID})
+	return err
+}
+
+func (s *AssetService) PermanentlyDelete(ctx context.Context, tenantID int64, identifier string) error {
+	row, err := s.db.Queries.GetAssetForDeletion(ctx, db.GetAssetForDeletionParams{TenantID: tenantID, Identifier: sql.NullString{String: identifier, Valid: true}})
+	if err != nil {
+		return err
+	}
+	return s.db.Queries.DeleteAsset(ctx, row.ID)
+}
+
 // GetByUUID fetches a single asset by UUID
 func (s *AssetService) GetByUUID(ctx context.Context, uuid string) (*assets.Asset, error) {
 	dbAsset, err := s.db.Queries.GetAssetByUUID(ctx, uuid)
@@ -489,8 +539,12 @@ func convertDBAssetToAsset(dbAsset db.Asset) assets.Asset {
 		json.Unmarshal([]byte(dbAsset.Labels.String), &labels)
 	}
 
+	id := dbAsset.Uuid
+	if dbAsset.HumanID.Valid && dbAsset.HumanID.String != "" {
+		id = dbAsset.HumanID.String
+	}
 	return assets.Asset{
-		ID:                 dbAsset.Uuid, // Use UUID as ID
+		ID:                 id,
 		UUID:               dbAsset.Uuid,
 		TenantID:           fmt.Sprintf("%d", dbAsset.TenantID),
 		Subtype:            assets.Subtype(dbAsset.Subtype),

@@ -4,7 +4,7 @@
 
 **Related:** [[overview]], [[decisions]], [[parameters]], [[identity-assets]]
 
-Source of truth: `db/schema/001_initial.sql` through `009_group_kinds_rules.sql`, embedded into the binary via `db/schema/embed.go` and applied by `pkg/database.Database.migrate()`.
+Source of truth: `db/schema/001_initial.sql` through `011_module_tests_origin.sql`, embedded into the binary via `db/schema/embed.go` and applied by `pkg/database.Database.migrate()`.
 
 ## Migration discipline
 
@@ -35,7 +35,11 @@ Source of truth: `db/schema/001_initial.sql` through `009_group_kinds_rules.sql`
 
 **009_group_kinds_rules.sql** — adds `groups.description`/`member_kind` (`asset|identity|mixed`)/`membership` (`static|dynamic`)/`rules_match_mode` (`all|any`, reusing 006's `match_mode` semantics), `group_memberships.source` (`direct|rule`), and the new table `group_membership_rules` (schema-parity with `dependency_group_conditions` — same condition-builder/eval machinery, reused wholesale rather than reinvented). See `docs/history/specs/2026-07-12-dynamic-groups.md`.
 
-There is no `schema_migrations`-tracked migration beyond 009 as of this writing; `sessions` in the generic sense is `identity_sessions` (002).
+**010_soft_delete_retention.sql** — adds `deleted_at`/`deleted_by` soft-delete columns to every deletable entity plus the per-entity-kind `retention_settings` table (`purge_after_days`, `mode`). See the soft-delete spec under `docs/history/specs/`.
+
+**011_module_tests_origin.sql** — the modular-module-system migration (2026-07-17 spec): adds `script_ref` to `dependency_group_conditions` and `group_membership_rules` (a script-kind condition may reference a library script instead of carrying inline source); rewrites legacy `script_expect` rows into the standardized operator/value expectation (the column is dead from 011 on — INV-TEST: every test is subject, operator, expected value, across `param | command | script` kinds); creates `module_version_conditions` (per-version module tests, column parity with the other two condition tables, `version_id` FK CASCADE); adds `policy_module_versions.conditions_match_mode` (`all|any`) and `policy_modules.origin` (`bundled|tenant|imported`, backfilled from `is_bundled` — makes imported modules representable). See `docs/history/specs/2026-07-17-modular-module-system-design.md`.
+
+There is no `schema_migrations`-tracked migration beyond 011 as of this writing; `sessions` in the generic sense is `identity_sessions` (002).
 
 ## Domain tour
 

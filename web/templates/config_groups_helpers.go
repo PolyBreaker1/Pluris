@@ -75,6 +75,20 @@ func configGroupDetailPath(id int64) string {
 	return "/policy/groups/" + strconv.FormatInt(id, 10)
 }
 
+func configGroupListStateHref(deleted bool) string {
+	if deleted {
+		return "/policy/groups?state=deleted"
+	}
+	return "/policy/groups"
+}
+
+func configGroupRowHref(id int64, deleted bool) string {
+	if deleted {
+		return ""
+	}
+	return configGroupDetailPath(id)
+}
+
 // configGroupSearchBlob — lowercase haystack for the list filter.
 func configGroupSearchBlob(r ConfigGroupRow) string {
 	return strings.ToLower(strings.Join([]string{

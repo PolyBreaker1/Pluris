@@ -8,13 +8,13 @@
 -- name: ListAssetMembersForGroup :many
 SELECT a.*, gm.source AS source, gm.created_at AS added_at FROM assets a
 INNER JOIN group_memberships gm ON a.id = gm.asset_id
-WHERE gm.group_id = @group_id
+WHERE gm.group_id = @group_id AND a.deleted_at IS NULL
 ORDER BY a.human_id;
 
 -- name: ListIdentityMembersForGroup :many
 SELECT i.*, gm.source AS source, gm.created_at AS added_at FROM identities i
 INNER JOIN group_memberships gm ON i.id = gm.identity_id
-WHERE gm.group_id = @group_id
+WHERE gm.group_id = @group_id AND i.deleted_at IS NULL
 ORDER BY i.display_name;
 
 -- name: GetGroupMembershipSourceForAsset :one

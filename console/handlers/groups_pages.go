@@ -68,7 +68,14 @@ func (h *Handler) GroupsList(c echo.Context) error {
 	sess := auth.FromContext(ctx)
 	kind := c.QueryParam("kind")
 
-	groups, err := h.groupSvc.ListByTenant(ctx, sess.TenantID)
+	deleted := c.QueryParam("state") == "deleted"
+	var groups []db.Group
+	var err error
+	if deleted {
+		groups, err = h.groupSvc.ListDeletedByTenant(ctx, sess.TenantID)
+	} else {
+		groups, err = h.groupSvc.ListByTenant(ctx, sess.TenantID)
+	}
 	if err != nil {
 		return err
 	}
@@ -93,7 +100,11 @@ func (h *Handler) GroupsList(c echo.Context) error {
 			Created:     g.CreatedAt.Format("2006-01-02"),
 		})
 	}
-	return render(c, templates.GroupsPage(rows, kind))
+	setting, err := h.retentionSvc.GetSetting(ctx, services.EntityKindGroup)
+	if err != nil {
+		return err
+	}
+	return render(c, templates.GroupsPage(rows, kind, deleted, services.RetentionDeleteCopy(setting, "groups"), csrfTokenFrom(c)))
 }
 
 // GroupNew renders the create form (GET /groups/new).
@@ -145,7 +156,8 @@ func (h *Handler) GroupDelete(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := h.groupSvc.Delete(ctx, group.ID); err != nil {
+	sess := auth.FromContext(ctx)
+	if err := h.groupSvc.Delete(ctx, sess.TenantID, group.ID, sess.IdentityID); err != nil {
 		if errors.Is(err, services.ErrGroupReferenced) {
 			return echo.NewHTTPError(http.StatusConflict, "this group is still targeted by configuration group assignments; remove those first")
 		}
@@ -350,7 +362,7 @@ func (h *Handler) GroupRuleAdd(c echo.Context) error {
 	paramPath := c.FormValue("param_path")
 	operator := c.FormValue("operator")
 	scriptSource := c.FormValue("script_source")
-	scriptExpect := c.FormValue("script_expect")
+	scriptRef := c.FormValue("script_ref")
 
 	if kind == string(dependencygroups.KindParam) {
 		if _, _, _, err := params.ResolvePath(paramPath); err != nil {
@@ -369,7 +381,7 @@ func (h *Handler) GroupRuleAdd(c echo.Context) error {
 		values[i] = strings.TrimSpace(v)
 	}
 
-	if _, err := h.groupSvc.AddRule(ctx, group.ID, kind, paramPath, operator, values, scriptSource, scriptExpect); err != nil {
+	if _, err := h.groupSvc.AddRule(ctx, group.ID, kind, paramPath, operator, values, scriptSource, scriptRef); err != nil {
 		switch {
 		case errors.Is(err, services.ErrGroupNotDynamic):
 			return echo.NewHTTPError(http.StatusBadRequest, "rules require a dynamic group")
@@ -377,7 +389,7 @@ func (h *Handler) GroupRuleAdd(c echo.Context) error {
 			errors.Is(err, services.ErrInvalidOperator),
 			errors.Is(err, services.ErrParamPathRequired),
 			errors.Is(err, services.ErrScriptSourceRequired),
-			errors.Is(err, services.ErrInvalidScriptExpect):
+			errors.Is(err, services.ErrScriptSourceAmbiguous):
 			return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 		}
 		return err

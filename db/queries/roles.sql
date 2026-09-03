@@ -44,7 +44,7 @@ WHERE id = @id;
 SELECT i.id, i.username, i.display_name, i.email
 FROM identities i
 JOIN identity_roles ir ON ir.identity_id = i.id
-WHERE ir.role_id = @role_id
+WHERE ir.role_id = @role_id AND i.deleted_at IS NULL
 ORDER BY i.display_name;
 
 -- name: DeleteRole :exec
@@ -96,7 +96,7 @@ ORDER BY r.name;
 -- Groups holding a given role, for the role detail Members tab.
 SELECT g.id, g.name FROM groups g
 JOIN group_roles gr ON gr.group_id = g.id
-WHERE gr.role_id = @role_id
+WHERE gr.role_id = @role_id AND g.deleted_at IS NULL
 ORDER BY g.name;
 
 -- name: ListGroupRolesForIdentity :many
@@ -105,7 +105,8 @@ ORDER BY g.name;
 SELECT DISTINCT r.* FROM roles r
 JOIN group_roles gr ON gr.role_id = r.id
 JOIN group_memberships gm ON gm.group_id = gr.group_id
-WHERE gm.identity_id = @identity_id
+JOIN groups g ON g.id = gr.group_id
+WHERE gm.identity_id = @identity_id AND g.deleted_at IS NULL
 ORDER BY r.name;
 
 -- name: ListGroupRolesForIdentityDetail :many
@@ -119,5 +120,5 @@ FROM roles r
 JOIN group_roles gr ON gr.role_id = r.id
 JOIN group_memberships gm ON gm.group_id = gr.group_id
 JOIN groups g ON g.id = gr.group_id
-WHERE gm.identity_id = @identity_id
+WHERE gm.identity_id = @identity_id AND g.deleted_at IS NULL
 ORDER BY r.name, g.name;

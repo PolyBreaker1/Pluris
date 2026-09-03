@@ -70,14 +70,15 @@ func DependencyConditionSummary(g dependencygroups.Group) string {
 // candidates for a device (analogous to a Windows WMI filter). This is
 // the browsable list; the editor/detail view lands in Task 6 and module
 // linking in Task 7, so "New"/row-click only navigate for now.
-templ DependencyGroupsPage(rows []DependencyGroupRow) {
-	@Layout("policy-dependency-groups", "Dependency Groups") {
+templ DependencyGroupsPage(rows []DependencyGroupRow, deleted bool, deleteCopy string, csrf string) {
+	@Layout("policy-dependency-groups", "Dependency Groups", "") {
 		@PageHeader("Dependency Groups",
 			"Reusable applicability filters that decide which policy modules are valid for a device. Similar to Windows WMI filters.",
 			"", "")
 		{{ listID := lists.ListIDDependencyGroups }}
-		<div data-testid="page-dependency-groups">
-			<section class="pm-toolbar card" data-pluris-list={ listID }>
+		<div data-testid="page-dependency-groups" data-pluris-list={ listID } data-mass-delete-copy={ deleteCopy } data-mass-purge-copy="This permanently deletes the selected dependency groups and cannot be undone.">
+			<input type="hidden" name="_csrf" value={ csrf }/>
+			<section class="pm-toolbar card">
 				<div class="field field-wide">
 					<label for="dg-search">Search</label>
 					<input
@@ -93,6 +94,13 @@ templ DependencyGroupsPage(rows []DependencyGroupRow) {
 					/>
 				</div>
 				<div class="field">
+					<label for="dg-state">State</label>
+					<select id="dg-state" class="select" onchange="window.location.href = this.value">
+						<option value={ dependencyGroupListStateHref(false) } selected?={ !deleted }>Active</option>
+						<option value={ dependencyGroupListStateHref(true) } selected?={ deleted }>Deleted</option>
+					</select>
+				</div>
+				<div class="field">
 					<label for="dg-type">Type</label>
 					<select
 						id="dg-type"
@@ -106,6 +114,7 @@ templ DependencyGroupsPage(rows []DependencyGroupRow) {
 						<option value="custom">Custom</option>
 					</select>
 				</div>
+				if !deleted {
 				<div class="field field-action">
 					<label>&nbsp;</label>
 					<span data-pluris-count={ listID } data-template="{visible} of {total} groups"></span>
@@ -115,12 +124,15 @@ templ DependencyGroupsPage(rows []DependencyGroupRow) {
 					<a href="/policy/dependency-groups/new" class="btn btn-primary">@iconSVG("plus")
 <span>New dependency group</span></a>
 				</div>
+				}
 			</section>
+			@MassActionToolbar(listID, lists.MassActionsFor(listID))
 			<section class="pm-table-wrap card" data-pluris-list={ listID }>
 				@ConceptEmptyState("policy-dependency-groups", listID)
-				<table class="policy-table pluris-list" data-list-id={ listID }>
+				<table class="policy-table pluris-list" data-list-id={ listID } data-pluris-select={ listID }>
 					<thead>
 						<tr>
+							@ListSelectHeaderCell(listID)
 							for _, f := range lists.FieldsFor(listID) {
 								<th title={ f.Description }>{ f.Label }</th>
 							}
@@ -128,7 +140,14 @@ templ DependencyGroupsPage(rows []DependencyGroupRow) {
 					</thead>
 					<tbody>
 						for _, r := range rows {
-							<tr data-policy-id={ strconv.FormatInt(r.ID, 10) } data-dg-type={ dependencyGroupTypeAttr(r) } data-dg-search={ dependencyGroupSearchBlob(r) }>
+							<tr data-policy-id={ strconv.FormatInt(r.ID, 10) } data-select-name={ r.Name } data-dg-type={ dependencyGroupTypeAttr(r) } data-dg-search={ dependencyGroupSearchBlob(r) } data-row-href={ templ.SafeURL(dependencyGroupRowHref(r.ID, deleted)) }>
+								if deleted {
+									@ListSelectCell(listID, strconv.FormatInt(r.ID, 10), []string{"restore", "purge"})
+								} else if r.Builtin {
+									@ListSelectCell(listID, strconv.FormatInt(r.ID, 10), []string{})
+								} else {
+									@ListSelectCell(listID, strconv.FormatInt(r.ID, 10), []string{"delete"})
+								}
 								<td>{ r.Name }</td>
 								<td>{ r.ConditionSummary }</td>
 								<td>{ strconv.FormatInt(r.UsedBy, 10) } modules</td>
@@ -144,24 +163,23 @@ templ DependencyGroupsPage(rows []DependencyGroupRow) {
 					</tbody>
 				</table>
 			</section>
-			@dependencyGroupsNavigationScript()
+			@MassActionConfirmDialog()
 		</div>
 	}
 }
 
-// dependencyGroupsNavigationScript — row click navigates to the group's
-// detail page. Modeled on policyCatalogNavigationScript.
-templ dependencyGroupsNavigationScript() {
-	@templ.Raw(`<script>
-(function () {
-	document.addEventListener('click', function (e) {
-		if (e.target.closest('a, button, input, select, form')) return;
-		var row = e.target.closest('tr[data-policy-id]');
-		if (!row) return;
-		window.location.href = '/policy/dependency-groups/' + encodeURIComponent(row.dataset.policyId);
-	});
-})();
-</script>`)
+func dependencyGroupListStateHref(deleted bool) string {
+	if deleted {
+		return "/policy/dependency-groups?state=deleted"
+	}
+	return "/policy/dependency-groups"
+}
+
+func dependencyGroupRowHref(id int64, deleted bool) string {
+	if deleted {
+		return ""
+	}
+	return "/policy/dependency-groups/" + strconv.FormatInt(id, 10)
 }
 
 // DependencyGroupDetailPage (Task 6) — the standardized DetailShell for a
@@ -359,7 +377,7 @@ templ dependencyGroupConditionScript() {
 		p.set('operator', detail.operator || '');
 		(detail.values || []).forEach(function (v) { p.append('values', v); });
 		p.set('script_source', detail.scriptSource || '');
-		p.set('script_expect', detail.scriptExpect || '');
+		p.set('script_ref', detail.scriptRef || '');
 		return p.toString();
 	}
 
@@ -438,7 +456,7 @@ templ dependencyGroupModulesTab() {
 // DependencyGroupNewPage — standalone create form for a custom
 // dependency group.
 templ DependencyGroupNewPage(csrf string) {
-	@Layout("policy-dependency-groups", "New Dependency Group") {
+	@Layout("policy-dependency-groups", "New Dependency Group", "/policy/dependency-groups") {
 		@PageHeader("New Dependency Group", "Create a reusable applicability filter.", "", "")
 		<div data-testid="page-dependency-group-new">
 			<section class="asset-detail-section card" style="max-width:640px;">

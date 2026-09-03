@@ -4,7 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
-	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/labstack/echo/v4"
@@ -18,12 +18,7 @@ import (
 
 func setupMiddlewareTestDB(t *testing.T) *database.Database {
 	t.Helper()
-	dbPath := "test_auth_middleware.db"
-	t.Cleanup(func() {
-		os.Remove(dbPath)
-		os.Remove(dbPath + "-shm")
-		os.Remove(dbPath + "-wal")
-	})
+	dbPath := filepath.Join(t.TempDir(), "test_auth_middleware.db")
 	dbase, err := database.Open(dbPath)
 	if err != nil {
 		t.Fatalf("failed to open database: %v", err)

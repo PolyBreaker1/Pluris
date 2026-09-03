@@ -35,11 +35,15 @@ func contains(vs []string, v string) bool {
 // is the operand; an empty Values slice is "unknown" (nothing to compare
 // against), same as a missing fact.
 func evalCondition(c Condition, facts map[string]string) string {
-	if c.Kind == KindScript {
+	if c.Kind == KindScript || c.Kind == KindCommand {
 		return evalScriptCondition(c, facts)
 	}
 
 	v, ok := facts[paramKey(c.ParamPath)]
+	return evalOperator(c, v, ok)
+}
+
+func evalOperator(c Condition, v string, ok bool) string {
 	switch c.Operator {
 	case OpExists:
 		if !ok {
@@ -133,25 +137,23 @@ func evalCondition(c Condition, facts map[string]string) string {
 	return "unknown"
 }
 
-// evalScriptCondition looks up the agent-reported result of a script
-// condition. The agent contract: a fact keyed "script_result/<ID>" (ID is
-// the condition's database row id) whose value is "pass" or "fail". Any
-// other value, or the key being absent entirely (the agent hasn't run it
-// yet, or never will for a device it doesn't apply to), is "unknown" —
-// never a false pass or fail. Running the script itself is out of scope
-// here; this package only interprets the reported result.
+// evalScriptCondition applies a script/command condition's
+// Operator/Values to the agent-reported stdout. The agent contract: a
+// fact keyed "script_result/<ID>" (ID is the condition's database row
+// id) whose value is the run's stdout trimmed of one trailing newline,
+// or ExitFailSentinel for a non-zero exit. Absent fact (the agent has
+// not run it yet, or never will for a device it does not apply to) is
+// "unknown" — never a false pass or fail. Running the script itself is
+// out of scope here; this package only interprets the reported result.
 func evalScriptCondition(c Condition, facts map[string]string) string {
 	v, ok := facts[fmt.Sprintf("script_result/%d", c.ID)]
 	if !ok {
 		return "unknown"
 	}
-	switch v {
-	case "pass":
-		return "pass"
-	case "fail":
+	if v == ExitFailSentinel {
 		return "fail"
 	}
-	return "unknown"
+	return evalOperator(c, v, true)
 }
 
 // evalGroup combines a group's conditions per its MatchMode. The zero

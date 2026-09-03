@@ -74,7 +74,12 @@ var Menu = []MenuItem{
 			{Label: "Update Cycles", Href: "/packages/cycles", Key: "packages-cycles"},
 		},
 	},
-	{Label: "Server Administration", Href: "/server-admin", Key: "server-admin"},
+	{
+		Label: "Server Administration", Href: "/server-admin", Key: "server-admin",
+		Children: []MenuItem{
+			{Label: "Data Management", Href: "/server-admin/data", Key: "server-admin-data"},
+		},
+	},
 	{Label: "User / Admin Preferences", Href: "/preferences", Key: "preferences"},
 }
 
@@ -604,14 +609,14 @@ func moduleSearchBlob(m policymodules.Module) string {
 	return strings.ToLower(strings.Join(parts, " "))
 }
 
-// moduleOpenTitle — the Library row's Edit/View link tooltip (Task 4.3:
-// the row now links to the real module editor page instead of the old
-// data-pm-action="edit" stub).
-func moduleOpenTitle(origin string) string {
-	if origin == "tenant" {
-		return "Open the module editor"
+func moduleSelectCaps(m policymodules.Module, deleted bool) []string {
+	if deleted {
+		return []string{"restore", "purge"}
 	}
-	return "View this module (read-only -- clone it to make a tenant copy)"
+	if m.Origin == "bundled" {
+		return []string{"duplicate"}
+	}
+	return []string{"duplicate", "revoke", "delete"}
 }
 
 // moduleHasPhase — quick predicate used by the lifecycle phase strip in

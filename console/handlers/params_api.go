@@ -247,3 +247,19 @@ func toParamsAPIParam(md params.MountedDef) ParamsAPIParam {
 		Operators:      outOps,
 	}
 }
+
+// ScriptLibraryEntry is one row of the GET /api/scripts feed — the
+// contract the condition builder's script picker consumes. The Scripts
+// library page is not built yet, so the feed is empty; when it ships it
+// fills this same shape and the picker lights up with zero changes to
+// the condition model (script_ref stores the id).
+type ScriptLibraryEntry struct {
+	ID       string `json:"id"`
+	Title    string `json:"title"`
+	Filename string `json:"filename"`
+}
+
+// ScriptsAPI serves GET /api/scripts.
+func (h *Handler) ScriptsAPI(c echo.Context) error {
+	return c.JSON(http.StatusOK, []ScriptLibraryEntry{})
+}

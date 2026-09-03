@@ -29,7 +29,7 @@ SELECT
     m.title as module_title
 FROM module_installations i
 JOIN policy_modules m ON m.id = i.module_id
-WHERE i.asset_id = @asset_id
+WHERE i.asset_id = @asset_id AND m.deleted_at IS NULL
 ORDER BY m.title;
 
 -- name: ListInstallationsByModule :many
@@ -39,7 +39,7 @@ SELECT
     json_extract(a.subtype_payload, '$.hostname') as asset_hostname
 FROM module_installations i
 JOIN assets a ON a.id = i.asset_id
-WHERE i.module_id = @module_id
+WHERE i.module_id = @module_id AND a.deleted_at IS NULL
 ORDER BY i.state, a.human_id;
 
 -- name: ListInstallationsByState :many
@@ -50,7 +50,7 @@ SELECT
 FROM module_installations i
 JOIN assets a ON a.id = i.asset_id
 JOIN policy_modules m ON m.id = i.module_id
-WHERE i.state = @state
+WHERE i.state = @state AND a.deleted_at IS NULL AND m.deleted_at IS NULL
 ORDER BY i.updated_at DESC
 LIMIT @limit;
 
@@ -62,7 +62,7 @@ SELECT
 FROM module_installations i
 JOIN assets a ON a.id = i.asset_id
 JOIN policy_modules m ON m.id = i.module_id
-WHERE i.state = 'pending'
+WHERE i.state = 'pending' AND a.deleted_at IS NULL AND m.deleted_at IS NULL
 ORDER BY i.created_at
 LIMIT @limit;
 
@@ -74,7 +74,7 @@ SELECT
 FROM module_installations i
 JOIN assets a ON a.id = i.asset_id
 JOIN policy_modules m ON m.id = i.module_id
-WHERE i.state = 'failing'
+WHERE i.state = 'failing' AND a.deleted_at IS NULL AND m.deleted_at IS NULL
 ORDER BY i.updated_at DESC
 LIMIT @limit;
 

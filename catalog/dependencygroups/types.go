@@ -110,10 +110,14 @@ const (
 	// KindParam evaluates Operator/Values against a device fact keyed by
 	// ParamPath's trailing segment (the original, and default, kind).
 	KindParam ConditionKind = "param"
-	// KindScript evaluates to an agent-executed script's reported result
-	// rather than a static fact lookup. See Condition.Kind's doc comment
-	// for the exact agent contract.
+	// KindScript evaluates Operator/Values against the stdout an agent
+	// reports for the referenced (ScriptRef) or inline (ScriptSource)
+	// script. See Condition.Kind's doc comment for the agent contract.
 	KindScript ConditionKind = "script"
+	// KindCommand evaluates Operator/Values against the stdout an agent
+	// reports for the one-line shell command in ScriptSource. Same fact
+	// contract as KindScript.
+	KindCommand ConditionKind = "command"
 )
 
 // Condition is one predicate. ParamPath is a full canonical path (for
@@ -123,29 +127,39 @@ const (
 //
 //   - "param" (default, KindParam): Operator/Values are evaluated against
 //     the device fact keyed by ParamPath's trailing segment, as before.
-//   - "script" (KindScript): ScriptSource/ScriptExpect describe a script
-//     an agent is expected to run out of band. This package does not run
-//     the script — evalCondition looks up a fact named
-//     "script_result/<ID>" (ID is this condition's database id) and
-//     treats the value "pass" as a pass, "fail" as a fail, and anything
-//     else (including the key being absent) as "unknown". Actually
-//     running ScriptSource, comparing its exit code / output against
-//     ScriptExpect, and writing that fact back is the agent's job and is
-//     out of scope for this task; it lands with agent-side script
-//     execution.
+//   - "script" (KindScript) and "command" (KindCommand): ScriptSource
+//     (inline source or a one-line command) or ScriptRef (a library
+//     script id, script kind only) describe something an agent runs out
+//     of band. This package does not run it — evalCondition looks up a
+//     fact named "script_result/<ID>" (ID is this condition's database
+//     id) holding the run's REPORTED STDOUT (trimmed of one trailing
+//     newline), and applies Operator/Values to that stdout exactly like
+//     a param-kind condition applies them to a device fact. The agent
+//     reports a failed run (non-zero exit) as the sentinel fact value
+//     "\x00exit_fail", which evaluates to "fail" regardless of operator.
+//     An absent fact is "unknown" — never a false pass or fail.
+//     ScriptExpect is the pre-011 expectation format: dead, retained
+//     only for column parity; nothing writes or evaluates it.
 type Condition struct {
 	// ID is the condition's database row id. It is zero for conditions
 	// built in memory (e.g. tests) that were never persisted; only
-	// script-kind conditions need it, to key their "script_result/<ID>"
-	// fact lookup.
+	// script/command-kind conditions need it, to key their
+	// "script_result/<ID>" fact lookup.
 	ID           int64
 	ParamPath    string
 	Operator     Operator
 	Values       []string
 	Kind         ConditionKind
 	ScriptSource string
+	ScriptRef    string
 	ScriptExpect string
 }
+
+// ExitFailSentinel is the fact value an agent reports for a
+// script/command condition whose run exited non-zero: the run happened,
+// so the verdict is a definitive "fail", but there is no stdout worth
+// comparing. NUL-prefixed so no real stdout can collide with it.
+const ExitFailSentinel = "\x00exit_fail"
 
 // MatchMode controls how a group's conditions combine.
 type MatchMode string

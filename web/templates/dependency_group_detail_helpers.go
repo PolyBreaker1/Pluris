@@ -2,7 +2,6 @@ package templates
 
 import (
 	"encoding/json"
-	"strconv"
 	"strings"
 
 	"github.com/pluris/pluris/catalog/dependencygroups"
@@ -66,45 +65,31 @@ func conditionParamLabel(path string) string {
 	return def.Label
 }
 
-// conditionRowSummary renders one condition (db row) as the Conditions
-// tab's single human-readable summary column (Task 2.3): "path label ·
-// operator label · values" for param conditions (values omitted for
-// "exists", which needs none), or "Custom script · expected exit N (+
-// output match)" for script conditions. The script's source itself is
-// rendered separately (see conditionScriptExcerpt) so it can get its own
-// <code>-styled cell.
+// conditionRowSummary renders one condition (db row) as its single
+// human-readable summary in the standardized subject · operator · value
+// shape (INV-TEST), e.g. "OS family · is any of · linux",
+// "Bash · uname -r · contains · 3", "Script · custom.sh · contains ·
+// example". Used by dependency groups, dynamic group rules, and module
+// version tests — one summary renderer, never a fork.
 func conditionRowSummary(cond db.DependencyGroupCondition) string {
-	if cond.Kind == string(dependencygroups.KindScript) {
-		return "Custom script · " + conditionScriptExpectSummary(cond.ScriptExpect)
-	}
-	label := conditionParamLabel(cond.ParamPath)
 	op := dependencygroups.Operator(cond.Operator).Label()
-	if cond.Operator == string(dependencygroups.OpExists) {
-		return label + " · " + op
+	var subject string
+	switch cond.Kind {
+	case string(dependencygroups.KindCommand):
+		subject = "Bash · " + conditionScriptExcerpt(cond.ScriptSource)
+	case string(dependencygroups.KindScript):
+		if cond.ScriptRef != "" {
+			subject = "Script · " + cond.ScriptRef
+		} else {
+			subject = "Script · " + conditionScriptExcerpt(cond.ScriptSource)
+		}
+	default:
+		subject = conditionParamLabel(cond.ParamPath)
 	}
-	return label + " · " + op + " · " + conditionValuesLabel(cond.ValueJson)
-}
-
-// conditionScriptExpectSummary parses a script condition's ScriptExpect
-// JSON ({"exit_code":N,"output_equals":"..."} — see
-// dependencygroups.Condition's doc comment for the agent contract) into
-// its row-summary fragment. Malformed/empty JSON defaults to exit 0,
-// mirroring pkg/services.validateScriptExpect's own default.
-func conditionScriptExpectSummary(raw string) string {
-	var m struct {
-		ExitCode     *int    `json:"exit_code"`
-		OutputEquals *string `json:"output_equals"`
+	if cond.Operator == string(dependencygroups.OpExists) || cond.Operator == "" {
+		return subject + " · " + op
 	}
-	_ = json.Unmarshal([]byte(raw), &m)
-	exit := 0
-	if m.ExitCode != nil {
-		exit = *m.ExitCode
-	}
-	s := "expected exit " + strconv.Itoa(exit)
-	if m.OutputEquals != nil && *m.OutputEquals != "" {
-		s += " (+ output match)"
-	}
-	return s
+	return subject + " · " + op + " · " + conditionValuesLabel(cond.ValueJson)
 }
 
 // conditionScriptExcerptMaxRunes bounds the script excerpt so a huge
@@ -140,7 +125,7 @@ type conditionPrefill struct {
 	Operator     string   `json:"operator"`
 	Values       []string `json:"values"`
 	ScriptSource string   `json:"scriptSource"`
-	ScriptExpect string   `json:"scriptExpect"`
+	ScriptRef    string   `json:"scriptRef"`
 }
 
 // conditionPrefillJSON builds the Edit button's data-cb-prefill payload
@@ -156,7 +141,7 @@ func conditionPrefillJSON(cond db.DependencyGroupCondition) string {
 	}
 	b, err := json.Marshal(conditionPrefill{
 		Kind: kind, ParamPath: cond.ParamPath, Operator: cond.Operator, Values: vals,
-		ScriptSource: cond.ScriptSource, ScriptExpect: cond.ScriptExpect,
+		ScriptSource: cond.ScriptSource, ScriptRef: cond.ScriptRef,
 	})
 	if err != nil {
 		return "{}"

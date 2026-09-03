@@ -3,7 +3,7 @@ package database
 import (
 	"context"
 	"database/sql"
-	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/pluris/pluris/db"
@@ -11,10 +11,7 @@ import (
 
 func TestDatabaseBasicOperations(t *testing.T) {
 	// Create temporary database
-	dbPath := "test_pluris.db"
-	defer os.Remove(dbPath)
-	defer os.Remove(dbPath + "-shm")
-	defer os.Remove(dbPath + "-wal")
+	dbPath := filepath.Join(t.TempDir(), "test_pluris.db")
 
 	// Open database
 	database, err := Open(dbPath)

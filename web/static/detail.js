@@ -264,7 +264,9 @@
 		}).then(function (r) {
 			if (r.ok) {
 				finishSaveEdit(section, changed);
-				return;
+				return r.json().then(function (body) {
+					if (body && body.warning) alert(body.warning);
+				}, function () { /* no JSON body */ });
 			}
 			return r.json().then(function (err) {
 				alert('Save failed: ' + (err.error || err.message || 'unknown error'));

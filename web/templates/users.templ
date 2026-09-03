@@ -16,14 +16,23 @@ import (
 // via the web/lists registry — no independent field declarations. Row
 // click navigates to /users/:id (Task 16 builds that detail page; a 404
 // until then is expected and fine).
-templ UsersPage(rows []identities.Identity) {
-	@Layout("users", "Users") {
+templ UsersPage(rows []identities.Identity, deleted bool, deleteCopy string, csrf string) {
+	@Layout("users", "Users", "") {
 		@PageHeader("Users",
 			"Identity list — synced from Kanidm or manually added. Role assignment. Semi-automatic asset pairing. Self-service users see this page in read-only with scope-of-self filter.",
 			"Add user", "/users/new")
+		<form method="get" class="pm-toolbar card" style="display:flex; align-items:end; gap:12px; margin-bottom:16px;">
+			<div class="field">
+				<label for="identity-record-state">State</label>
+				<select id="identity-record-state" class="select" name="state">
+					<option value="active" selected?={ !deleted }>Active</option>
+					<option value="deleted" selected?={ deleted }>Deleted</option>
+				</select>
+			</div>
+			<button type="submit" class="btn btn-secondary">Apply</button>
+		</form>
 		<div data-testid="page-users">
-			@usersList(rows)
-			@usersListNavigationScript()
+			@usersList(rows, deleted, deleteCopy, csrf)
 			@invariantFooter()
 		</div>
 	}
@@ -32,11 +41,12 @@ templ UsersPage(rows []identities.Identity) {
 // usersList — unified Users list with the same modern filter system as
 // assetsList (search box, quick filters, advanced filter builder, column
 // picker, sortable table).
-templ usersList(rows []identities.Identity) {
+templ usersList(rows []identities.Identity, deleted bool, deleteCopy string, csrf string) {
 	{{ listID := lists.ListIDIdentities }}
 	{{ fields := lists.FieldsFor(listID) }}
 	{{ filterJSON := params.FilterConfigJSON("identity") }}
-	<div data-pluris-list={ listID } data-filter-builder={ listID }>
+	<div data-pluris-list={ listID } data-filter-builder={ listID } data-mass-delete-copy={ deleteCopy } data-mass-purge-copy="This permanently deletes the selected users and cannot be undone.">
+		<input type="hidden" name="_csrf" value={ csrf }/>
 		@templ.Raw(`<script type="application/json" data-filter-config>` + filterJSON + `</script>`)
 		<!-- Modern Filter System -->
 		<div class="pluris-filters">
@@ -95,6 +105,7 @@ templ usersList(rows []identities.Identity) {
 			<div class="filter-empty-desc">Try adjusting your search or filters</div>
 		</div>
 		<!-- Users Table -->
+		@MassActionToolbar(listID, lists.MassActionsFor(listID))
 		<section
 			class="pm-table-wrap"
 			data-list-id={ listID }
@@ -104,9 +115,10 @@ templ usersList(rows []identities.Identity) {
 				@ColumnPickerButton(listID)
 			</div>
 			@ConceptEmptyState("users", listID)
-			<table class="pm-table pluris-list" data-list-id={ listID }>
+			<table class="pm-table pluris-list" data-list-id={ listID } data-pluris-select={ listID }>
 				<thead>
 					<tr>
+						@ListSelectHeaderCell(listID)
 						for _, f := range fields {
 							if f.IsSortable() {
 								<th data-field={ f.Key } data-width={ f.Width } data-sort-type={ f.Sort } title={ f.Description } class="th-sortable">
@@ -125,7 +137,13 @@ templ usersList(rows []identities.Identity) {
 					{{ rowIdx := 0 }}
 					for _, u := range rows {
 						{{ idStr := strconv.FormatInt(u.ID, 10) }}
-						@templ.Raw(`<tr data-detail-id="` + idStr + `" data-user-id="` + idStr + `" data-searchable="` + identitySearchBlobEscaped(u) + `" data-row-index="` + strconv.Itoa(rowIdx) + `" tabindex="0"` + identityFilterAttrs(u) + `>`)
+						if deleted {
+							@templ.Raw(`<tr data-detail-id="` + idStr + `" data-user-id="` + idStr + `" data-select-name="` + u.ResolvedDisplayName() + `" data-searchable="` + identitySearchBlobEscaped(u) + `" data-row-index="` + strconv.Itoa(rowIdx) + `"` + identityFilterAttrs(u) + `>`)
+							@ListSelectCell(listID, idStr, []string{"restore", "purge"})
+						} else {
+							@templ.Raw(`<tr data-detail-id="` + idStr + `" data-user-id="` + idStr + `" data-select-name="` + u.ResolvedDisplayName() + `" data-row-href="/users/` + idStr + `" data-searchable="` + identitySearchBlobEscaped(u) + `" data-row-index="` + strconv.Itoa(rowIdx) + `" tabindex="0"` + identityFilterAttrs(u) + `>`)
+							@ListSelectCell(listID, idStr, []string{"delete"})
+						}
 						for _, f := range fields {
 							<td data-field={ f.Key } data-sort={ lists.RenderIdentityCellSort(f.Key, u) }>@templ.Raw(lists.RenderIdentityCell(f.Key, u))
 </td>
@@ -137,6 +155,7 @@ templ usersList(rows []identities.Identity) {
 			</table>
 			@templ.Raw(columnPickerScript)
 		</section>
+		@MassActionConfirmDialog()
 	</div>
 }
 
@@ -144,20 +163,20 @@ templ usersList(rows []identities.Identity) {
 // hero + 4 tabs. Groups / Policies / Roles are frame-only until Tasks
 // 9/11/12 land; General carries the schema sections and assigned assets.
 // Delete is in the hero ⋮ dropdown.
-templ UserDetailPage(user identities.Identity, assigned []assets.Asset, csrfToken string, groups []services.GroupRow, allGroups []db.Group, roles []db.ListRolesForIdentityDetailRow, allRoles []db.Role, viaGroupRoles []db.ListGroupRolesForIdentityDetailRow, applied []services.AppliedPolicy, warn string) {
+templ UserDetailPage(user identities.Identity, assigned []assets.Asset, csrfToken string, groups []services.GroupRow, allGroups []db.Group, roles []db.ListRolesForIdentityDetailRow, allRoles []db.Role, viaGroupRoles []db.ListGroupRolesForIdentityDetailRow, applied []services.AppliedPolicy, warn string, deleteCopy string) {
 	@DetailShell(
 		"users",
 		user.ResolvedDisplayName()+" — Identity",
 		templ.Attributes{"data-testid": "page-user-detail", "data-user-id": strconv.FormatInt(user.ID, 10)},
-		userDetailHero(user, csrfToken, warn),
+		userDetailHero(user, csrfToken, warn, deleteCopy),
 		userDetailTabs(user, assigned, csrfToken, groups, allGroups, roles, allRoles, viaGroupRoles, applied),
 	)
 }
 
 // userDeleteDropdownItem — delete form rendered inside the hero ⋮ dropdown.
 // Mirrors the old delete form but styled as a dropdown menu item.
-templ userDeleteDropdownItem(user identities.Identity, csrfToken string) {
-	<form class="hero-dropdown-form" method="POST" action={ templ.SafeURL("/users/" + strconv.FormatInt(user.ID, 10) + "/delete") } onsubmit="return confirm('Delete this user?')">
+templ userDeleteDropdownItem(user identities.Identity, csrfToken string, deleteCopy string) {
+	<form class="hero-dropdown-form" method="POST" action={ templ.SafeURL("/users/" + strconv.FormatInt(user.ID, 10) + "/delete") } data-confirm={ deleteCopy } onsubmit="return confirm(this.dataset.confirm)">
 		<input type="hidden" name="_csrf" value={ csrfToken }/>
 		<button type="submit" class="hero-dropdown-item">
 			<svg class="hero-dropdown-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
@@ -343,7 +362,7 @@ templ UserFormPage(user identities.Identity, csrfToken string, errorMsg string, 
 		{{ action = "/users/new" }}
 		{{ title = "Add user" }}
 	}
-	@Layout("users", title) {
+	@Layout("users", title, "/users") {
 		<div class="page-content">
 			<form method="POST" action={ templ.SafeURL(action) } data-testid="user-form">
 				<input type="hidden" name="_csrf" value={ csrfToken }/>
@@ -374,34 +393,4 @@ templ UserFormPage(user identities.Identity, csrfToken string, errorMsg string, 
 			</form>
 		</div>
 	}
-}
-
-// usersListNavigationScript — mirrors assetListNavigationScript: row
-// clicks on [data-detail-id] navigate to the full user detail page. The
-// lists.js detail-dialog engine is not used because no
-// <dialog data-pluris-detail="users"> exists on the page.
-templ usersListNavigationScript() {
-	<script>
-	(function() {
-		'use strict';
-		document.addEventListener('click', function(e) {
-			if (e.target.closest('button, a, input, select, textarea, label, [data-pluris-no-detail]')) return;
-			var row = e.target.closest('tbody tr[data-detail-id]');
-			if (!row) return;
-			var table = row.closest('[data-list-id="users"]');
-			if (!table) return;
-			e.preventDefault();
-			window.location.href = '/users/' + encodeURIComponent(row.dataset.detailId);
-		});
-		document.addEventListener('keydown', function(e) {
-			if (e.key !== 'Enter') return;
-			var row = e.target.closest('tbody tr[data-detail-id]');
-			if (!row) return;
-			var table = row.closest('[data-list-id="users"]');
-			if (!table) return;
-			e.preventDefault();
-			window.location.href = '/users/' + encodeURIComponent(row.dataset.detailId);
-		});
-	})();
-	</script>
 }

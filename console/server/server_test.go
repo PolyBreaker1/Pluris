@@ -29,6 +29,7 @@ import (
 
 	"github.com/pluris/pluris/db"
 	"github.com/pluris/pluris/pkg/database"
+	"github.com/pluris/pluris/pkg/services"
 )
 
 // doCSRFPost performs a full CSRF-protected POST against e: it first GETs
@@ -172,6 +173,7 @@ var mountPoints = []struct {
 	{name: "packages-packages", path: "/packages/packages", expectStatus: 200, expectTestID: `data-testid="page-packages-packages"`},
 	{name: "packages-cycles", path: "/packages/cycles", expectStatus: 200, expectTestID: `data-testid="page-packages-cycles"`},
 	{name: "server-admin", path: "/server-admin", expectStatus: 200, expectTestID: `data-testid="page-server-admin"`},
+	{name: "data-management", path: "/server-admin/data", expectStatus: 200, expectTestID: `data-testid="page-data-management"`},
 	{name: "preferences", path: "/preferences", expectStatus: 200, expectTestID: `data-testid="page-preferences"`},
 }
 
@@ -272,6 +274,33 @@ func TestHealthz(t *testing.T) {
 	e.ServeHTTP(rec, req)
 	require.Equal(t, 200, rec.Code)
 	require.Equal(t, "ok", strings.TrimSpace(rec.Body.String()))
+}
+
+func TestPurgeCycleRecordsActivity(t *testing.T) {
+	d, err := database.Open(filepath.Join(t.TempDir(), "purge-cycle.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, d.Close()) })
+	ctx := context.Background()
+	tenant, err := d.Queries.CreateTenant(ctx, db.CreateTenantParams{Name: "Purge", Slug: "purge"})
+	require.NoError(t, err)
+	moduleSvc := services.NewPolicyModuleService(d)
+	module, err := moduleSvc.CreateModule(ctx, &tenant.ID, nil, "tenant.purge.expired", "Expired", "")
+	require.NoError(t, err)
+	require.NoError(t, moduleSvc.DeleteModule(ctx, tenant.ID, module.ID, module.ModuleUrn, 99))
+	_, err = d.Conn().ExecContext(ctx, "UPDATE policy_modules SET deleted_at = datetime('now', '-2 days') WHERE id = ?", module.ID)
+	require.NoError(t, err)
+	days := int64(1)
+	_, err = services.NewRetentionService(d).UpdateSetting(ctx, services.EntityKindPolicyModule, services.RetentionModeSoft, &days, 99)
+	require.NoError(t, err)
+
+	runPurgeCycle(d)
+
+	activity, err := d.Queries.ListActivityForEntity(ctx, db.ListActivityForEntityParams{
+		TenantID: tenant.ID, EntityType: services.EntityKindPolicyModule, EntityID: module.ID, Limit: 10,
+	})
+	require.NoError(t, err)
+	require.Len(t, activity, 1)
+	require.Equal(t, "entity_purged", activity[0].Event)
 }
 
 // TestSetupGateRedirectsFreshDatabase proves the setup gate genuinely

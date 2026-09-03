@@ -8,13 +8,19 @@
  *             dialog (`#condition-builder`). An optional `data-cb-prefill`
  *             JSON string on the SAME element pre-fills an existing
  *             condition for edit flows:
- *               {"kind":"param"|"script","paramPath":"...","operator":"...",
- *                "values":["..."],"scriptSource":"...","scriptExpect":"..."}
+ *               {"kind":"param"|"command"|"script","paramPath":"...",
+ *                "operator":"...","values":["..."],"scriptSource":"...",
+ *                "scriptRef":"..."}
  *   - Save:   dispatches `condition:save` (CustomEvent) on `document`:
  *               detail = { kind, paramPath, operator, values, scriptSource,
- *                          scriptExpect }
+ *                          scriptRef }
  *             `values` is always a string array. The embedding page owns
  *             persistence — this file never calls a save API.
+ *   - Kinds:  every kind is subject -> operator -> expected value
+ *             (INV-TEST). `data-cb-allowed-kinds` on the dialog hides
+ *             tabs a page doesn't allow. The script tab's library picker
+ *             is fed by GET /api/scripts (empty feed until the Scripts
+ *             library ships).
  *   - Cancel/Esc/×: closes without dispatching.
  *   - Data:   GET /api/params is fetched fresh on every open (same-origin
  *             credentials) and rendered as an entity → section → param
@@ -64,15 +70,25 @@
 		var valueContainer = document.getElementById('cb-value-container');
 
 		var scriptSourceEl = document.getElementById('cb-script-source');
-		var scriptExitCodeEl = document.getElementById('cb-script-exit-code');
-		var scriptOutputEqualsEl = document.getElementById('cb-script-output-equals');
+		var scriptRefEl = document.getElementById('cb-script-ref');
+		var scriptRefEmptyEl = document.getElementById('cb-script-ref-empty');
+		var scriptOperatorEl = document.getElementById('cb-script-operator');
+		var scriptValueEl = document.getElementById('cb-script-value');
+		var commandSourceEl = document.getElementById('cb-command-source');
+		var commandOperatorEl = document.getElementById('cb-command-operator');
+		var commandValueEl = document.getElementById('cb-command-value');
 
 		if (!saveBtn || !treeEl || !operatorSel || !valueContainer) return;
 
 		var supportedOperators = parseSet(dlg.dataset.supportedOperators);
+		var allowedKinds = parseSet(dlg.dataset.cbAllowedKinds || 'param,command,script');
+
+		tabBtns.forEach(function (b) {
+			if (!allowedKinds[b.dataset.cbTab]) b.hidden = true;
+		});
 
 		// --- State -----------------------------------------------------
-		var activeKind = 'param';       // 'param' | 'script'
+		var activeKind = 'param';       // 'param' | 'command' | 'script'
 		var paramsByPath = {};          // path -> API param object
 		var selectedPath = null;
 		var pendingPrefill = null;      // prefill object awaiting tree load
@@ -86,8 +102,16 @@
 			return out;
 		}
 
+		function firstAllowedKind() {
+			if (allowedKinds.param) return 'param';
+			if (allowedKinds.command) return 'command';
+			return 'script';
+		}
+
 		function setKind(kind) {
-			activeKind = kind === 'script' ? 'script' : 'param';
+			if (kind !== 'script' && kind !== 'command') kind = 'param';
+			if (!allowedKinds[kind]) kind = firstAllowedKind();
+			activeKind = kind;
 			tabBtns.forEach(function (b) {
 				var active = b.dataset.cbTab === activeKind;
 				b.classList.toggle('is-active', active);
@@ -97,6 +121,33 @@
 				p.hidden = p.dataset.cbPanel !== activeKind;
 			});
 			updateSaveEnabled();
+		}
+
+		// --- Library script feed (script tab) ---------------------------
+		function loadScriptRefs() {
+			if (!scriptRefEl) return;
+			fetch('/api/scripts', { credentials: 'same-origin', headers: { Accept: 'application/json' } })
+				.then(function (r) { return r.ok ? r.json() : []; })
+				.then(function (list) {
+					list = Array.isArray(list) ? list : [];
+					var current = scriptRefEl.value;
+					scriptRefEl.innerHTML = '';
+					var none = document.createElement('option');
+					none.value = '';
+					none.textContent = '— inline source below —';
+					scriptRefEl.appendChild(none);
+					list.forEach(function (s) {
+						var opt = document.createElement('option');
+						opt.value = s.id;
+						opt.textContent = s.title || s.filename || s.id;
+						scriptRefEl.appendChild(opt);
+					});
+					scriptRefEl.value = current;
+					if (scriptRefEmptyEl) scriptRefEmptyEl.hidden = list.length > 0;
+				})
+				.catch(function () {
+					if (scriptRefEmptyEl) scriptRefEmptyEl.hidden = false;
+				});
 		}
 
 		// --- Fetch + render the param tree ------------------------------
@@ -359,9 +410,24 @@
 			saveBtn.disabled = !isValid();
 		}
 
+		function stdoutOperatorNeedsValue(op) {
+			return op !== 'exists';
+		}
+
 		function isValid() {
+			if (activeKind === 'command') {
+				if (!(commandSourceEl && commandSourceEl.value.trim())) return false;
+				var cop = commandOperatorEl && commandOperatorEl.value;
+				if (!cop) return false;
+				return !stdoutOperatorNeedsValue(cop) || !!(commandValueEl && commandValueEl.value.trim());
+			}
 			if (activeKind === 'script') {
-				return !!(scriptSourceEl && scriptSourceEl.value.trim());
+				var hasRef = !!(scriptRefEl && scriptRefEl.value);
+				var hasSrc = !!(scriptSourceEl && scriptSourceEl.value.trim());
+				if (hasRef === hasSrc) return false;
+				var sop = scriptOperatorEl && scriptOperatorEl.value;
+				if (!sop) return false;
+				return !stdoutOperatorNeedsValue(sop) || !!(scriptValueEl && scriptValueEl.value.trim());
 			}
 			var p = selectedPath && paramsByPath[selectedPath];
 			if (!p) return false;
@@ -374,12 +440,20 @@
 		// --- Prefill --------------------------------------------------------
 		function applyPrefill(prefill) {
 			if (!prefill || typeof prefill !== 'object') return;
-			setKind(prefill.kind === 'script' ? 'script' : 'param');
+			setKind(prefill.kind);
+			if (prefill.kind === 'command') {
+				if (commandSourceEl) commandSourceEl.value = prefill.scriptSource || '';
+				if (commandOperatorEl && prefill.operator) commandOperatorEl.value = prefill.operator;
+				if (commandValueEl) commandValueEl.value = (prefill.values && prefill.values[0]) || '';
+				updateSaveEnabled();
+				return;
+			}
 			if (prefill.kind === 'script') {
 				if (scriptSourceEl) scriptSourceEl.value = prefill.scriptSource || '';
-				var expect = parseExpect(prefill.scriptExpect);
-				if (scriptExitCodeEl) scriptExitCodeEl.value = (expect && expect.exit_code !== undefined) ? expect.exit_code : 0;
-				if (scriptOutputEqualsEl) scriptOutputEqualsEl.value = (expect && expect.output_equals !== undefined) ? expect.output_equals : '';
+				if (scriptRefEl) scriptRefEl.value = prefill.scriptRef || '';
+				if (scriptOperatorEl && prefill.operator) scriptOperatorEl.value = prefill.operator;
+				if (scriptValueEl) scriptValueEl.value = (prefill.values && prefill.values[0]) || '';
+				updateSaveEnabled();
 				return;
 			}
 			// Param kind: tree may not be loaded yet — stash and apply once it is.
@@ -399,15 +473,6 @@
 			updateSaveEnabled();
 		}
 
-		function parseExpect(s) {
-			if (!s) return null;
-			try {
-				return JSON.parse(s);
-			} catch (e) {
-				return null;
-			}
-		}
-
 		// --- Open / close ---------------------------------------------------
 		function resetForm() {
 			selectedPath = null;
@@ -418,18 +483,23 @@
 			operatorSel.disabled = true;
 			valueContainer.innerHTML = '';
 			if (scriptSourceEl) scriptSourceEl.value = '';
-			if (scriptExitCodeEl) scriptExitCodeEl.value = '0';
-			if (scriptOutputEqualsEl) scriptOutputEqualsEl.value = '';
+			if (scriptRefEl) scriptRefEl.value = '';
+			if (scriptOperatorEl) scriptOperatorEl.selectedIndex = 0;
+			if (scriptValueEl) scriptValueEl.value = '';
+			if (commandSourceEl) commandSourceEl.value = '';
+			if (commandOperatorEl) commandOperatorEl.selectedIndex = 0;
+			if (commandValueEl) commandValueEl.value = '';
 			setError('');
 		}
 
 		function openDialog(opener) {
 			resetForm();
-			setKind('param');
+			setKind(firstAllowedKind());
 			if (titleEl) {
 				titleEl.textContent = (opener && opener.dataset.cbPrefill) ? 'Edit condition' : 'Add condition';
 			}
 			loadParams();
+			loadScriptRefs();
 
 			var prefill = null;
 			if (opener && opener.dataset.cbPrefill) {
@@ -466,23 +536,27 @@
 			document.body.classList.remove('cg-dialog-locked');
 		}
 
+		function stdoutDetail(kind, sourceEl, refVal, opEl, valEl) {
+			var op = (opEl && opEl.value) || '';
+			var val = (valEl && valEl.value.trim()) || '';
+			return {
+				kind: kind,
+				paramPath: '',
+				operator: op,
+				values: (stdoutOperatorNeedsValue(op) && val) ? [val] : [],
+				scriptSource: (sourceEl && sourceEl.value) || '',
+				scriptRef: refVal || '',
+			};
+		}
+
 		function save() {
 			if (!isValid()) return;
 			var detail;
-			if (activeKind === 'script') {
-				var exitCode = parseInt((scriptExitCodeEl && scriptExitCodeEl.value) || '0', 10);
-				if (isNaN(exitCode)) exitCode = 0;
-				var expect = { exit_code: exitCode };
-				var outputEquals = scriptOutputEqualsEl && scriptOutputEqualsEl.value;
-				if (outputEquals) expect.output_equals = outputEquals;
-				detail = {
-					kind: 'script',
-					paramPath: '',
-					operator: '',
-					values: [],
-					scriptSource: (scriptSourceEl && scriptSourceEl.value) || '',
-					scriptExpect: JSON.stringify(expect),
-				};
+			if (activeKind === 'command') {
+				detail = stdoutDetail('command', commandSourceEl, '', commandOperatorEl, commandValueEl);
+			} else if (activeKind === 'script') {
+				var refVal = (scriptRefEl && scriptRefEl.value) || '';
+				detail = stdoutDetail('script', refVal ? null : scriptSourceEl, refVal, scriptOperatorEl, scriptValueEl);
 			} else {
 				var p = paramsByPath[selectedPath];
 				var opDef = currentOperatorDef(p);
@@ -492,7 +566,7 @@
 					operator: opDef ? opDef.key : '',
 					values: currentValues(),
 					scriptSource: '',
-					scriptExpect: '',
+					scriptRef: '',
 				};
 			}
 			document.dispatchEvent(new CustomEvent('condition:save', { detail: detail }));
@@ -544,6 +618,12 @@
 		});
 
 		if (scriptSourceEl) scriptSourceEl.addEventListener('input', updateSaveEnabled);
+		if (scriptRefEl) scriptRefEl.addEventListener('change', updateSaveEnabled);
+		if (scriptOperatorEl) scriptOperatorEl.addEventListener('change', updateSaveEnabled);
+		if (scriptValueEl) scriptValueEl.addEventListener('input', updateSaveEnabled);
+		if (commandSourceEl) commandSourceEl.addEventListener('input', updateSaveEnabled);
+		if (commandOperatorEl) commandOperatorEl.addEventListener('change', updateSaveEnabled);
+		if (commandValueEl) commandValueEl.addEventListener('input', updateSaveEnabled);
 
 		saveBtn.addEventListener('click', function (e) {
 			e.preventDefault();
