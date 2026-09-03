@@ -330,7 +330,7 @@ func TestSeedBundled_IdempotentAndMatchesFormerMock(t *testing.T) {
 	}
 	foundSatisfies := false
 	for _, s := range mod.Satisfies {
-		if s == "sec.remote-access.ssh.password-auth" {
+		if s == "sec.opt.null-passwords-console" {
 			foundSatisfies = true
 		}
 	}

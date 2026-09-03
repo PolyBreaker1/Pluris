@@ -790,10 +790,15 @@ var bundledSeed = []seedModule{
 				Version:  "1.2.0",
 				Scope:    "machine",
 				TargetOS: []policymodules.TargetOS{policymodules.OSLinux},
-				Satisfies: []string{
-					"sec.remote-access.ssh.password-auth",
-					"Computer/WindowsComponents/RemoteAccess/SSH/PasswordAuthDisable",
-				},
+				// sec.opt.null-passwords-console is the closest catalog entry:
+				// both are about restricting password-based authentication
+				// over network services, and its own LinuxImpl already names
+				// sshd explicitly. No catalog entry maps 1:1 onto "SSH
+				// password auth" specifically -- OpenSSH Server on modern
+				// Windows is configured via sshd_config directly, with no
+				// classic-GPMC ADMX template, so there is no exact Windows
+				// GP lever to cite for a dedicated entry.
+				Satisfies: []string{"sec.opt.null-passwords-console"},
 				DependsOn: []policymodules.Dependency{
 					{ModuleID: "pluris.sshd.base-config", VersionConstraint: ">=1.0.0 <2.0.0"},
 				},
@@ -827,10 +832,13 @@ var bundledSeed = []seedModule{
 		Description: "Ensures /etc/ssh/sshd_config.d/ exists and is loaded by sshd. Required by every other SSH-policy module.",
 		Versions: []seedVersion{
 			{
-				Version:   "1.0.3",
-				Scope:     "machine",
-				TargetOS:  []policymodules.TargetOS{policymodules.OSLinux},
-				Satisfies: []string{"sec.remote-access.ssh.base"},
+				Version:  "1.0.3",
+				Scope:    "machine",
+				TargetOS: []policymodules.TargetOS{policymodules.OSLinux},
+				// Pure infrastructure (ensures the config-include mechanism
+				// exists for the other SSH modules); not itself an
+				// admin-facing policy decision, so it satisfies nothing.
+				Satisfies: nil,
 				Sandbox: policymodules.SandboxProfile{
 					FsWrite: []string{"/etc/ssh/sshd_config.d/", "/etc/ssh/sshd_config"}, User: "root",
 				},
@@ -850,10 +858,13 @@ var bundledSeed = []seedModule{
 		Description: "Explicitly enables password auth (for migration windows). Conflicts with the disable module.",
 		Versions: []seedVersion{
 			{
-				Version:   "1.0.0",
-				Scope:     "machine",
-				TargetOS:  []policymodules.TargetOS{policymodules.OSLinux},
-				Satisfies: []string{"sec.remote-access.ssh.password-auth"},
+				Version:  "1.0.0",
+				Scope:    "machine",
+				TargetOS: []policymodules.TargetOS{policymodules.OSLinux},
+				// Same catalog entry as the disable module (see its comment
+				// above) -- the two are opposite implementations of the
+				// same policy, which is exactly what Conflicts encodes.
+				Satisfies: []string{"sec.opt.null-passwords-console"},
 				DependsOn: []policymodules.Dependency{
 					{ModuleID: "pluris.sshd.base-config", VersionConstraint: ">=1.0.0 <2.0.0"},
 				},
@@ -872,10 +883,15 @@ var bundledSeed = []seedModule{
 		Description: "Configures GNOME / Plasma idle-lock to a parameterised timeout. User-scope; runs as $target_user.",
 		Versions: []seedVersion{
 			{
-				Version:   "2.0.1",
-				Scope:     "user",
-				TargetOS:  []policymodules.TargetOS{policymodules.OSLinux},
-				Satisfies: []string{"sec.session.lock.idle-timeout"},
+				Version:  "2.0.1",
+				Scope:    "user",
+				TargetOS: []policymodules.TargetOS{policymodules.OSLinux},
+				// u.personalization.screensaver is the closest catalog entry:
+				// both concern the same GNOME idle-delay/screensaver-lock
+				// dconf keys (org.gnome.desktop.session idle-delay,
+				// org.gnome.desktop.screensaver lock-*) -- this module sets
+				// the timeout value the catalog policy locks in place.
+				Satisfies: []string{"u.personalization.screensaver"},
 				Sandbox: policymodules.SandboxProfile{
 					FsRead:  []string{"/etc/os-release"},
 					FsWrite: []string{"$HOME/.config/dconf/", "$HOME/.config/plasma-locale-settings"},
@@ -895,10 +911,15 @@ var bundledSeed = []seedModule{
 		Description: "Installs the corporate Root CA into the system trust store; periodically refreshes the CRL.",
 		Versions: []seedVersion{
 			{
-				Version:   "1.0.0",
-				Scope:     "machine",
-				TargetOS:  []policymodules.TargetOS{policymodules.OSLinux},
-				Satisfies: []string{"sec.tls.client.ca-pinning"},
+				Version:  "1.0.0",
+				Scope:    "machine",
+				TargetOS: []policymodules.TargetOS{policymodules.OSLinux},
+				// pki.ca.trusted ("Trusted Root Certification Authorities")
+				// is the real Windows GP setting this implements -- pinning
+				// the corporate CA is deploying it into the trust store via
+				// the same update-ca-certificates/update-ca-trust mechanism
+				// that catalog entry already documents.
+				Satisfies: []string{"pki.ca.trusted"},
 				Sandbox: policymodules.SandboxProfile{
 					FsRead: []string{"/etc/os-release"}, FsWrite: []string{"/etc/pki/ca-trust/source/anchors/", "/usr/local/share/ca-certificates/"},
 					NetEgress: []string{"https://crl.tenant.local/"}, User: "root",
