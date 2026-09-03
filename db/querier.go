@@ -343,10 +343,11 @@ type Querier interface {
 	// Groups holding a given role, for the role detail Members tab.
 	ListGroupsForRole(ctx context.Context, roleID int64) ([]ListGroupsForRoleRow, error)
 	ListIdentitiesByTenant(ctx context.Context, arg ListIdentitiesByTenantParams) ([]Identity, error)
-	// Same rows as ListIdentitiesByTenant plus the resolved site name, for the
-	// Users list page (INV-L). A separate query rather than widening the query
-	// above: ListIdentitiesByTenant is also called directly by group_rules.go
-	// and targets.go, which do not need the join and should not pay for it.
+	// Same rows as ListIdentitiesByTenant plus the resolved site and manager
+	// display names, for the Users list page (INV-L: list columns show display
+	// names, never raw foreign-key ids). A separate query rather than widening
+	// the query above: ListIdentitiesByTenant is also called directly by
+	// group_rules.go and targets.go, which do not need the joins.
 	ListIdentitiesByTenantWithSite(ctx context.Context, arg ListIdentitiesByTenantWithSiteParams) ([]ListIdentitiesByTenantWithSiteRow, error)
 	// Identities assigned to a given role, for the role detail page.
 	ListIdentitiesForRole(ctx context.Context, roleID int64) ([]ListIdentitiesForRoleRow, error)

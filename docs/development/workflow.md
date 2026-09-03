@@ -11,7 +11,7 @@ New features go through three stages, using the `superpowers` skill workflow:
 2. **Plan.** Once the spec is approved, break it into an ordered, numbered task list — `docs/history/plans/YYYY-MM-DD-<feature>.md`. Each task should be independently completable and independently testable.
 3. **Execute.** Work the plan one task at a time, in order, exactly as written — no improvised scope. Each task is handed to an **implementer subagent**, then reviewed by **two independent review subagents** before being marked done (this applies even in unattended/loop-mode sessions — see the "Pluris: subagent-driven development" convention). Tests-first when the plan specifies test code and expected failures.
 
-Both specs and plans are **historical records once done** — they live under `docs/history/` permanently; they are not deleted or moved after completion. `docs/agent/HANDOFF.md` is rewritten to reflect current state, but the spec/plan files that got there stay put as the audit trail.
+Both specs and plans are **historical records once done** — they live under `docs/history/` permanently; they are not deleted or moved after completion. `docs/development/handoff.md` is rewritten to reflect current state, but the spec/plan files that got there stay put as the audit trail.
 
 ## The no-commit rule
 

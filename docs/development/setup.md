@@ -39,25 +39,36 @@ make dev          # gen + run at :8080
 - **Never touch the repo-root `pluris.db*`** — it is the owner's live GUI-testing database (AGENTS.md rule 1). Point any throwaway run at a different working directory or pass a scratch path to `NewWithDB` if writing test/tooling code.
 - First run lands on the setup wizard (`/setup`) to create the initial admin account and tenant.
 
-## The owner's :8081 dev-hosting server
+## The owner's GUI-testing instance
 
-The owner runs a persistent instance on port 8081, exposed via Tailscale Funnel at a placeholder hostname (`https://YOUR-DEV-HOST.example.com/` — substitute the real hostname from the owner's private notes; never commit a real internal hostname into tracked docs). Architecture: `Internet → Tailscale Funnel (HTTPS :443) → localhost:8080 → pluris-console (Go)` — despite the `:8081` shorthand used in conversation, check the live systemd unit / `restart-dev.sh` script for the actual bound port before assuming 8080 vs 8081.
-
-Two components keep it running:
-1. **Tailscale Funnel** (`--bg` mode), persists across reboots as part of Tailscale's serve config.
-2. **systemd user service** `pluris-dev.service` (`~/.config/systemd/user/pluris-dev.service`), auto-restart, enabled with lingering.
-
-**Stale-binary warning**: this server does not pick up code changes automatically. After any change relevant to what's being tested, rebuild and restart:
+For manual browser walkthroughs the owner runs a persistent local instance via
+`scripts/pluris-gui.sh` — a single control panel (kdialog, zenity fallback) that
+starts, stops and reports status. The server is launched detached (`setsid`), so
+closing the panel leaves it running.
 
 ```bash
-./scripts/restart-dev.sh
-# or manually:
-systemctl --user restart pluris-dev
+./scripts/pluris-gui.sh            # control panel
+./scripts/pluris-gui.sh --start    # terminal output only
+./scripts/pluris-gui.sh --stop
+./scripts/pluris-gui.sh --status
 ```
 
-Other useful commands: `journalctl --user -u pluris-dev -f` (logs), `systemctl --user status pluris-dev`, `sudo tailscale funnel status` (funnel health). After editing the unit file itself: `systemctl --user daemon-reload && systemctl --user restart pluris-dev`.
+- Binds `:8080` by default (`PLURIS_HTTP_ADDR` overrides).
+- Runs out of `~/.local/state/pluris-test` (`PLURIS_RUN_DIR`), so its
+  `pluris.db` is **separate** from the repo-root one — pidfile and `server.log`
+  live there too.
+- `PLURIS_SEED=1` seeds demo data (`cmd/seed`) before starting.
 
-This is the owner's personal convention for manual browser walkthroughs — agents should not assume they have access to it; use `make dev` / `go run` locally instead, and hand off to the owner for the :8081 walkthrough step when a plan calls for manual verification.
+**Stale-binary warning**: it runs the built binary from `bin/`, so it does not
+pick up code changes automatically. Rebuild and restart after any change:
+
+```bash
+make build && ./scripts/pluris-gui.sh --stop && ./scripts/pluris-gui.sh --start
+```
+
+This is the owner's personal convention — agents should not assume access to it;
+use `make dev` / `go run` locally instead, and hand off to the owner when a plan
+calls for manual browser verification.
 
 ## Seeder
 

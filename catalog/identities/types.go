@@ -44,10 +44,11 @@ func (r Role) Label() string {
 // Identity is the canonical shape used by every Users surface (list,
 // detail, editor) and by the Asset owner picker.
 type Identity struct {
-	ID       int64
-	TenantID int64
-	SiteID   int64  // 0 when unset
-	SiteName string // resolved display name; "" when SiteID is unset or unresolved
+	ID         int64
+	TenantID   int64
+	TenantName string // resolved display name; "" when unresolved
+	SiteID     int64  // 0 when unset
+	SiteName   string // resolved display name; "" when SiteID is unset or unresolved
 
 	Username          string
 	UserPrincipalName string
@@ -62,7 +63,8 @@ type Identity struct {
 	Company      string
 	EmployeeID   string
 	EmployeeType string
-	ManagerID    int64 // 0 when unset
+	ManagerID    int64  // 0 when unset
+	ManagerName  string // resolved display name; "" when unset or unresolved
 
 	PhoneOffice string
 	PhoneMobile string

@@ -46,23 +46,34 @@ WHERE tenant_id = @tenant_id AND deleted_at IS NOT NULL
 ORDER BY display_name
 LIMIT @limit OFFSET @offset;
 
--- Same rows as ListIdentitiesByTenant plus the resolved site name, for the
--- Users list page (INV-L). A separate query rather than widening the query
--- above: ListIdentitiesByTenant is also called directly by group_rules.go
--- and targets.go, which do not need the join and should not pay for it.
+-- Same rows as ListIdentitiesByTenant plus the resolved site and manager
+-- display names, for the Users list page (INV-L: list columns show display
+-- names, never raw foreign-key ids). A separate query rather than widening
+-- the query above: ListIdentitiesByTenant is also called directly by
+-- group_rules.go and targets.go, which do not need the joins.
 -- name: ListIdentitiesByTenantWithSite :many
-SELECT sqlc.embed(identities), s.name AS site_name
+SELECT sqlc.embed(identities),
+       COALESCE(s.name, '') AS site_name,
+       COALESCE(m.display_name, '') AS manager_name,
+       COALESCE(t.name, '') AS tenant_name
 FROM identities
 LEFT JOIN sites s ON identities.site_id = s.id
+LEFT JOIN identities m ON identities.manager_id = m.id AND m.deleted_at IS NULL
+LEFT JOIN tenants t ON identities.tenant_id = t.id
 WHERE identities.tenant_id = @tenant_id
   AND identities.deleted_at IS NULL
 ORDER BY identities.display_name
 LIMIT @limit OFFSET @offset;
 
 -- name: ListDeletedIdentitiesByTenantWithSite :many
-SELECT sqlc.embed(identities), s.name AS site_name
+SELECT sqlc.embed(identities),
+       COALESCE(s.name, '') AS site_name,
+       COALESCE(m.display_name, '') AS manager_name,
+       COALESCE(t.name, '') AS tenant_name
 FROM identities
 LEFT JOIN sites s ON identities.site_id = s.id
+LEFT JOIN identities m ON identities.manager_id = m.id AND m.deleted_at IS NULL
+LEFT JOIN tenants t ON identities.tenant_id = t.id
 WHERE identities.tenant_id = @tenant_id
   AND identities.deleted_at IS NOT NULL
 ORDER BY identities.display_name

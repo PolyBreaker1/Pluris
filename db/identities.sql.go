@@ -531,9 +531,14 @@ func (q *Queries) ListDeletedIdentitiesByTenant(ctx context.Context, arg ListDel
 }
 
 const ListDeletedIdentitiesByTenantWithSite = `-- name: ListDeletedIdentitiesByTenantWithSite :many
-SELECT identities.id, identities.tenant_id, identities.site_id, identities.username, identities.user_principal_name, identities.email, identities.display_name, identities.given_name, identities.surname, identities.initials, identities.title, identities.department, identities.company, identities.employee_id, identities.employee_type, identities.manager_id, identities.phone_office, identities.phone_mobile, identities.phone_home, identities.fax, identities.office, identities.street_address, identities.city, identities.state, identities.postal_code, identities.country, identities.country_code, identities.home_directory, identities.home_drive, identities.profile_path, identities.logon_script, identities.account_enabled, identities.account_locked, identities.account_expires_at, identities.password_hash, identities.password_last_set_at, identities.password_never_expires, identities.must_change_password, identities.last_logon_at, identities.logon_count, identities.bad_password_count, identities.last_bad_password_at, identities.role, identities.avatar_url, identities.locale, identities.timezone, identities.description, identities.notes, identities.created_at, identities.updated_at, identities.deleted_at, identities.deleted_by, s.name AS site_name
+SELECT identities.id, identities.tenant_id, identities.site_id, identities.username, identities.user_principal_name, identities.email, identities.display_name, identities.given_name, identities.surname, identities.initials, identities.title, identities.department, identities.company, identities.employee_id, identities.employee_type, identities.manager_id, identities.phone_office, identities.phone_mobile, identities.phone_home, identities.fax, identities.office, identities.street_address, identities.city, identities.state, identities.postal_code, identities.country, identities.country_code, identities.home_directory, identities.home_drive, identities.profile_path, identities.logon_script, identities.account_enabled, identities.account_locked, identities.account_expires_at, identities.password_hash, identities.password_last_set_at, identities.password_never_expires, identities.must_change_password, identities.last_logon_at, identities.logon_count, identities.bad_password_count, identities.last_bad_password_at, identities.role, identities.avatar_url, identities.locale, identities.timezone, identities.description, identities.notes, identities.created_at, identities.updated_at, identities.deleted_at, identities.deleted_by,
+       COALESCE(s.name, '') AS site_name,
+       COALESCE(m.display_name, '') AS manager_name,
+       COALESCE(t.name, '') AS tenant_name
 FROM identities
 LEFT JOIN sites s ON identities.site_id = s.id
+LEFT JOIN identities m ON identities.manager_id = m.id AND m.deleted_at IS NULL
+LEFT JOIN tenants t ON identities.tenant_id = t.id
 WHERE identities.tenant_id = ?1
   AND identities.deleted_at IS NOT NULL
 ORDER BY identities.display_name
@@ -547,8 +552,10 @@ type ListDeletedIdentitiesByTenantWithSiteParams struct {
 }
 
 type ListDeletedIdentitiesByTenantWithSiteRow struct {
-	Identity Identity       `json:"identity"`
-	SiteName sql.NullString `json:"site_name"`
+	Identity    Identity `json:"identity"`
+	SiteName    string   `json:"site_name"`
+	ManagerName string   `json:"manager_name"`
+	TenantName  string   `json:"tenant_name"`
 }
 
 func (q *Queries) ListDeletedIdentitiesByTenantWithSite(ctx context.Context, arg ListDeletedIdentitiesByTenantWithSiteParams) ([]ListDeletedIdentitiesByTenantWithSiteRow, error) {
@@ -614,6 +621,8 @@ func (q *Queries) ListDeletedIdentitiesByTenantWithSite(ctx context.Context, arg
 			&i.Identity.DeletedAt,
 			&i.Identity.DeletedBy,
 			&i.SiteName,
+			&i.ManagerName,
+			&i.TenantName,
 		); err != nil {
 			return nil, err
 		}
@@ -801,9 +810,14 @@ func (q *Queries) ListIdentitiesByTenant(ctx context.Context, arg ListIdentities
 }
 
 const ListIdentitiesByTenantWithSite = `-- name: ListIdentitiesByTenantWithSite :many
-SELECT identities.id, identities.tenant_id, identities.site_id, identities.username, identities.user_principal_name, identities.email, identities.display_name, identities.given_name, identities.surname, identities.initials, identities.title, identities.department, identities.company, identities.employee_id, identities.employee_type, identities.manager_id, identities.phone_office, identities.phone_mobile, identities.phone_home, identities.fax, identities.office, identities.street_address, identities.city, identities.state, identities.postal_code, identities.country, identities.country_code, identities.home_directory, identities.home_drive, identities.profile_path, identities.logon_script, identities.account_enabled, identities.account_locked, identities.account_expires_at, identities.password_hash, identities.password_last_set_at, identities.password_never_expires, identities.must_change_password, identities.last_logon_at, identities.logon_count, identities.bad_password_count, identities.last_bad_password_at, identities.role, identities.avatar_url, identities.locale, identities.timezone, identities.description, identities.notes, identities.created_at, identities.updated_at, identities.deleted_at, identities.deleted_by, s.name AS site_name
+SELECT identities.id, identities.tenant_id, identities.site_id, identities.username, identities.user_principal_name, identities.email, identities.display_name, identities.given_name, identities.surname, identities.initials, identities.title, identities.department, identities.company, identities.employee_id, identities.employee_type, identities.manager_id, identities.phone_office, identities.phone_mobile, identities.phone_home, identities.fax, identities.office, identities.street_address, identities.city, identities.state, identities.postal_code, identities.country, identities.country_code, identities.home_directory, identities.home_drive, identities.profile_path, identities.logon_script, identities.account_enabled, identities.account_locked, identities.account_expires_at, identities.password_hash, identities.password_last_set_at, identities.password_never_expires, identities.must_change_password, identities.last_logon_at, identities.logon_count, identities.bad_password_count, identities.last_bad_password_at, identities.role, identities.avatar_url, identities.locale, identities.timezone, identities.description, identities.notes, identities.created_at, identities.updated_at, identities.deleted_at, identities.deleted_by,
+       COALESCE(s.name, '') AS site_name,
+       COALESCE(m.display_name, '') AS manager_name,
+       COALESCE(t.name, '') AS tenant_name
 FROM identities
 LEFT JOIN sites s ON identities.site_id = s.id
+LEFT JOIN identities m ON identities.manager_id = m.id AND m.deleted_at IS NULL
+LEFT JOIN tenants t ON identities.tenant_id = t.id
 WHERE identities.tenant_id = ?1
   AND identities.deleted_at IS NULL
 ORDER BY identities.display_name
@@ -817,14 +831,17 @@ type ListIdentitiesByTenantWithSiteParams struct {
 }
 
 type ListIdentitiesByTenantWithSiteRow struct {
-	Identity Identity       `json:"identity"`
-	SiteName sql.NullString `json:"site_name"`
+	Identity    Identity `json:"identity"`
+	SiteName    string   `json:"site_name"`
+	ManagerName string   `json:"manager_name"`
+	TenantName  string   `json:"tenant_name"`
 }
 
-// Same rows as ListIdentitiesByTenant plus the resolved site name, for the
-// Users list page (INV-L). A separate query rather than widening the query
-// above: ListIdentitiesByTenant is also called directly by group_rules.go
-// and targets.go, which do not need the join and should not pay for it.
+// Same rows as ListIdentitiesByTenant plus the resolved site and manager
+// display names, for the Users list page (INV-L: list columns show display
+// names, never raw foreign-key ids). A separate query rather than widening
+// the query above: ListIdentitiesByTenant is also called directly by
+// group_rules.go and targets.go, which do not need the joins.
 func (q *Queries) ListIdentitiesByTenantWithSite(ctx context.Context, arg ListIdentitiesByTenantWithSiteParams) ([]ListIdentitiesByTenantWithSiteRow, error) {
 	rows, err := q.db.QueryContext(ctx, ListIdentitiesByTenantWithSite, arg.TenantID, arg.Offset, arg.Limit)
 	if err != nil {
@@ -888,6 +905,8 @@ func (q *Queries) ListIdentitiesByTenantWithSite(ctx context.Context, arg ListId
 			&i.Identity.DeletedAt,
 			&i.Identity.DeletedBy,
 			&i.SiteName,
+			&i.ManagerName,
+			&i.TenantName,
 		); err != nil {
 			return nil, err
 		}

@@ -112,7 +112,9 @@ func (s *IdentityService) List(ctx context.Context, tenantID int64, limit, offse
 	out := make([]identities.Identity, 0, len(rows))
 	for _, row := range rows {
 		ident := s.convert(row.Identity)
-		ident.SiteName = row.SiteName.String
+		ident.SiteName = row.SiteName
+		ident.ManagerName = row.ManagerName
+		ident.TenantName = row.TenantName
 		out = append(out, ident)
 	}
 	return out, nil
@@ -128,7 +130,9 @@ func (s *IdentityService) ListDeleted(ctx context.Context, tenantID int64, limit
 	out := make([]identities.Identity, 0, len(rows))
 	for _, row := range rows {
 		ident := s.convert(row.Identity)
-		ident.SiteName = row.SiteName.String
+		ident.SiteName = row.SiteName
+		ident.ManagerName = row.ManagerName
+		ident.TenantName = row.TenantName
 		out = append(out, ident)
 	}
 	return out, nil

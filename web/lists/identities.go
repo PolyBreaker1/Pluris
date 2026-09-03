@@ -120,7 +120,7 @@ func getIdentityParamValue(key string, u identities.Identity) string {
 	case "email":
 		return u.Email
 	case "tenant":
-		return strconv.FormatInt(u.TenantID, 10)
+		return u.TenantName
 	case "site":
 		return u.SiteName
 	case "role":
@@ -136,11 +136,7 @@ func getIdentityParamValue(key string, u identities.Identity) string {
 	case "employee_type":
 		return u.EmployeeType
 	case "manager":
-		// TODO: resolve to a display name once a user-lookup-by-ID exists; renders the raw numeric ID for now.
-		if u.ManagerID == 0 {
-			return ""
-		}
-		return strconv.FormatInt(u.ManagerID, 10)
+		return u.ManagerName
 	case "phone_office":
 		return u.PhoneOffice
 	case "phone_mobile":

@@ -72,7 +72,7 @@ For end-to-end verification that a real binary, real routing, and real JS-driven
 3. Assert on response status codes, redirect targets, and expected `data-testid`/`data-*` substrings in the HTML — same assertions style as the Go render tests, just against a live server.
 4. Tear down (kill the process); the scratch dir/db are never committed.
 
-This pattern verified, for example, the full RBAC v2 rollout (`docs/history/plans/2026-07-09-rbac-v2-design.md` task 9): setup → login → create a parented role → verify inheritance badges → rename → assign to a group → create a user → verify group-role visibility on the user's Roles tab — 32/32 assertions, zero 4xx/5xx. Write these as throwaway scripts per verification pass, not as a permanent addition to the repo.
+This pattern verified, for example, the full RBAC v2 rollout (`docs/history/plans/2026-07-09-rbac-v2.md` task 9): setup → login → create a parented role → verify inheritance badges → rename → assign to a group → create a user → verify group-role visibility on the user's Roles tab — 32/32 assertions, zero 4xx/5xx. Write these as throwaway scripts per verification pass, not as a permanent addition to the repo.
 
 ## Suite-green definition
 
