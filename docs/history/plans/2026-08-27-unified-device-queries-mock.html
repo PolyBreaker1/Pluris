@@ -1,0 +1,1262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Linux Workstations — Configuration Group — Pluris (mock)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --chrome-bg:#0a1628; --chrome-bg-alt:#0d1f35; --chrome-bg-hover:#122a45;
+  --chrome-text:#fff; --chrome-text-dim:rgba(255,255,255,.62); --chrome-text-muted:rgba(255,255,255,.40);
+  --chrome-border:rgba(255,255,255,.08); --chrome-accent:#00d4ff;
+  --paper:#fff; --paper-alt:#f8fafc; --paper-hover:#f1f5f9; --border:#e2e8f0; --border-strong:#cbd5e1;
+  --list-row-bg:var(--paper); --list-row-alt:#f4f6f9; --list-row-hover:#cbd5e1;
+  --text:#0f172a; --text-secondary:#475569; --text-muted:#94a3b8;
+  --accent:#0099c2; --accent-hover:#007ea3; --accent-bg:#e0f7fc; --accent-border:#7dd3e8;
+  --ok:#15803d; --ok-bg:#dcfce7; --warn:#b45309; --warn-bg:#fef3c7; --err:#b91c1c; --err-bg:#fee2e2; --info:#1d4ed8; --info-bg:#dbeafe;
+}
+*{box-sizing:border-box}
+body{margin:0;font:13px/1.5 Inter,system-ui,sans-serif;color:var(--text);background:var(--paper-alt)}
+.font-mono{font-family:"JetBrains Mono",monospace}
+.app{display:flex;height:100vh;overflow:hidden}
+main{flex:1;display:flex;flex-direction:column;min-width:0}
+.sidebar{width:240px;background:var(--chrome-bg);color:var(--chrome-text);display:flex;flex-direction:column;flex-shrink:0}
+.sidebar-brand{display:flex;align-items:center;gap:10px;padding:18px 20px;border-bottom:1px solid var(--chrome-border);color:var(--chrome-text);text-decoration:none}
+.brand-mark{width:32px;height:32px;border-radius:8px;background:linear-gradient(135deg,var(--chrome-accent),#007ea3);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:16px;color:#04121f}
+.sidebar-brand-title{font-weight:600;font-size:14px}.sidebar-brand-title span{color:var(--chrome-accent)}
+.sidebar-brand-sub{font-family:"JetBrains Mono",monospace;font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--chrome-text-muted)}
+.sidebar-nav{flex:1;overflow-y:auto;padding:10px 0}
+.sidebar-link{display:flex;align-items:center;gap:10px;padding:8px 20px;color:var(--chrome-text-dim);text-decoration:none;font-size:13px;border-left:3px solid transparent}
+.sidebar-link:hover{background:var(--chrome-bg-hover);color:var(--chrome-text)}
+.sidebar-link.active{color:var(--chrome-text);border-left-color:var(--chrome-accent);background:var(--chrome-bg-alt)}
+.sidebar-link.child{padding-left:49px;font-size:12px;color:var(--chrome-text-muted)}
+.sidebar-link.child:hover,.sidebar-link.child.active{color:var(--chrome-text)}
+.sidebar-link .icon{width:16px;height:16px;flex-shrink:0}
+.sidebar-foot{padding:12px 20px;border-top:1px solid var(--chrome-border);font-size:10px;color:var(--chrome-text-muted)}
+.removed-note{margin:2px 20px 8px 49px;font-size:10.5px;color:var(--chrome-text-muted);font-style:italic}
+.app-header{display:flex;align-items:center;gap:16px;height:56px;padding:0 24px;background:var(--paper);border-bottom:1px solid var(--border)}
+.app-header-back{display:flex;align-items:center;gap:6px;color:var(--accent);text-decoration:none;font-size:13px;font-weight:500}
+.app-header-spacer{flex:1}
+.search-input{width:320px;padding:7px 12px 7px 32px;border:1px solid var(--border);border-radius:6px;background:var(--paper-alt);font-size:12.5px;color:var(--text-muted)}
+.tenant-select{padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:12.5px;background:var(--paper)}
+.user-chip{display:flex;align-items:center;gap:8px;color:var(--text-secondary);font-size:12.5px}
+.user-avatar{width:28px;height:28px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:600;font-size:12px}
+.btn-logout{border:1px solid var(--border);background:none;border-radius:6px;padding:5px 10px;font-size:12px;color:var(--text-secondary);cursor:pointer}
+.app-content{flex:1;overflow:auto;background:var(--paper-alt)}
+.page-content{padding:24px 28px;max-width:1200px}
+.crumb{font-size:12px;color:var(--text-muted);margin-bottom:14px}
+.crumb a{color:var(--accent);text-decoration:none}
+.crumb .sep{margin:0 6px;color:var(--text-muted)}
+.hero{background:rgba(255,255,255,.75);backdrop-filter:blur(12px);border:1px solid var(--border);border-radius:12px;padding:20px 24px;display:flex;justify-content:space-between;align-items:flex-start;box-shadow:0 1px 3px rgba(15,23,42,.06)}
+.hero-name{font-size:20px;font-weight:600;margin:0}
+.hero-id{font-size:12px;color:var(--text-muted);margin-top:2px}
+.hero-chips{display:flex;gap:8px;margin-top:10px}
+.chip{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:999px;font-size:11.5px;font-weight:500}
+.chip-ok{background:var(--ok-bg);color:var(--ok)}
+.chip-info{background:var(--info-bg);color:var(--info)}
+.chip-neutral{background:var(--paper-hover);color:var(--text-secondary)}
+.hero-menu-btn{border:1px solid var(--border);background:var(--paper);border-radius:6px;width:30px;height:30px;cursor:pointer;font-size:16px;color:var(--text-secondary)}
+.tab-input{display:none}
+.tabbar{display:flex;gap:4px;margin:18px 0 0;border-bottom:1px solid var(--border)}
+.tabbar label{padding:8px 14px;font-size:13px;color:var(--text-secondary);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;font-weight:500}
+.tabbar label:hover{color:var(--text)}
+.tabbar label .tab-badge{background:var(--accent-bg);color:var(--accent);border-radius:999px;padding:1px 7px;font-size:10.5px;margin-left:6px}
+#tab-general:checked~.tabbar label[for=tab-general],
+#tab-query:checked~.tabbar label[for=tab-query],
+#tab-refresh:checked~.tabbar label[for=tab-refresh],
+#tab-members:checked~.tabbar label[for=tab-members],
+#tab-assign:checked~.tabbar label[for=tab-assign],
+#tab-bindings:checked~.tabbar label[for=tab-bindings]{color:var(--accent);border-bottom-color:var(--accent)}
+.panel{display:none;padding-top:20px}
+#tab-general:checked~.panel-general{display:block}
+#tab-query:checked~.panel-query{display:block}
+#tab-refresh:checked~.panel-refresh{display:block}
+#tab-members:checked~.panel-members{display:block}
+#tab-assign:checked~.panel-assign{display:block}
+#tab-bindings:checked~.panel-bindings{display:block}
+.card{background:var(--paper);border:1px solid var(--border);border-radius:10px}
+.card-head{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid var(--border)}
+.card-head h4{margin:0;font-size:13px;font-weight:600}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:6px;font-size:12.5px;font-weight:500;cursor:pointer;border:1px solid transparent;text-decoration:none}
+.btn-primary{background:var(--accent);color:#fff}.btn-primary:hover{background:var(--accent-hover)}
+.btn-secondary{background:var(--paper);border-color:var(--border-strong);color:var(--text)}
+.btn-ghost{background:none;border:none;color:var(--accent);padding:4px 8px;font-size:12.5px;cursor:pointer}
+.btn-danger{background:none;border:none;color:var(--err);padding:4px 8px;font-size:12.5px;cursor:pointer}
+.btn-sm{padding:4px 10px;font-size:12px}
+.input,select.input{padding:7px 10px;border:1px solid var(--border-strong);border-radius:6px;font-size:12.5px;font-family:inherit;background:var(--paper)}
+table.dt{width:100%;border-collapse:collapse}
+table.dt th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);padding:8px 16px;border-bottom:1px solid var(--border);font-weight:600}
+table.dt td{padding:10px 16px;border-bottom:1px solid var(--border);font-size:12.5px}
+table.dt tbody tr:nth-child(even){background:var(--list-row-alt)}
+table.dt tbody tr:hover{background:var(--list-row-hover)}
+.defs{display:grid;grid-template-columns:180px 1fr;gap:10px 16px;padding:16px}
+.defs dt{color:var(--text-secondary);font-size:12.5px}
+.defs dd{margin:0;font-size:12.5px}
+.defs .val{border-bottom:1px dashed transparent;padding:2px 4px;cursor:pointer}
+.defs .val:hover{border-bottom-color:var(--border-strong);background:var(--paper-hover)}
+.query-toolbar{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+.query-toolbar .spacer{flex:1}
+.query-summary{font-size:12px;color:var(--text-secondary)}
+.qgroup{border:1px solid var(--border-strong);border-left:3px solid var(--accent);border-radius:8px;background:var(--paper);margin-bottom:10px}
+.qgroup .qgroup-head{display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--paper-alt);border-bottom:1px solid var(--border);border-radius:8px 8px 0 0}
+.qgroup .qgroup-head .match-label{font-size:12px;color:var(--text-secondary)}
+.qgroup .qgroup-head select{padding:3px 8px;font-size:12px;border:1px solid var(--border-strong);border-radius:5px}
+.qgroup .qgroup-head .qgroup-actions{margin-left:auto;display:flex;gap:2px}
+.qgroup .qgroup-body{padding:8px 12px}
+.qgroup .qgroup{margin-left:28px;border-left-color:#a78bfa}
+.qcond{display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:6px}
+.qcond:hover{background:var(--paper-hover)}
+.qcond .qcond-text{font-size:12.5px}
+.qcond .qcond-text .p{color:var(--text-muted)}
+.qcond .kind-chip{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;padding:1px 7px;border-radius:4px}
+.kind-param{background:var(--accent-bg);color:var(--accent)}
+.kind-bash{background:#f3e8ff;color:#7c3aed}
+.kind-script{background:var(--warn-bg);color:var(--warn)}
+.qcond .status-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.status-ok{background:var(--ok)}.status-unknown{background:var(--text-muted)}
+.qcond .qcond-actions{margin-left:auto;display:flex;gap:2px;visibility:hidden}
+.qcond:hover .qcond-actions{visibility:visible}
+.refresh-status{display:flex;align-items:center;gap:14px;padding:14px 16px;background:var(--paper);border:1px solid var(--border);border-radius:10px;margin-bottom:16px}
+.refresh-status .rs-item{display:flex;flex-direction:column}
+.refresh-status .rs-label{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted)}
+.refresh-status .rs-value{font-size:13px;font-weight:600}
+.refresh-status .spacer{flex:1}
+.trigger-kind{font-weight:600;font-size:12.5px}
+.trigger-kind .sub{display:block;font-weight:400;font-size:11.5px;color:var(--text-muted)}
+.toggle{position:relative;width:34px;height:18px;background:var(--border-strong);border-radius:999px;cursor:pointer;border:none;padding:0}
+.toggle::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:#fff;transition:left .15s}
+.toggle.on{background:var(--accent)}.toggle.on::after{left:18px}
+.add-trigger{margin-top:14px;border:1px dashed var(--border-strong);border-radius:10px;padding:14px 16px;background:var(--paper)}
+.add-trigger .at-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.add-trigger .at-row + .at-row{margin-top:10px}
+.add-trigger label{font-size:12.5px;color:var(--text-secondary)}
+.check-list{display:flex;gap:6px;font-size:12.5px;color:var(--text)}
+.check-list label{display:flex;gap:8px;align-items:center}
+.small-muted{font-size:11.5px;color:var(--text-muted)}
+#cb-open{display:none}
+#lq-open{display:none}
+#q-open{display:none}
+#adv-open{display:none}
+.cb-overlay{position:fixed;inset:0;background:rgba(15,23,42,.45);display:none;align-items:center;justify-content:center;z-index:50}
+#cb-open:checked~.cb-overlay{display:flex}
+#lq-open:checked~.cb-overlay{display:flex}
+#q-open:checked~.cb-overlay{display:flex}
+#adv-open:checked~.cb-overlay{display:flex}
+.cb-dialog{background:var(--paper);border-radius:12px;width:920px;max-width:94vw;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 20px 50px rgba(15,23,42,.35)}
+.cb-head{display:flex;justify-content:space-between;align-items:center;padding:14px 20px;border-bottom:1px solid var(--border)}
+.cb-head .cb-crumb{font-size:11px;color:var(--text-muted)}
+.cb-head h3{margin:2px 0 0;font-size:15px}
+.cb-close{border:none;background:none;font-size:18px;cursor:pointer;color:var(--text-secondary)}
+.cb-tabs{display:flex;gap:4px;padding:10px 20px 0;border-bottom:1px solid var(--border)}
+.cb-tabs span{padding:6px 12px;font-size:12.5px;color:var(--text-secondary);border-bottom:2px solid transparent}
+.cb-tabs span.active{color:var(--accent);border-bottom-color:var(--accent);font-weight:500}
+.cb-body{display:grid;grid-template-columns:1.1fr 1fr;gap:0;padding:16px 20px;min-height:340px;overflow:hidden}
+.cb-tree-col{border-right:1px solid var(--border);padding-right:14px;display:flex;flex-direction:column;min-height:0}
+.cb-tree{overflow:auto;flex:1;margin-top:8px;font-size:12.5px}
+.cb-entity{font-weight:600;padding:4px 0}
+.cb-section{color:var(--text-secondary);padding:3px 0 3px 12px;font-size:10.5px;text-transform:uppercase;letter-spacing:.05em}
+.cb-param{padding:4px 8px 4px 22px;border-radius:5px;cursor:pointer;display:flex;justify-content:space-between;gap:8px}
+.cb-param:hover{background:var(--paper-hover)}
+.cb-param.sel{background:var(--accent-bg)}
+.cb-param .path{font-family:"JetBrains Mono",monospace;font-size:10.5px;color:var(--text-muted)}
+.cb-detail{padding-left:14px}
+.cb-selected-card{background:var(--paper-alt);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:12px}
+.cb-selected-card .t{font-weight:600;font-size:13px}
+.cb-selected-card .s{font-size:11px;color:var(--text-muted);font-family:"JetBrains Mono",monospace}
+.cb-field{margin-bottom:12px}
+.cb-field label{display:block;font-size:12px;color:var(--text-secondary);margin-bottom:4px}
+.cb-field .input,.cb-field select.input{width:100%}
+.cb-foot{display:flex;gap:10px;padding:12px 20px;border-top:1px solid var(--border)}
+.cb-foot .spacer{flex:1}
+.cb-new{background:var(--info-bg);color:var(--info);font-size:10.5px;font-weight:600;padding:1px 7px;border-radius:4px;margin-left:6px;text-transform:uppercase}
+.mock-banner{background:#fefce8;border:1px solid #fde047;color:#713f12;font-size:11.5px;padding:8px 14px;border-radius:8px;margin-bottom:16px}
+
+/* ---- Project list standard (from web/templates/layout.templ + web/static/lists.css) ---- */
+.pm-toolbar{display:flex;align-items:flex-end;gap:12px;padding:14px 16px;margin-bottom:16px;flex-wrap:wrap;background:var(--paper)}
+.pm-toolbar .field{display:flex;flex-direction:column;gap:4px;min-width:180px}
+.pm-toolbar .field-wide{flex:1 1 320px;min-width:260px}
+.pm-toolbar .field-action label{visibility:hidden}
+.pm-toolbar label{font-size:10.5px;font-weight:700;color:var(--text-muted);letter-spacing:.06em;text-transform:uppercase}
+.pm-toolbar .input,.pm-toolbar .select{padding:7px 10px;font:inherit;font-size:13px;background:var(--paper);color:var(--text);border:1px solid var(--border-strong);border-radius:6px;width:100%}
+.pm-toolbar .input:focus,.pm-toolbar .select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-bg)}
+.pm-table-wrap{background:var(--paper)}
+.policy-table{width:100%;border-collapse:collapse;font-size:12.5px}
+.policy-table thead th{text-align:left;padding:8px 14px;font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text-muted);background:#fbfcfd;border-bottom:1px solid var(--border)}
+.policy-table tbody td{padding:12px 14px;border-bottom:1px solid var(--border);vertical-align:top;color:var(--text-secondary)}
+.policy-table tbody tr:hover{background:var(--paper-alt)}
+.policy-name{font-weight:600;color:var(--text);margin-bottom:2px}
+.policy-id{font-size:10.5px;color:var(--text-muted)}
+.asset-chip{display:inline-flex;align-items:center;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:600;text-transform:capitalize;letter-spacing:.02em}
+.asset-chip-enroll-enrolled{background:rgba(0,150,255,.12);color:#3b9eff;border:1px solid rgba(0,150,255,.25)}
+.asset-chip-enroll-pending{background:rgba(255,180,0,.12);color:#e6a200;border:1px solid rgba(255,180,0,.25)}
+.asset-chip-enroll-revoked{background:rgba(255,60,60,.12);color:#e04040;border:1px solid rgba(255,60,60,.25)}
+.asset-chip-lifecycle-active{background:rgba(74,222,128,.12);color:#36b85c;border:1px solid rgba(74,222,128,.25)}
+.asset-chip-role{background:rgba(100,116,139,.12);color:#8892a6;border:1px solid rgba(100,116,139,.25)}
+[data-pluris-count]{font-size:11px;font-family:'JetBrains Mono',ui-monospace,monospace;color:var(--text-muted);padding:2px 8px;border-radius:999px;background:var(--paper);border:1px solid var(--border);white-space:nowrap}
+.pm-toolbar .btn{white-space:nowrap}
+
+/* ---- Queries list (new) ---- */
+.ql-row td{vertical-align:middle}
+.ql-summary{font-family:"JetBrains Mono",monospace;font-size:11.5px;color:var(--text-secondary)}
+.ql-detail{padding:4px 8px 10px;background:var(--paper-alt);border-top:1px solid var(--border)}
+.ql-detail-grid{display:grid;grid-template-columns:1.2fr 1fr;gap:14px}
+.ql-detail-grid .card{overflow:hidden}
+.ql-golink{color:var(--accent);cursor:pointer;text-decoration:none;font-weight:500}
+.ql-golink:hover{text-decoration:underline}
+.wmi-note{display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--warn);background:var(--warn-bg);border-radius:6px;padding:6px 10px;margin:10px 14px 12px}
+.wmi-note b{font-weight:600}
+.op-cell{white-space:nowrap}
+.op-select{padding:4px 8px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;font-family:'JetBrains Mono',ui-monospace,monospace;background:var(--paper-alt);color:var(--text-secondary);border:1px solid var(--border);border-radius:4px;cursor:pointer}
+.op-select:focus{outline:none;border-color:var(--accent)}
+.cmp-help{font-size:10.5px;color:var(--text-muted);margin-top:4px;line-height:1.4;max-width:190px}
+.cd{position:relative;display:inline-block;width:100%}
+.cd-btn{display:flex;align-items:center;justify-content:space-between;gap:6px;width:100%;padding:7px 10px;font-size:12.5px;color:var(--text);background:var(--paper);border:1px solid var(--border-strong);border-radius:6px;cursor:pointer;text-align:left;font-family:inherit;transition:border-color .12s}
+.cd-btn:hover{border-color:var(--accent)}
+.cd-btn .cd-caret{font-size:9px;color:var(--text-muted);transition:transform .12s}
+.cd.open .cd-caret{transform:rotate(180deg)}
+.cd-panel{position:absolute;top:calc(100% + 4px);left:0;z-index:40;min-width:360px;max-width:420px;background:var(--paper);border:1px solid var(--border);border-radius:8px;box-shadow:0 12px 32px rgba(15,23,42,.14)}
+.cd-groups{max-height:320px;overflow-y:auto;padding:6px 0}
+.cd-group{position:relative}
+.cd-group-label{padding:8px 14px 4px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--accent);background:linear-gradient(to right,rgba(0,153,194,.05),transparent 70%)}
+.cd-group + .cd-group{border-top:1px solid var(--border)}
+.cd-opt{padding:8px 14px;cursor:pointer;display:flex;flex-direction:column;gap:2px}
+.cd-opt:hover{background:var(--paper-hover)}
+.cd-opt.sel{background:var(--accent-bg)}
+.cd-opt.sel .cd-opt-label{color:var(--accent)}
+.cd-opt-label{font-size:12.5px;font-weight:600;color:var(--text)}
+.cd-opt-desc{font-size:11px;color:var(--text-secondary);line-height:1.4}
+.cd-opt-ex{font-size:10.5px;font-family:'JetBrains Mono',ui-monospace,monospace;color:var(--text-muted)}
+.cd-btn-op{min-width:64px;padding:4px 8px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;font-family:'JetBrains Mono',ui-monospace,monospace;justify-content:center}
+.cd-search-wrap{padding:10px 12px 6px;border-bottom:1px solid var(--border);background:var(--paper)}
+.cd-search{width:100%;padding:7px 10px;font-size:12.5px;font-family:inherit;color:var(--text);background:var(--paper-alt);border:1px solid var(--border-strong);border-radius:6px;outline:none}
+.cd-search:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-bg)}
+.cd-empty{padding:14px;text-align:center;font-size:12px;color:var(--text-muted)}
+.cd-opt.cd-hidden{display:none}
+.cd-group.cd-hidden{display:none}
+
+/* ---- Query groups (created by drag) ---- */
+.ql-group td{padding:6px 14px;border-bottom:1px solid var(--border);background:transparent}
+.ql-group-inner{display:flex;align-items:center;gap:8px}
+.ql-group-count{font-size:11px;color:var(--text-muted);font-family:'JetBrains Mono',ui-monospace,monospace}
+.ql-group-spacer{flex:1}
+.ql-row[data-level="1"] td{background:rgba(0,153,194,.04)}
+.ql-row[data-level="1"] td:first-child{box-shadow:inset 3px 0 0 0 var(--accent)}
+.ql-row[data-level="2"] td{background:rgba(167,139,250,.06)}
+.ql-row[data-level="2"] td:first-child{box-shadow:inset 3px 0 0 0 #a78bfa}
+
+/* ---- Drag & drop ---- */
+.ql-row[draggable="true"]{cursor:grab}
+.ql-row[draggable="true"]:active{cursor:grabbing}
+.ql-row.ql-dragging{opacity:.35}
+.ql-drop-indicator{height:2px;border-radius:2px;background:var(--accent);position:relative;z-index:5}
+.ql-drop-indicator::before{content:"";position:absolute;left:-5px;top:-3px;width:8px;height:8px;border-radius:50%;background:var(--accent)}
+.ql-drop-indicator.depth-1::after{content:"↳";position:absolute;right:-16px;top:-8px;font-size:13px;color:var(--accent)}
+.ql-drop-target-before td{box-shadow:inset 0 3px 0 0 var(--accent)}
+.ql-drop-target-after td{box-shadow:inset 0 -3px 0 0 var(--accent)}
+
+/* ---- Marquee / rubber-band selection ---- */
+.ql-row.ql-selected td{background:rgba(0,153,194,.10)!important}
+.ql-row.ql-selected td:first-child{box-shadow:inset 3px 0 0 0 var(--accent)}
+.ql-marquee{position:fixed;z-index:900;pointer-events:none;border:1px solid var(--accent);background:rgba(0,153,194,.10);border-radius:3px}
+.panel-query .pm-table-wrap{padding-bottom:96px}
+.ql-marquee-zone{user-select:none}
+.ql-marquee-zone.ql-marquee-active{user-select:none;cursor:crosshair}
+.ql-select-hint{position:absolute;left:0;right:0;bottom:14px;text-align:center;font-size:11px;color:var(--text-muted);pointer-events:none}
+.ql-select-hint b{color:var(--text-secondary);font-weight:600}
+
+.ql-drag-hint{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--text-muted);margin-top:10px}
+.ql-drag-hint b{color:var(--text-secondary);font-weight:600}
+.ql-drag-kbd{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:10px;border:1px solid var(--border-strong);border-radius:4px;padding:1px 5px;background:var(--paper);color:var(--text-secondary)}
+.cell-drop{padding:4px 6px;font-size:11.5px;font-family:inherit;background:var(--paper);color:var(--text);border:1px solid var(--border-strong);border-radius:5px;cursor:pointer;max-width:100%}
+.cell-drop:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-bg)}
+.ev-cell{display:flex;align-items:center;gap:6px;flex-wrap:nowrap}
+.ev-cell .ev-preset{min-width:130px}
+.ev-input{padding:4px 8px;font-size:11.5px;border:1px solid var(--border-strong);border-radius:5px;font-family:inherit;background:var(--paper);color:var(--text);min-width:110px;width:100%}
+.ev-input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-bg)}
+.op-help{font-size:11.5px;color:var(--text-secondary);margin-top:6px;line-height:1.5}
+.lq-create{margin-top:10px;border-top:1px dashed var(--border);padding-top:10px;font-size:12.5px;color:var(--accent);cursor:pointer;font-weight:500}
+.lq-create:hover{text-decoration:underline}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- SIDEBAR: real platform structure; "Dependency Groups" removed -->
+  <aside class="sidebar">
+    <a class="sidebar-brand" href="#">
+      <div class="brand-mark">P</div>
+      <div>
+        <div class="sidebar-brand-title">Pluris <span>Console</span></div>
+        <div class="sidebar-brand-sub">Endpoint Management</div>
+      </div>
+    </a>
+    <nav class="sidebar-nav">
+      <a class="sidebar-link" href="#"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>Dashboard</a>
+      <a class="sidebar-link" href="#"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>Users</a>
+      <a class="sidebar-link child" href="#">User Groups</a>
+      <a class="sidebar-link" href="#"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg>Assets</a>
+      <a class="sidebar-link child" href="#">Computers</a>
+      <a class="sidebar-link child" href="#">Servers</a>
+      <a class="sidebar-link child" href="#">Printers</a>
+      <a class="sidebar-link child" href="#">Desks</a>
+      <a class="sidebar-link child" href="#">Groups</a>
+      <a class="sidebar-link active" href="#"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 2 7l10 5 10-5-10-5Z"/><path d="m2 17 10 5 10-5"/><path d="m2 12 10 5 10-5"/></svg>Policy</a>
+      <a class="sidebar-link child" href="#">Policy Catalog</a>
+      <a class="sidebar-link child active" href="#">Configuration Groups</a>
+      <a class="sidebar-link child" href="#">Queries</a>
+      <a class="sidebar-link child" href="#">Modules</a>
+      <a class="sidebar-link child" href="#">Pluris Policy</a>
+      <div class="removed-note">↳ “Dependency Groups” merged into Configuration Groups</div>
+      <a class="sidebar-link" href="#"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 3v3m0 12v3m9-9h-3M6 12H3m14.95-6.95-2.12 2.12M8.17 15.83l-2.12 2.12m12.02 0-2.12-2.12M8.17 8.17 6.05 6.05"/></svg>Profiles</a>
+      <a class="sidebar-link" href="#"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m16 18 6-6-6-6"/><path d="m8 6-6 6 6 6"/></svg>Scripts</a>
+      <a class="sidebar-link" href="#"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 22h8"/><path d="M12 11v11"/><path d="m19 3-7 8-7-8h14Z"/></svg>Wine</a>
+      <a class="sidebar-link" href="#"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>Package Management</a>
+      <a class="sidebar-link child" href="#">Package Managers</a>
+      <a class="sidebar-link child" href="#">Packages</a>
+      <a class="sidebar-link child" href="#">Update Cycles</a>
+      <a class="sidebar-link" href="#"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><path d="M6 6h.01"/><path d="M6 18h.01"/></svg>Server Administration</a>
+      <a class="sidebar-link child" href="#">Data Management</a>
+      <a class="sidebar-link" href="#"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="6"/><path d="M15.5 12.5 17 22l-5-3-5 3 1.5-9.5"/></svg>User / Admin Preferences</a>
+    </nav>
+    <div class="sidebar-foot">Increment 2 — unified queries (mock)</div>
+  </aside>
+
+  <main>
+    <header class="app-header">
+      <a class="app-header-back" href="#">‹ Back</a>
+      <div class="app-header-spacer"></div>
+      <input class="search-input" placeholder="Search assets, users, policies…" disabled>
+      <select class="tenant-select"><option>pluris</option><option>Demo</option><option>Acme</option></select>
+      <div class="user-chip"><span>peter.karvai@gmail.com</span><div class="user-avatar">P</div><button class="btn-logout">Log out</button></div>
+    </header>
+
+    <div class="app-content">
+      <div class="page-content">
+
+        <div class="mock-banner">MOCK — proposed Configuration Group after the Dependency Group merge. Tabs <b>Query</b>, <b>Refresh</b> and <b>Members</b> are new. Sidebar: “Dependency Groups” is gone. Click <b>+ Add condition</b> to see the reused builder dialog.</div>
+
+        <nav class="crumb"><a href="#">Policy</a><span class="sep">›</span><a href="#">Configuration Groups</a><span class="sep">›</span>Linux Workstations</nav>
+
+        <div class="hero">
+          <div>
+            <h2 class="hero-name">Linux Workstations</h2>
+            <div class="hero-id font-mono">cg-7</div>
+            <div class="hero-chips">
+              <span class="chip chip-ok">● Enabled</span>
+              <span class="chip chip-info">128 members</span>
+              <span class="chip chip-neutral">3 policy bindings</span>
+              <span class="chip chip-neutral">Query refreshed 2 h ago</span>
+            </div>
+          </div>
+          <button class="hero-menu-btn">⋯</button>
+        </div>
+
+        <input class="tab-input" type="radio" name="cgtab" id="tab-general">
+        <input class="tab-input" type="radio" name="cgtab" id="tab-query" checked>
+        <input class="tab-input" type="radio" name="cgtab" id="tab-refresh">
+        <input class="tab-input" type="radio" name="cgtab" id="tab-members">
+        <input class="tab-input" type="radio" name="cgtab" id="tab-assign">
+        <input class="tab-input" type="radio" name="cgtab" id="tab-bindings">
+
+        <nav class="tabbar">
+          <label for="tab-general">General</label>
+          <label for="tab-query">Query <span class="tab-badge">new</span></label>
+          <label for="tab-refresh">Refresh <span class="tab-badge">new</span></label>
+          <label for="tab-members">Members <span class="tab-badge">128</span></label>
+          <label for="tab-assign">Assignments</label>
+          <label for="tab-bindings">Policy Bindings <span class="tab-badge">3</span></label>
+        </nav>
+
+        <!-- GENERAL (unchanged) -->
+        <section class="panel panel-general">
+          <div class="card">
+            <div class="card-head"><h4>Definition</h4><button class="btn btn-secondary btn-sm">Edit section</button></div>
+            <dl class="defs">
+              <dt>Name</dt><dd><span class="val">Linux Workstations</span></dd>
+              <dt>Description</dt><dd><span class="val">All managed Linux workstations (laptops + desktops), any distro.</span></dd>
+              <dt>Enabled <span class="small-muted">(true/false)</span></dt><dd><span class="val">true</span></dd>
+            </dl>
+          </div>
+        </section>
+
+        <!-- QUERY (new — queries are independent elements; the CG holds a list of configured query usages: combine operator + output comparison) -->
+        <section class="panel panel-query">
+          <div class="query-toolbar">
+            <span class="query-summary">Each row is a query <b>configured for this group</b>. The <b>operator</b> combines it with the others (belongs to the usage, not the query). Click a query name to open it; <b>compare</b> checks the query output against the <b>expected value</b>.</span>
+            <span class="spacer"></span>
+            <button class="btn btn-secondary btn-sm">Preview results</button>
+            <label class="btn btn-primary btn-sm" for="lq-open">+ Link query</label>
+          </div>
+
+          <section class="pm-toolbar card">
+            <div class="field field-wide">
+              <label for="q-search">Search</label>
+              <input id="q-search" class="input" type="search" autocomplete="off" placeholder="Filter by name, description…"/>
+            </div>
+            <div class="field field-action">
+              <label>&nbsp;</label>
+              <span data-pluris-count>4 of 4 queries</span>
+            </div>
+          </section>
+
+          <section class="pm-table-wrap card">
+            <table class="policy-table pluris-list" data-list-id="queries">
+              <thead>
+                <tr>
+                  <th style="width:80px">Operator</th>
+                  <th>Query</th>
+                  <th style="width:220px">Compare</th>
+                  <th style="min-width:260px">Expected value</th>
+                  <th>Type</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr class="ql-row" data-level="0" data-qid="1">
+                  <td class="op-cell">
+                    <div class="cd" data-cd-operator data-selected="AND">
+                      <button type="button" class="cd-btn cd-btn-op" data-cd-btn>AND<span class="cd-caret">▾</span></button>
+                      <div class="cd-panel" hidden><div class="cd-groups"></div></div>
+                    </div>
+                  </td>
+                  <td><a class="ql-golink" href="#" data-qopen="1">Linux Workstations</a></td>
+                  <td>
+                    <div class="cd" data-cd data-help-host="cmp-help-1" data-selected="equals">
+                      <button type="button" class="cd-btn" data-cd-btn>equals<span class="cd-caret">▾</span></button>
+                      <div class="cd-panel" hidden><div class="cd-search-wrap"><input class="cd-search" type="search" placeholder="Search operators…" autocomplete="off"/></div><div class="cd-groups"></div></div>
+                    </div>
+                    <div class="cmp-help" id="cmp-help-1">Output must exactly equal the expected value. Example: “linux” = “linux”.</div>
+                  </td>
+                  <td>
+                    <div class="ev-cell">
+                      <select class="cell-drop ev-preset"><option>linux</option><option>windows</option><option>macos</option></select>
+                      <label class="btn btn-secondary btn-sm" for="adv-open">Advanced</label>
+                    </div>
+                  </td>
+                  <td><span class="asset-chip asset-chip-role">Builtin</span></td>
+                </tr>
+
+                <tr class="ql-row" data-level="0" data-qid="2">
+                  <td class="op-cell">
+                    <div class="cd" data-cd-operator data-selected="OR">
+                      <button type="button" class="cd-btn cd-btn-op" data-cd-btn>OR<span class="cd-caret">▾</span></button>
+                      <div class="cd-panel" hidden><div class="cd-groups"></div></div>
+                    </div>
+                  </td>
+                  <td><a class="ql-golink" href="#" data-qopen="2">Windows Server Core</a></td>
+                  <td>
+                    <div class="cd" data-cd data-help-host="cmp-help-2" data-selected="starts_with">
+                      <button type="button" class="cd-btn" data-cd-btn>starts_with<span class="cd-caret">▾</span></button>
+                      <div class="cd-panel" hidden><div class="cd-search-wrap"><input class="cd-search" type="search" placeholder="Search operators…" autocomplete="off"/></div><div class="cd-groups"></div></div>
+                    </div>
+                    <div class="cmp-help" id="cmp-help-2">Output must begin with the expected value. Example: “windows-server-core” starts with “windows”.</div>
+                  </td>
+                  <td>
+                    <div class="ev-cell">
+                      <select class="cell-drop ev-preset"><option>windows-server-core</option><option>windows-client</option><option>windows</option></select>
+                      <label class="btn btn-secondary btn-sm" for="adv-open">Advanced</label>
+                    </div>
+                  </td>
+                  <td><span class="asset-chip asset-chip-role">Builtin</span></td>
+                </tr>
+
+                <tr class="ql-row" data-level="0" data-qid="3">
+                  <td class="op-cell">
+                    <div class="cd" data-cd-operator data-selected="NOR">
+                      <button type="button" class="cd-btn cd-btn-op" data-cd-btn>NOR<span class="cd-caret">▾</span></button>
+                      <div class="cd-panel" hidden><div class="cd-groups"></div></div>
+                    </div>
+                  </td>
+                  <td><a class="ql-golink" href="#" data-qopen="3">Secure Boot Enabled</a></td>
+                  <td>
+                    <div class="cd" data-cd data-help-host="cmp-help-3" data-selected="equals">
+                      <button type="button" class="cd-btn" data-cd-btn>equals<span class="cd-caret">▾</span></button>
+                      <div class="cd-panel" hidden><div class="cd-search-wrap"><input class="cd-search" type="search" placeholder="Search operators…" autocomplete="off"/></div><div class="cd-groups"></div></div>
+                    </div>
+                    <div class="cmp-help" id="cmp-help-3">Output must exactly equal the expected value. Example: “enabled” = “enabled”.</div>
+                  </td>
+                  <td>
+                    <div class="ev-cell">
+                      <select class="cell-drop ev-preset"><option>enabled</option><option>disabled</option></select>
+                      <label class="btn btn-secondary btn-sm" for="adv-open">Advanced</label>
+                    </div>
+                  </td>
+                  <td><span class="asset-chip asset-chip-enroll-pending">WMI</span></td>
+                </tr>
+
+                <tr class="ql-row" data-level="0" data-qid="4">
+                  <td class="op-cell">
+                    <div class="cd" data-cd-operator data-selected="AND">
+                      <button type="button" class="cd-btn cd-btn-op" data-cd-btn>AND<span class="cd-caret">▾</span></button>
+                      <div class="cd-panel" hidden><div class="cd-groups"></div></div>
+                    </div>
+                  </td>
+                  <td><a class="ql-golink" href="#" data-qopen="4">Agent version</a></td>
+                  <td>
+                    <div class="cd" data-cd data-help-host="cmp-help-4" data-selected="equals">
+                      <button type="button" class="cd-btn" data-cd-btn>equals<span class="cd-caret">▾</span></button>
+                      <div class="cd-panel" hidden><div class="cd-search-wrap"><input class="cd-search" type="search" placeholder="Search operators…" autocomplete="off"/></div><div class="cd-groups"></div></div>
+                    </div>
+                    <div class="cmp-help" id="cmp-help-4">Output must exactly equal the expected value. Example: “2.4.1” = “2.4.1”.</div>
+                  </td>
+                  <td>
+                    <div class="ev-cell">
+                      <input class="ev-input" value="2.4.1" title="Expected value"/>
+                      <label class="btn btn-secondary btn-sm" for="adv-open">Advanced</label>
+                    </div>
+                  </td>
+                  <td><span class="asset-chip asset-chip-enroll-enrolled">Custom</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </section>
+
+          <div class="ql-drag-hint">
+            <span>⇆</span>
+            <span><b>Drag to move queries.</b> Grab any query row and drop it anywhere in the list to reorder. Drop on the <b>middle/right</b> of a row to nest it one level deeper (groups with their own operator), drop on the <b>left</b> to keep it at the current level. Example: <span class="ql-drag-kbd">(AND Q1 + AND Q2) OR (AND Q3 + AND Q4)</span></span>
+          </div>
+
+          <p class="small-muted" style="margin-top:10px">MOCK — queries that declare <b>predefined expected options</b> (e.g. OS family, boot state) show them as a dropdown in the Expected value column; queries with a free-form output (e.g. version) show a manual field. <b>Advanced</b> opens a popup with the manual entry + query-to-query comparison. Click a query name to open the standardized query popup.</p>
+        </section>
+
+        <!-- REFRESH (new) -->
+        <section class="panel panel-refresh">
+          <div class="refresh-status">
+            <div class="rs-item"><span class="rs-label">Last refreshed</span><span class="rs-value">26 Aug 2026, 09:12</span></div>
+            <div class="rs-item"><span class="rs-label">Members after refresh</span><span class="rs-value">128 <span class="small-muted">(+3 / −1)</span></span></div>
+            <div class="rs-item"><span class="rs-label">Next scheduled run</span><span class="rs-value">in 14 h (03:00)</span></div>
+            <div class="spacer"></div>
+            <button class="btn btn-primary">⟳ Refresh now</button>
+          </div>
+
+          <div class="card">
+            <div class="card-head"><h4>Refresh triggers</h4></div>
+            <table class="dt">
+              <thead><tr><th>Trigger</th><th>Configuration</th><th>Last triggered</th><th>Next run</th><th>On</th><th></th></tr></thead>
+              <tbody>
+                <tr>
+                  <td class="trigger-kind">Time-based<span class="sub">Runs on a fixed interval</span></td>
+                  <td>Every <b>24 hours</b> at <b>03:00</b></td>
+                  <td>26 Aug, 03:00</td>
+                  <td>27 Aug, 03:00</td>
+                  <td><button class="toggle on" aria-label="toggle"></button></td>
+                  <td><button class="btn btn-danger btn-sm">Remove</button></td>
+                </tr>
+                <tr>
+                  <td class="trigger-kind">On new usage<span class="sub">Fires when something starts using this query</span></td>
+                  <td>Policy binding added <b>·</b> module linked <b>·</b> software assigned</td>
+                  <td>25 Aug, 14:38</td>
+                  <td>—</td>
+                  <td><button class="toggle on" aria-label="toggle"></button></td>
+                  <td><button class="btn btn-danger btn-sm">Remove</button></td>
+                </tr>
+                <tr>
+                  <td class="trigger-kind">Manual<span class="sub">The “Refresh now” button — always available</span></td>
+                  <td>—</td>
+                  <td>26 Aug, 09:12</td>
+                  <td>—</td>
+                  <td class="small-muted">always on</td>
+                  <td></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="add-trigger">
+            <div class="at-row">
+              <label>Add trigger</label>
+              <select class="input"><option>Time-based</option><option>On new usage</option></select>
+              <span class="small-muted">·</span>
+              <label>every</label><input class="input" style="width:64px" value="24"><select class="input"><option>minutes</option><option selected>hours</option><option>days</option><option>weeks</option></select>
+              <label>at</label><input class="input" type="time" value="03:00">
+              <button class="btn btn-primary btn-sm">Add trigger</button>
+            </div>
+            <div class="at-row">
+              <span class="small-muted">On new usage fires when:</span>
+              <div class="check-list" style="flex-direction:row;gap:16px">
+                <label><input type="checkbox" checked> a policy binding is added to this group</label>
+                <label><input type="checkbox" checked> a module starts gating on this query</label>
+                <label><input type="checkbox" checked> software / package is assigned via this group</label>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- MEMBERS (new) -->
+        <section class="panel panel-members">
+          <div class="card">
+            <div class="card-head"><h4>Members</h4><span class="small-muted">Computed from the query · refreshed 2 h ago</span></div>
+            <table class="dt">
+              <thead><tr><th>Name</th><th>OS</th><th>RAM</th><th>Last seen</th><th>Matched since</th></tr></thead>
+              <tbody>
+                <tr><td>ws-ubuntu-01</td><td>Ubuntu 24.04</td><td>16 GB</td><td>12 min ago</td><td>26 Aug 2026</td></tr>
+                <tr><td>ws-fedora-02</td><td>Fedora 41</td><td>32 GB</td><td>1 h ago</td><td>26 Aug 2026</td></tr>
+                <tr><td>lt-debian-anna</td><td>Debian 12</td><td>8 GB</td><td>3 h ago</td><td>25 Aug 2026</td></tr>
+                <tr><td>ws-arch-04</td><td>Arch Linux</td><td>16 GB</td><td>5 h ago</td><td>24 Aug 2026</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- ASSIGNMENTS (unchanged) -->
+        <section class="panel panel-assign">
+          <div class="card">
+            <div class="card-head"><h4>Assignments</h4><button class="btn btn-primary btn-sm">+ Add target</button></div>
+            <table class="dt">
+              <thead><tr><th>Target</th><th>Type</th><th>Priority</th><th>Enforced</th><th></th></tr></thead>
+              <tbody>
+                <tr><td>Bratislava HQ</td><td><span class="chip chip-neutral">Site</span></td><td>100</td><td>true</td><td><button class="btn btn-danger btn-sm">Remove</button></td></tr>
+                <tr><td>ws-ubuntu-01</td><td><span class="chip chip-neutral">Asset</span></td><td>50</td><td>true</td><td><button class="btn btn-danger btn-sm">Remove</button></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- POLICY BINDINGS (unchanged) -->
+        <section class="panel panel-bindings">
+          <div class="card">
+            <div class="card-head"><h4>Policy Bindings</h4><button class="btn btn-primary btn-sm">+ Add binding</button></div>
+            <table class="dt">
+              <thead><tr><th>Policy</th><th>Module</th><th>State</th><th>Parameters</th><th></th></tr></thead>
+              <tbody>
+                <tr><td class="font-mono">system/security/ssh/disable-root-login</td><td>sshd-config</td><td><span class="chip chip-ok">Enabled</span></td><td class="font-mono">{}</td><td><button class="btn btn-ghost btn-sm">Edit</button></td></tr>
+                <tr><td class="font-mono">system/updates/auto-security-updates</td><td>unattended-upgrades</td><td><span class="chip chip-ok">Enabled</span></td><td class="font-mono">{"window":"03:00"}</td><td><button class="btn btn-ghost btn-sm">Edit</button></td></tr>
+                <tr><td class="font-mono">desktop/session/idle-logoff</td><td>logoff-idle</td><td><span class="chip chip-neutral">Not configured</span></td><td class="font-mono">{}</td><td><button class="btn btn-ghost btn-sm">Edit</button></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+
+
+      </div>
+    </div>
+  </main>
+
+  <!-- CONDITION BUILDER DIALOG (reused as-is, extended with "Place into") -->
+  <input type="checkbox" id="cb-open">
+  <div class="cb-overlay">
+    <div class="cb-dialog">
+      <div class="cb-head">
+        <div><div class="cb-crumb">Condition</div><h3>Add condition</h3></div>
+        <label class="cb-close" for="cb-open">×</label>
+      </div>
+      <div class="cb-tabs">
+        <span class="active">Pluris condition</span><span>Bash command</span><span>Script</span>
+      </div>
+      <div class="cb-body">
+        <div class="cb-tree-col">
+          <input class="input" placeholder="Search parameters…">
+          <div class="cb-tree">
+            <div class="cb-entity">Computer</div>
+            <div class="cb-section">Identity</div>
+            <div class="cb-param"><span>Name</span><span class="path">computer/identity/name</span></div>
+            <div class="cb-param"><span>Site</span><span class="path">computer/identity/site</span></div>
+            <div class="cb-section">Hardware</div>
+            <div class="cb-param"><span>Hostname</span><span class="path">computer/hardware/hostname</span></div>
+            <div class="cb-param sel"><span>OS family</span><span class="path">computer/hardware/os_family</span></div>
+            <div class="cb-param"><span>OS distribution</span><span class="path">computer/hardware/os_distribution</span></div>
+            <div class="cb-param"><span>RAM</span><span class="path">computer/hardware/ram_mb</span></div>
+            <div class="cb-section">Enrollment</div>
+            <div class="cb-param"><span>Last seen</span><span class="path">computer/enrollment/last_seen_at</span></div>
+            <div class="cb-entity">Server</div>
+            <div class="cb-entity">User</div>
+          </div>
+        </div>
+        <div class="cb-detail">
+          <div class="cb-selected-card"><div class="t">OS family</div><div class="s">enum · computer/hardware/os_family</div></div>
+          <div class="cb-field"><label>Operator</label><select class="input"><option>is any of</option><option>is</option><option>is not</option><option>is none of</option></select></div>
+          <div class="cb-field"><label>Value</label><input class="input" value="linux"></div>
+          <div class="cb-field">
+            <label>Place into <span class="cb-new">new</span></label>
+            <select class="input"><option>Root group (Match ALL)</option><option>Nested group: Match ANY</option><option>＋ New nested group…</option></select>
+          </div>
+        </div>
+      </div>
+      <div class="cb-foot">
+        <label class="btn btn-secondary" for="cb-open">Cancel</label>
+        <span class="spacer"></span>
+        <label class="btn btn-primary" for="cb-open">Save condition</label>
+      </div>
+    </div>
+  </div>
+
+  <!-- LINK QUERY DIALOG (standardized popup — replaces the dropdown. Operator belongs to this usage, not the query) -->
+  <input type="checkbox" id="lq-open">
+  <div class="cb-overlay">
+    <div class="cb-dialog">
+      <div class="cb-head">
+        <div><div class="cb-crumb">Configuration Group · Queries</div><h3>Link query</h3></div>
+        <label class="cb-close" for="lq-open">×</label>
+      </div>
+      <div class="cb-body">
+        <div class="cb-tree-col">
+          <input class="input" placeholder="Search queries…">
+          <div class="cb-tree">
+            <div class="cb-entity">All queries</div>
+            <div class="cb-param sel"><span>Linux Workstations</span><span class="path">OS family is any of linux</span></div>
+            <div class="cb-param"><span>Windows Server Core</span><span class="path">OS distribution is any of windows-server-core</span></div>
+            <div class="cb-param"><span>High-memory hosts</span><span class="path">RAM ≥ 16384 MB</span></div>
+            <div class="cb-param"><span>Secure Boot Enabled</span><span class="path">Script detect-secure-boot.ps1 = enabled</span></div>
+            <div class="cb-param"><span>Agent version</span><span class="path">agent --version output</span></div>
+            <div class="cb-param"><span>Baseline version</span><span class="path">baseline.txt content</span></div>
+          </div>
+          <div class="lq-create">＋ Create new query…</div>
+        </div>
+        <div class="cb-detail">
+          <div class="cb-field">
+            <label>Operator</label>
+            <select class="input"><option selected>AND</option><option>OR</option><option>NOR</option><option>XOR</option></select>
+            <p class="op-help">How this query combines with the others in this group. The operator is <b>not part of the query</b> — it belongs to this group's usage. The same query can be AND in one group and NOR in another.</p>
+          </div>
+          <div class="cb-field">
+            <label>Compare</label>
+            <div class="cd" data-cd data-help-host="lq-cmp-help" data-selected="equals">
+              <button type="button" class="cd-btn" data-cd-btn>Equals (is)<span class="cd-caret">▾</span></button>
+              <div class="cd-panel" hidden><div class="cd-groups"></div></div>
+            </div>
+            <div class="cmp-help" id="lq-cmp-help" style="max-width:none;margin-top:6px">Output must exactly equal the expected value. Example: “linux” = “linux”.</div>
+          </div>
+          <div class="cb-field">
+            <label>Expected value</label>
+            <div class="ev-cell">
+              <select class="cell-drop ev-preset"><option>linux</option><option>windows</option><option>macos</option></select>
+              <label class="btn btn-secondary btn-sm" for="adv-open">Advanced</label>
+            </div>
+            <p class="op-help">This query declares <b>predefined options</b> (OS family), shown above as the quick pick. <b>Advanced</b> opens the full field — manual entry, another query's output, or a range.</p>
+          </div>
+          <div class="cb-field">
+            <label>Query</label>
+            <div class="cb-selected-card"><div class="t">Linux Workstations</div><div class="s">OS family is any of linux</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="cb-foot">
+        <label class="btn btn-secondary" for="lq-open">Cancel</label>
+        <span class="spacer"></span>
+        <label class="btn btn-primary" for="lq-open">Link query</label>
+      </div>
+    </div>
+  </div>
+
+  <!-- QUERY VIEWER DIALOG (standardized — the same popup used from the main Queries list; opens when a query name is clicked) -->
+  <input type="checkbox" id="q-open">
+  <div class="cb-overlay">
+    <div class="cb-dialog">
+      <div class="cb-head">
+        <div><div class="cb-crumb">Queries</div><h3>Linux Workstations</h3></div>
+        <label class="cb-close" for="q-open">×</label>
+      </div>
+      <div class="cb-body" style="display:block;min-height:0">
+        <div class="cb-field"><label>Definition</label></div>
+        <div class="qgroup" style="margin:0 0 14px;border-radius:8px">
+          <div class="qgroup-head">
+            <span class="match-label">Match</span>
+            <select><option selected>ALL (AND)</option><option>ANY (OR)</option></select>
+            <span class="match-label">of the following</span>
+            <div class="qgroup-actions">
+              <button class="btn btn-ghost btn-sm">+ Condition</button>
+              <button class="btn btn-ghost btn-sm">+ Group</button>
+            </div>
+          </div>
+          <div class="qgroup-body">
+            <div class="qcond">
+              <span class="status-dot status-ok"></span>
+              <span class="kind-chip kind-param">Param</span>
+              <span class="qcond-text">OS family <b>·</b> is any of <b>·</b> linux <span class="p">— computer/hardware/os_family</span></span>
+            </div>
+            <div class="qgroup">
+              <div class="qgroup-head">
+                <span class="match-label">Match</span>
+                <select><option>ALL (AND)</option><option selected>ANY (OR)</option></select>
+                <span class="match-label">of the following</span>
+                <div class="qgroup-actions">
+                  <button class="btn btn-ghost btn-sm">+ Condition</button>
+                  <button class="btn btn-ghost btn-sm">+ Group</button>
+                  <button class="btn btn-danger btn-sm">Remove group</button>
+                </div>
+              </div>
+              <div class="qgroup-body">
+                <div class="qcond">
+                  <span class="status-dot status-ok"></span>
+                  <span class="kind-chip kind-param">Param</span>
+                  <span class="qcond-text">OS distribution <b>·</b> is any of <b>·</b> ubuntu, debian, fedora <span class="p">— computer/hardware/os_distribution</span></span>
+                </div>
+                <div class="qcond">
+                  <span class="status-dot status-ok"></span>
+                  <span class="kind-chip kind-param">Param</span>
+                  <span class="qcond-text">RAM <b>·</b> is greater than or equal <b>·</b> 4096 MB <span class="p">— computer/hardware/ram_mb</span></span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="cb-field"><label>Predefined expected options</label>
+          <div class="check-list" style="flex-direction:row;gap:16px;margin-top:4px">
+            <label><input type="checkbox" checked> linux</label>
+            <label><input type="checkbox" checked> windows</label>
+            <label><input type="checkbox" checked> macos</label>
+          </div>
+          <p class="op-help">When a query declares predefined options, the Expected value column shows them as a dropdown instead of a free-text field.</p>
+        </div>
+      </div>
+      <div class="cb-foot">
+        <label class="btn btn-secondary" for="q-open">Close</label>
+        <span class="spacer"></span>
+        <button class="btn btn-primary btn-sm">Edit query</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ADVANCED EXPECTED VALUE DIALOG (opens from "Advanced" — manual entry, query output, or range) -->
+  <input type="checkbox" id="adv-open">
+  <div class="cb-overlay">
+    <div class="cb-dialog" style="width:620px">
+      <div class="cb-head">
+        <div><div class="cb-crumb">Expected value · Linux Workstations</div><h3>Advanced options</h3></div>
+        <label class="cb-close" for="adv-open">×</label>
+      </div>
+      <div class="cb-body" style="display:block;min-height:0">
+        <div class="cb-field">
+          <label>Value type</label>
+          <div class="check-list" style="flex-direction:column;gap:8px;margin-top:4px">
+            <label><input type="radio" name="adv-type" checked> <b>Literal value</b> — manual entry</label>
+            <label><input type="radio" name="adv-type"> <b>Output of another query</b> — compare two unknown values</label>
+            <label><input type="radio" name="adv-type"> <b>Range</b> — between two values (for “Between” comparison)</label>
+          </div>
+        </div>
+        <div class="cb-field">
+          <label>Value</label>
+          <input class="input" value="linux" style="width:100%">
+        </div>
+        <p class="op-help">Manual entry always wins over the quick-pick dropdown. Example use: version grouping — set “Output of another query” and pick <b>Baseline version</b>, so devices match when both queries output the same unknown string.</p>
+      </div>
+      <div class="cb-foot">
+        <label class="btn btn-secondary" for="adv-open">Cancel</label>
+        <span class="spacer"></span>
+        <label class="btn btn-primary" for="adv-open">Apply</label>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+var OPERATORS = [
+  { key: 'AND', label: 'AND', desc: 'All conditions must match.', ex: 'A AND B' },
+  { key: 'OR', label: 'OR', desc: 'At least one condition must match.', ex: 'A OR B' },
+  { key: 'NOR', label: 'NOR', desc: 'Neither condition may match.', ex: 'NOT (A OR B)' },
+  { key: 'XOR', label: 'XOR', desc: 'Exactly one condition must match.', ex: 'A XOR B' }
+];
+
+var COMPARE_OPERATORS = [
+  { group: 'Comparison', key: 'equals', label: 'Equals (is)', desc: 'Output must exactly equal the expected value.', ex: '“linux” = “linux”' },
+  { group: 'Comparison', key: 'not_equals', label: 'Not equals', desc: 'Output must differ from the expected value.', ex: '“ubuntu” ≠ “windows”' },
+  { group: 'Comparison', key: 'gt', label: 'Greater than', desc: 'Output must be numerically larger.', ex: '8 GB RAM > 4 GB' },
+  { group: 'Comparison', key: 'gte', label: 'Greater or equal', desc: 'Output must be numerically larger or equal.', ex: '16 GB ≥ 16 GB' },
+  { group: 'Comparison', key: 'lt', label: 'Less than', desc: 'Output must be numerically smaller.', ex: '2 GB < 4 GB' },
+  { group: 'Comparison', key: 'lte', label: 'Less or equal', desc: 'Output must be numerically smaller or equal.', ex: '4 GB ≤ 4 GB' },
+  { group: 'Comparison', key: 'between', label: 'Between', desc: 'Output must fall inside the range.', ex: 'RAM between 8 GB and 16 GB' },
+  { group: 'String', key: 'contains', label: 'Contains', desc: 'Expected value must appear inside the output.', ex: '“ubuntu-24.04” contains “buntu”' },
+  { group: 'String', key: 'not_contains', label: 'Does not contain', desc: 'Expected value must NOT appear in the output.', ex: '“fedora” does not contain “win”' },
+  { group: 'String', key: 'starts_with', label: 'Starts with', desc: 'Output must begin with the expected value.', ex: '“windows-server” starts with “windows”' },
+  { group: 'String', key: 'ends_with', label: 'Ends with', desc: 'Output must end with the expected value.', ex: '“server-core” ends with “core”' },
+  { group: 'String', key: 'matches', label: 'Matches (regex)', desc: 'Output must match the regular expression.', ex: '^win\\d+ matches “win11”' },
+  { group: 'Set', key: 'in', label: 'In', desc: 'Output must be one of the listed values.', ex: 'OS in (linux, windows)' },
+  { group: 'Set', key: 'not_in', label: 'Not in', desc: 'Output must NOT be any of the listed values.', ex: 'OS not in (macos, android)' },
+  { group: 'Set', key: 'any_of', label: 'Any of', desc: 'For multi-value output: at least one listed value must match.', ex: 'any tag in (prod, dev)' },
+  { group: 'Set', key: 'all_of', label: 'All of', desc: 'For multi-value output: every listed value must match.', ex: 'all tags in (secure, managed)' }
+];
+
+function cdBuildOptions(host) {
+  var isOp = host.hasAttribute('data-cd-operator');
+  var catalog = isOp ? OPERATORS : COMPARE_OPERATORS;
+  var groupsEl = host.querySelector('.cd-groups');
+  var groups = {};
+  catalog.forEach(function (item) {
+    var g = item.group || 'Operator';
+    (groups[g] = groups[g] || []).push(item);
+  });
+  Object.keys(groups).forEach(function (g) {
+    var gl = document.createElement('div');
+    gl.className = 'cd-group';
+    gl.innerHTML = '<div class="cd-group-label">' + g + '</div>';
+    groups[g].forEach(function (item) {
+      var o = document.createElement('div');
+      o.className = 'cd-opt' + (item.key === host.dataset.selected ? ' sel' : '');
+      o.dataset.key = item.key;
+      o.innerHTML = '<div class="cd-opt-label">' + item.label + '</div>' +
+                    (item.desc ? '<div class="cd-opt-desc">' + item.desc + '</div>' : '') +
+                    (item.ex ? '<div class="cd-opt-ex">e.g. ' + item.ex + '</div>' : '');
+      o.addEventListener('click', function () {
+        host.dataset.selected = item.key;
+        host.querySelectorAll('.cd-opt').forEach(function (x) { x.classList.remove('sel'); });
+        o.classList.add('sel');
+        var btn = host.querySelector('[data-cd-btn]');
+        btn.childNodes[0].textContent = item.label;
+        var helpHost = document.getElementById(host.dataset.helpHost);
+        if (helpHost) helpHost.textContent = item.desc + (item.ex ? ' Example: ' + item.ex + '.' : '');
+        host.querySelector('.cd-panel').hidden = true;
+        host.classList.remove('open');
+      });
+      gl.appendChild(o);
+    });
+    groupsEl.appendChild(gl);
+  });
+}
+
+function cdWireSearch(host) {
+  var input = host.querySelector('.cd-search');
+  if (!input) return;
+  input.addEventListener('input', function () {
+    var q = input.value.trim().toLowerCase();
+    var anyVisible = false;
+    host.querySelectorAll('.cd-group').forEach(function (gl) {
+      var groupVisible = false;
+      gl.querySelectorAll('.cd-opt').forEach(function (o) {
+        var text = (o.textContent || '').toLowerCase();
+        var hit = !q || text.indexOf(q) !== -1;
+        o.classList.toggle('cd-hidden', !hit);
+        if (hit) groupVisible = true;
+      });
+      gl.classList.toggle('cd-hidden', !groupVisible);
+      if (groupVisible) anyVisible = true;
+    });
+    var empty = host.querySelector('.cd-empty');
+    if (!empty) {
+      empty = document.createElement('div');
+      empty.className = 'cd-empty';
+      empty.textContent = 'No matching operators.';
+      host.querySelector('.cd-groups').appendChild(empty);
+    }
+    empty.style.display = anyVisible ? 'none' : 'block';
+  });
+}
+
+function buildCompareDropdowns(root) {
+  (root || document).querySelectorAll('[data-cd], [data-cd-operator]').forEach(function (host) {
+    if (host.dataset.cdBuilt) return;
+    host.dataset.cdBuilt = '1';
+    var btn = host.querySelector('[data-cd-btn]');
+    var panel = host.querySelector('.cd-panel');
+    cdBuildOptions(host);
+    cdWireSearch(host);
+
+    btn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      var isOpen = panel.hidden;
+      document.querySelectorAll('.cd-panel').forEach(function (p) { p.hidden = true; });
+      document.querySelectorAll('.cd').forEach(function (c) { c.classList.remove('open'); });
+      panel.hidden = !isOpen;
+      host.classList.toggle('open', isOpen);
+      var input = host.querySelector('.cd-search');
+      if (input) setTimeout(function () { input.focus(); }, 0);
+    });
+  });
+}
+
+document.addEventListener('click', function (e) {
+  var qlink = e.target.closest('[data-qopen]');
+  if (qlink) { document.getElementById('q-open').checked = true; return; }
+  if (!e.target.closest('.cd')) {
+    document.querySelectorAll('.cd-panel').forEach(function (p) { p.hidden = true; });
+    document.querySelectorAll('.cd').forEach(function (c) { c.classList.remove('open'); });
+  }
+});
+
+// ---- Drag & drop: move one row or the whole multi-selection block ----
+(function () {
+  var tbody;
+  var dragged = null;   // the <tr> that was grabbed
+  var block = [];       // rows being moved (1 row, or the full selection)
+  var indicator = null;
+
+  function depthForPoint(e) {
+    // horizontal drop zones: left third = depth 0, middle = depth 1, right = depth 2
+    var wrap = tbody.closest('.pm-table-wrap');
+    var rect = wrap.getBoundingClientRect();
+    var x = e.clientX - rect.left;
+    if (x < rect.width * 0.30) return 0;
+    if (x < rect.width * 0.62) return 1;
+    return 2;
+  }
+
+  function moveIndicator(beforeRow, depth) {
+    if (!indicator) return;
+    indicator.classList.remove('depth-1');
+    if (depth === 1) indicator.classList.add('depth-1');
+    tbody.insertBefore(indicator, beforeRow);
+  }
+
+  function clearIndicator() {
+    if (indicator && indicator.parentNode) indicator.parentNode.removeChild(indicator);
+  }
+
+  function inBlock(node) {
+    return block.some(function (r) { return r === node; });
+  }
+
+  function recompute() {
+    // after a drop, reconcile levels so a row is never deeper than the one before it + 1
+    var rows = Array.prototype.slice.call(tbody.querySelectorAll('.ql-row'));
+    var lastLevel = 0;
+    rows.forEach(function (r) {
+      var lvl = parseInt(r.dataset.level || '0', 10);
+      if (lvl > lastLevel + 1) lvl = lastLevel + 1;
+      r.dataset.level = String(lvl);
+      lastLevel = lvl;
+    });
+  }
+
+  tbody = document.querySelector('.panel-query table tbody');
+  if (!tbody) return;
+
+  // make query rows draggable
+  tbody.querySelectorAll('.ql-row').forEach(function (r) {
+    r.setAttribute('draggable', 'true');
+  });
+
+  // The block is computed fresh in dragstart from the LIVE selection —
+  // whatever rows carry .ql-selected at the moment the drag begins become
+  // the moving block (if the grabbed row itself is selected). No snapshot
+  // timing is needed: selection survives until the drag starts, and the
+  // drag image below makes the whole block visible while dragging.
+
+  function selectedRows() {
+    return Array.prototype.slice.call(tbody.querySelectorAll('.ql-row.ql-selected'));
+  }
+
+  tbody.addEventListener('dragstart', function (e) {
+    var row = e.target.closest('.ql-row');
+    if (!row) return;
+    if (e.target.closest('a, button, select, input, label, .cd')) {
+      e.preventDefault();
+      return;
+    }
+    dragged = row;
+    // if the grabbed row is part of a multi-selection, move the whole selection
+    if (row.classList.contains('ql-selected')) {
+      block = selectedRows();
+    } else {
+      selectedRows().forEach(function (r) { r.classList.remove('ql-selected'); });
+      row.classList.add('ql-selected');
+      block = [row];
+    }
+    if (block.indexOf(row) === -1) block.push(row);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', block.map(function (r) { return r.dataset.qid; }).join(','));
+    // no custom drag image — the browser's native ghost of the grabbed row
+    // is exactly the visual the user wants
+    setTimeout(function () { block.forEach(function (r) { r.classList.add('ql-dragging'); }); }, 0);
+  });
+
+  tbody.addEventListener('dragend', function () {
+    if (block.length) block.forEach(function (r) { r.classList.remove('ql-dragging'); });
+    dragged = null;
+    block = [];
+    clearIndicator();
+    // suppress the click event browsers fire right after a drag, so the
+    // selection (e.g. a multi-selection block) is not collapsed to one row
+    var wrap = tbody.closest('.pm-table-wrap');
+    if (wrap) {
+      wrap.dataset.suppressClick = '1';
+      setTimeout(function () { delete wrap.dataset.suppressClick; }, 500);
+    }
+  });
+
+  tbody.addEventListener('dragover', function (e) {
+    if (!dragged) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+
+    var target = e.target.closest('.ql-row, .ql-group');
+    if (!target) { clearIndicator(); return; }
+    // cannot drop onto a row that is itself being moved
+    if (target.classList.contains('ql-row') && inBlock(target)) { clearIndicator(); return; }
+
+    var depth = depthForPoint(e);
+    var rect = target.getBoundingClientRect();
+    var after = (e.clientY - rect.top) > (rect.height / 2);
+    var beforeRow = after ? target.nextElementSibling : target;
+    moveIndicator(beforeRow, depth);
+
+    // lighten the row under the cursor
+    tbody.querySelectorAll('.ql-row').forEach(function (r) { r.classList.remove('ql-drop-target-before', 'ql-drop-target-after'); });
+    if (target.classList.contains('ql-row')) {
+      target.classList.add(after ? 'ql-drop-target-after' : 'ql-drop-target-before');
+    }
+  });
+
+  tbody.addEventListener('drop', function (e) {
+    if (!dragged) return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    var target = e.target.closest('.ql-row, .ql-group');
+    if (!target || (target.classList.contains('ql-row') && inBlock(target))) {
+      block.forEach(function (r) { r.classList.remove('ql-dragging'); });
+      return;
+    }
+
+    var depth = depthForPoint(e);
+    var rect = target.getBoundingClientRect();
+    var after = (e.clientY - rect.top) > (rect.height / 2);
+
+    // pick a stable reference node OUTSIDE the block (survives removal)
+    var ref = after ? target.nextElementSibling : target;
+    while (ref && inBlock(ref)) ref = ref.nextElementSibling;
+    if (!ref && !after) ref = target;
+
+    // remove the whole block
+    block.forEach(function (r) { tbody.removeChild(r); });
+
+    // re-insert in original order, right before the fixed reference
+    block.forEach(function (r) {
+      r.dataset.level = String(depth);
+      if (ref) tbody.insertBefore(r, ref);
+      else tbody.appendChild(r);
+    });
+
+    block.forEach(function (r) { r.classList.remove('ql-dragging', 'ql-drop-target-before', 'ql-drop-target-after'); });
+    tbody.querySelectorAll('.ql-row').forEach(function (r) { r.classList.remove('ql-drop-target-before', 'ql-drop-target-after'); });
+    clearIndicator();
+    recompute();
+    dragged = null;
+    block = [];
+  });
+})();
+
+// ---- Marquee / rubber-band selection (desktop-style) ----
+// Starts from ANY empty area — under the search bar, the panel background,
+// the sidebar's right edge, or the gutter below the rows — and selects
+// every query row the rectangle touches.
+(function () {
+  var zone = document.querySelector('.panel-query .pm-table-wrap');
+  if (!zone) return;
+  zone.classList.add('ql-marquee-zone');
+
+  var marquee = null;
+  var startX = 0, startY = 0;
+  var lastClicked = null;
+
+  function allRows() { return zone.querySelectorAll('.ql-row'); }
+
+  function clearSelection() {
+    allRows().forEach(function (r) { r.classList.remove('ql-selected'); });
+  }
+
+  function selectRange(fromRow, toRow) {
+    var rows = Array.prototype.slice.call(allRows());
+    var a = rows.indexOf(fromRow), b = rows.indexOf(toRow);
+    if (a < 0 || b < 0) return;
+    var lo = Math.min(a, b), hi = Math.max(a, b);
+    for (var i = lo; i <= hi; i++) rows[i].classList.add('ql-selected');
+  }
+
+  // click on a row (after a non-drag click) selects it; ctrl toggles, shift = range
+  zone.addEventListener('click', function (e) {
+    var row = e.target.closest('.ql-row');
+    if (!row) return;
+    if (e.target.closest('a, button, select, input, label, .cd')) return;
+    // ignore the click that follows a drag-and-drop — the selection must survive
+    if (zone.dataset.suppressClick === '1') {
+      delete zone.dataset.suppressClick;
+      return;
+    }
+    if (e.ctrlKey || e.metaKey) {
+      row.classList.toggle('ql-selected');
+      lastClicked = row;
+    } else if (e.shiftKey && lastClicked) {
+      clearSelection();
+      selectRange(lastClicked, row);
+      lastClicked = row;
+    } else {
+      // Desktop behavior: clicking an ALREADY-selected row keeps the whole
+      // multi-selection intact (so the user can drag the group). Only a click
+      // on an unselected row collapses to that single row.
+      if (!row.classList.contains('ql-selected')) {
+        clearSelection();
+        row.classList.add('ql-selected');
+      }
+      lastClicked = row;
+    }
+  });
+
+  function isInteractive(el) {
+    return !!el.closest('button, select, input, textarea, label, .cd, .cmp-help, .ql-row, .ql-group, .app-header, .sidebar-brand, .sidebar-foot, a[data-qopen]');
+  }
+
+  // marquee starts anywhere in the app EXCEPT on rows / interactive controls
+  document.addEventListener('mousedown', function (e) {
+    if (e.button !== 0) return;
+    if (isInteractive(e.target)) return;
+    e.preventDefault();
+    startX = e.clientX;
+    startY = e.clientY;
+    if (!e.ctrlKey && !e.metaKey) clearSelection();
+    marquee = document.createElement('div');
+    marquee.className = 'ql-marquee';
+    marquee.style.left = startX + 'px';
+    marquee.style.top = startY + 'px';
+    document.body.appendChild(marquee);
+    zone.classList.add('ql-marquee-active');
+  });
+
+  document.addEventListener('mousemove', function (e) {
+    if (!marquee) return;
+    var x = Math.min(e.clientX, startX);
+    var y = Math.min(e.clientY, startY);
+    var w = Math.abs(e.clientX - startX);
+    var h = Math.abs(e.clientY - startY);
+    marquee.style.left = x + 'px';
+    marquee.style.top = y + 'px';
+    marquee.style.width = w + 'px';
+    marquee.style.height = h + 'px';
+
+    var mr = { left: x, top: y, right: x + w, bottom: y + h };
+    allRows().forEach(function (r) {
+      var rr = r.getBoundingClientRect();
+      var hit = rr.left < mr.right && rr.right > mr.left && rr.top < mr.bottom && rr.bottom > mr.top;
+      r.classList.toggle('ql-selected', hit);
+    });
+  });
+
+  document.addEventListener('mouseup', function () {
+    if (!marquee) return;
+    marquee.remove();
+    marquee = null;
+    zone.classList.remove('ql-marquee-active');
+    // suppress the click event that fires right after a marquee drag — it
+    // would collapse the freshly-made multi-selection to the single row the
+    // cursor happens to be over when the mouse is released. The click handler
+    // consumes the flag; the timeout is a safety net if no click arrives.
+    zone.dataset.suppressClick = '1';
+    setTimeout(function () { delete zone.dataset.suppressClick; }, 500);
+  });
+
+  // hint
+  var hint = document.createElement('div');
+  hint.className = 'ql-select-hint';
+  hint.innerHTML = '<b>Drag in any empty space</b> (below the search bar, panel background, sidebar edge) to select multiple queries · click = select · ctrl+click = toggle · shift+click = range';
+  zone.appendChild(hint);
+})();
+
+document.addEventListener('click', function (e) {
+  var gRemove = e.target.closest('[data-group-remove]');
+  if (gRemove) {
+    var g = gRemove.closest('.ql-group');
+    var member = g.dataset.member;
+    var tbody = g.closest('tbody');
+    g.remove();
+    if (member) {
+      tbody.querySelectorAll('.ql-row[data-qid="' + member + '"]').forEach(function (r) { delete r.dataset.inGroup; });
+    }
+  }
+});
+
+document.addEventListener('DOMContentLoaded', function () { buildCompareDropdowns(); });
+if (document.readyState !== 'loading') buildCompareDropdowns();
+</script>
+</body>
+</html>
