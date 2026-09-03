@@ -127,14 +127,97 @@ th.th-sortable.is-sorted-desc .th-sort-btn { color: var(--text); font-weight: 60
 .concept-empty-cta { margin-top: 8px; }
 
 /* ---- Shared list selection and mass actions ------------------------ */
+
+/* Visually hidden, still read by assistive tech. Without this the
+   "Select <name>" / "Select all visible items" labels in
+   list_mass_actions.templ render as visible text, which both widened
+   the select column and repeated every row's name inside it. */
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+/* width:1% + nowrap is the shrink-to-fit idiom for `table-layout: auto`:
+   a small px width is only a hint and the browser hands this column a
+   share of the leftover space anyway (it was absorbing ~314px on the
+   Users list). 1% collapses it to its content, so the freed width goes
+   to the data columns instead. */
 .list-select-cell {
-    width: 42px;
+    width: 1%;
+    white-space: nowrap;
     padding-left: 12px !important;
-    padding-right: 8px !important;
+    padding-right: 4px !important;
     text-align: center;
 }
-.list-select-label { display: inline-flex; align-items: center; cursor: pointer; }
-.list-select-label input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
+.list-select-label {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    line-height: 0;
+}
+
+/* Custom control replacing the native checkbox so selection matches the
+   console palette instead of the browser default. The input keeps its
+   semantics (focusable, checkable, announced) and is painted via
+   appearance:none rather than hidden behind a proxy element. */
+.list-select-label input[type="checkbox"] {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 15px;
+    height: 15px;
+    margin: 0;
+    border: 1.5px solid var(--border-strong, #cbd5e1);
+    border-radius: 4px;
+    background: var(--paper, #fff);
+    cursor: pointer;
+    position: relative;
+    transition: background-color .12s ease, border-color .12s ease;
+}
+.list-select-label input[type="checkbox"]:hover {
+    border-color: var(--accent, #0099c2);
+}
+.list-select-label input[type="checkbox"]:checked {
+    background: var(--accent, #0099c2);
+    border-color: var(--accent, #0099c2);
+}
+/* Checkmark drawn as a rotated box edge — no icon font, no SVG. */
+.list-select-label input[type="checkbox"]:checked::after {
+    content: "";
+    position: absolute;
+    left: 4px;
+    top: 1px;
+    width: 4px;
+    height: 8px;
+    border: solid #fff;
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+}
+.list-select-label input[type="checkbox"]:indeterminate {
+    background: var(--accent, #0099c2);
+    border-color: var(--accent, #0099c2);
+}
+.list-select-label input[type="checkbox"]:indeterminate::after {
+    content: "";
+    position: absolute;
+    left: 2.5px;
+    top: 5.5px;
+    width: 8px;
+    height: 2px;
+    background: #fff;
+    border-radius: 1px;
+}
+.list-select-label input[type="checkbox"]:focus-visible {
+    outline: 2px solid var(--accent, #0099c2);
+    outline-offset: 2px;
+}
 .mass-action-toolbar {
     display: flex;
     align-items: center;

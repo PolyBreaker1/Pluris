@@ -802,7 +802,13 @@ try {
 const raw = localStorage.getItem(storageKey);
 if (!raw) return defaultKeys.slice();
 const arr = JSON.parse(raw);
-return Array.isArray(arr) ? arr : defaultKeys.slice();
+// An empty persisted set would render every cell display:none, which
+// collapses each row to zero height -- the row is then impossible to
+// click, and because the state is persisted the list looks
+// permanently broken. Fall back to defaults instead (self-heals a
+// browser already holding an empty set).
+if (!Array.isArray(arr) || arr.length === 0) return defaultKeys.slice();
+return arr;
 } catch (e) { return defaultKeys.slice(); }
 }
 function save(keys) {
@@ -814,7 +820,15 @@ checkboxes.forEach(cb => { if (cb.checked) set.add(cb.dataset.colKey); });
 return set;
 }
 function apply() {
-const set = visibleSet();
+let set = visibleSet();
+// Never leave the table with zero visible columns: every cell would be
+// display:none, every row would collapse to zero height, and rows
+// would stop being clickable (INV-L10 row navigation). Snap back to
+// the registry defaults and reflect that in the checkboxes.
+if (set.size === 0) {
+checkboxes.forEach(cb => { cb.checked = defaultKeys.indexOf(cb.dataset.colKey) !== -1; });
+set = visibleSet();
+}
 // Every table on the page belonging to this list. Keeps the
 // per-leaf-category mini-tables of policyTable in sync.
 document.querySelectorAll('table[data-list-id="' + listId + '"]').forEach(tbl => {
