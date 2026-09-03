@@ -15,7 +15,25 @@
 	document.addEventListener('DOMContentLoaded', function () {
 		initScriptsTab();
 		initParametersTab();
+		wireScriptEditorRefresh();
 	});
+
+	// wireScriptEditorRefresh — CP3: the standalone per-script editor
+	// (module-script-editor.js, opened via window in a new tab/window
+	// from the Scripts tab's row links) posts
+	// `window.opener.postMessage('pluris:script-saved', location.origin)`
+	// after a successful save. Listening here (rather than in the popup)
+	// means the opener — this module editor page — reloads to pick up
+	// the new script content/list state, matching the "Add/rename/delete
+	// script" actions' existing full-page-reload pattern (plain
+	// form POSTs) instead of introducing a partial-refresh path.
+	function wireScriptEditorRefresh() {
+		window.addEventListener('message', function (e) {
+			if (e.origin !== location.origin) return;
+			if (e.data !== 'pluris:script-saved') return;
+			window.location.reload();
+		});
+	}
 
 	// ---- Scripts tab: param tree + phase panes + save -------------------
 
@@ -198,6 +216,30 @@
 				});
 			});
 		}
+
+		var deleteButtons = root.querySelectorAll('[data-pm-delete-script]');
+		for (var j = 0; j < deleteButtons.length; j++) {
+			deleteButtons[j].addEventListener('click', function (e) {
+				var btn = e.currentTarget;
+				var phase = btn.getAttribute('data-pm-delete-script');
+				if (!confirm('Remove the ' + phase + ' script from this draft?')) return;
+				btn.disabled = true;
+				fetch('/api/modules/' + encodeURIComponent(moduleUrn) + '/versions/' + encodeURIComponent(versionID) + '/scripts/delete', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+					body: JSON.stringify({ phase: phase }),
+				}).then(function (r) {
+					if (r.ok) { window.location.reload(); return; }
+					btn.disabled = false;
+					return r.json().then(function (err) {
+						alert('Remove failed: ' + (err.message || err.error || 'unknown error'));
+					}, function () { alert('Remove failed: unknown error'); });
+				}).catch(function (err) {
+					btn.disabled = false;
+					alert('Remove failed: ' + err.message);
+				});
+			});
+		}
 	}
 
 	// loadParamTree fetches the session-filtered parameter tree from
@@ -351,15 +393,25 @@
 	// ---- Parameters tab: structured JSON-Schema row editor ---------------
 
 	function initParametersTab() {
-		var root = document.querySelector('[data-pm-params-root]');
-		if (!root) return;
+		var roots = document.querySelectorAll('[data-pm-params-root]');
+		for (var i = 0; i < roots.length; i++) {
+			initSchemaEditor(roots[i]);
+		}
+	}
+
+	// One structured JSON-Schema row editor per root — the Parameters tab
+	// (field parameters_schema) and the Report tab (field report_schema)
+	// mount the SAME component with a different data-field-key, never a
+	// fork (INV-U).
+	function initSchemaEditor(root) {
 		var canEdit = root.getAttribute('data-can-edit') === 'true';
 		var saveURL = root.getAttribute('data-save-url');
 		var csrf = root.getAttribute('data-csrf') || '';
-		var tbody = document.getElementById('pm-params-tbody');
-		var preview = document.getElementById('pm-params-preview');
-		var addBtn = document.getElementById('pm-params-add-row');
-		var saveBtn = document.getElementById('pm-params-save');
+		var fieldKey = root.getAttribute('data-field-key') || 'parameters_schema';
+		var tbody = root.querySelector('[data-pm-rows]');
+		var preview = root.querySelector('[data-pm-preview]');
+		var addBtn = root.querySelector('[data-pm-add-row]');
+		var saveBtn = root.querySelector('[data-pm-save-schema]');
 
 		if (window.PlurisCodeEditor) {
 			window.PlurisCodeEditor.upgradeTextareas(root);
@@ -379,10 +431,12 @@
 				var json = JSON.stringify(built, null, 2);
 				if (preview) setPreviewValue(preview, json);
 				saveBtn.disabled = true;
+				var fields = {};
+				fields[fieldKey] = JSON.stringify(built);
 				fetch(saveURL, {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
-					body: JSON.stringify({ section: 'parameters', fields: { parameters_schema: JSON.stringify(built) } }),
+					body: JSON.stringify({ section: fieldKey, fields: fields }),
 				}).then(function (r) {
 					saveBtn.disabled = false;
 					if (r.ok) {

@@ -1,9 +1,10 @@
 package templates
 
 import (
+	"net/url"
 	"strconv"
 
-	"github.com/pluris/pluris/catalog/policymodules"
+	"github.com/pluris/pluris/web/lists"
 )
 
 // PolicyModuleDetailPage — the Task 4.3 module detail/create editor: the
@@ -18,6 +19,7 @@ templ PolicyModuleDetailPage(d ModuleEditorData) {
 		moduleEditorHero(d),
 		moduleEditorTabs(d),
 	)
+	@policyModulePickerDialog()
 	@templ.Raw(`<script src="/static/vendor/codemirror/codemirror-pluris.js"></script>`)
 	<script src="/static/code-editor.js"></script>
 	<script src="/static/policy-module-editor.js"></script>
@@ -41,6 +43,33 @@ templ moduleCloneAction(urn string, csrf string) {
 			<span>Clone into my tenant</span>
 		</button>
 	</form>
+}
+
+templ modulePickAction(d ModuleEditorData) {
+	<div style="display:flex; gap:8px; flex-wrap:wrap;">
+		<a href={ templ.SafeURL("/policy/modules/" + d.Row.ModuleUrn + "/export") } class="btn" title="Download this module as a .pmdl package (latest published version, or the latest draft if none is published)">
+			@iconSVG("copy")
+			<span>Export .pmdl</span>
+		</a>
+		if len(d.Module.Satisfies) > 0 {
+			<button
+				type="button"
+				class="btn btn-primary"
+				data-pmp-open
+				data-pmp-urn={ d.Module.Satisfies[0] }
+				data-pmp-os={ modulePickerOS(d.Module) }
+				data-pmp-source="binding"
+				data-pmp-current-id={ d.Row.ModuleUrn }
+				title="Open the module picker for this module's primary policy"
+			>
+				@iconSVG("plus")
+				<span>Pick</span>
+			</button>
+		}
+		if d.IsBundled {
+			@moduleCloneAction(d.Row.ModuleUrn, d.CSRF)
+		}
+	</div>
 }
 
 // moduleWarnBanner — a dismissible-by-navigation banner surfacing errors
@@ -87,7 +116,7 @@ templ moduleGeneralTab(d ModuleEditorData) {
 					}
 				</dd>
 				<dt>URN</dt>
-				<dd><span class="field-value font-mono" data-readonly="true">{ d.Row.ModuleUrn }</span></dd>
+				<dd><span class="field-value font-mono" data-readonly="true" title="The URN is the module's stable cross-tenant reference key and cannot be changed after creation.">{ d.Row.ModuleUrn }</span></dd>
 			</dl>
 		</section>
 		<section class="asset-detail-section card" data-section="general" data-save-url={ moduleVersionFieldsSaveURL(d) }>
@@ -199,6 +228,10 @@ templ moduleVersionsTab(d ModuleEditorData) {
 											<input type="hidden" name="_csrf" value={ d.CSRF }/>
 											<button type="submit" class="btn btn-sm btn-primary">Publish</button>
 										</form>
+										<form method="post" action={ templ.SafeURL("/policy/modules/" + d.Row.ModuleUrn + "/versions/" + strconv.FormatInt(v.ID, 10) + "/delete") } style="display:inline;" onsubmit="return confirm('Delete this draft? Its scripts and tests are removed permanently.')">
+											<input type="hidden" name="_csrf" value={ d.CSRF }/>
+											<button type="submit" class="btn btn-sm btn-danger">Delete draft</button>
+										</form>
 									}
 									if d.CanEdit && (v.State == "published" || v.State == "superseded") {
 										<form method="post" action={ templ.SafeURL("/policy/modules/" + d.Row.ModuleUrn + "/versions/" + strconv.FormatInt(v.ID, 10) + "/revoke") } style="display:inline;" onsubmit="return confirm('Revoke this version? Agents must not run a revoked version.')">
@@ -218,51 +251,68 @@ templ moduleVersionsTab(d ModuleEditorData) {
 
 // ---- Scripts tab (centerpiece) ----------------------------------------
 
+// moduleScriptsTab — CP2 of the Scripts+Enforcement redesign: the
+// phase-tabbed inline editor is replaced with a standard INV-L list of
+// this version's named scripts (name/language/origin/used-by), with
+// add/rename/delete row actions. The row's primary link opens the
+// standalone per-script editor (CP3; may 404 until that page lands).
 templ moduleScriptsTab(d ModuleEditorData) {
-	<div class="pm-editor-layout" data-pm-scripts-root data-module-urn={ d.Row.ModuleUrn } data-version-id={ strconv.FormatInt(d.SelectedID, 10) } data-can-edit={ strconv.FormatBool(d.CanEdit && d.IsDraft) } data-csrf={ d.CSRF }>
+	<div class="asset-detail-grid" data-module-urn={ d.Row.ModuleUrn } data-version-id={ strconv.FormatInt(d.SelectedID, 10) }>
+		@moduleWarnBanner(d.Warn)
 		if !d.HasSelected {
 			<p class="cg-muted">No version selected. Create a draft on the Versions tab first.</p>
 		} else {
 			if !d.IsDraft {
 				<div class="auth-error" role="alert">Published versions are immutable — create a draft to edit scripts.</div>
 			}
-			<div class="pm-editor-split">
-				<aside class="pm-param-tree card" id="pm-param-tree">
-					<div class="pm-param-tree-search">
-						<input type="search" id="pm-param-search" class="input" placeholder="Search parameters…" autocomplete="off"/>
-					</div>
-					<div id="pm-param-tree-body" class="pm-param-tree-body">
-						<p class="cg-muted">Loading parameters…</p>
-					</div>
-				</aside>
-				<div class="pm-script-panes">
-					<div class="pm-phase-strip" id="pm-phase-strip">
-						for _, ph := range policymodules.AllLifecyclePhases {
-							<button type="button" class="pm-phase-tab" data-pm-phase={ string(ph) } data-pm-runtime={ string(ph.Runtime()) } title={ ph.HelpText() }>
-								{ ph.Label() }
-								<span class="pm-phase-runtime">{ string(ph.Runtime()) }</span>
-							</button>
-						}
-					</div>
-					for _, ph := range policymodules.AllLifecyclePhases {
-						<div class="pm-phase-pane" data-pm-phase-pane={ string(ph) }>
-							<div class="cg-field">
-								<label>Filename</label>
-								<input type="text" class="input" data-pm-filename={ string(ph) } value={ scriptFilename(d, ph) } readonly?={ !d.CanEdit || !d.IsDraft }/>
-							</div>
-							<textarea
-								data-code-editor={ scriptLanguage(ph) }
-								data-pm-source={ string(ph) }
-								readonly?={ !d.CanEdit || !d.IsDraft }
-								rows="16"
-							>{ scriptSource(d, ph) }</textarea>
-							if d.CanEdit && d.IsDraft {
-								<button type="button" class="btn btn-primary" data-pm-save-script={ string(ph) } style="margin-top:8px;">Save { ph.Label() }</button>
-							}
+			if d.CanEdit && d.IsDraft {
+				<section class="asset-detail-section card">
+					<h4 class="asset-detail-section-title">Add script</h4>
+					<form method="post" action={ templ.SafeURL(moduleVersionActionURL(d, "scripts")) } style="display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap;">
+						<input type="hidden" name="_csrf" value={ d.CSRF }/>
+						<div class="cg-field">
+							<label for="pm-new-script-name">Name</label>
+							<input id="pm-new-script-name" name="name" class="input font-mono" placeholder="my-check.sh" required/>
 						</div>
+						<div class="cg-field">
+							<label for="pm-new-script-language">Language</label>
+							<select id="pm-new-script-language" name="language" class="input">
+								<option value="sh">sh</option>
+								<option value="powershell">powershell</option>
+								<option value="python">python</option>
+							</select>
+						</div>
+						<button type="submit" class="btn btn-primary">Add script</button>
+					</form>
+				</section>
+			}
+			@DetailTableFrame(lists.ListIDModuleScripts, nil) {
+				if len(d.ScriptList) == 0 {
+					@DetailEmptyRow(5, "No scripts yet.")
+				} else {
+					for _, sc := range d.ScriptList {
+						<tr>
+							<td><a class="font-mono" href={ templ.SafeURL(scriptEditURL(d, sc.Name)) } target="_blank" rel="noopener" title="Open in the standalone script editor (new window)">{ sc.Name }</a></td>
+							<td>{ sc.Language }</td>
+							<td><span class={ scriptOriginChipClass(sc.Origin) }>{ scriptOriginLabel(sc.Origin) }</span></td>
+							<td>{ scriptUsedByLabel(d, sc.Name) }</td>
+							<td class="pm-row-actions">
+								if d.CanEdit && d.IsDraft {
+									<form method="post" action={ templ.SafeURL(moduleVersionActionURL(d, "scripts/"+url.PathEscape(sc.Name)+"/rename")) } style="display:inline-flex; gap:6px; align-items:center;">
+										<input type="hidden" name="_csrf" value={ d.CSRF }/>
+										<input type="text" name="new_name" class="input font-mono" style="width:120px;" placeholder="rename to…" required/>
+										<button type="submit" class="btn btn-sm">Rename</button>
+									</form>
+									<form method="post" action={ templ.SafeURL(moduleVersionActionURL(d, "scripts/"+url.PathEscape(sc.Name)+"/delete")) } style="display:inline;" onsubmit="return confirm('Delete this script?')">
+										<input type="hidden" name="_csrf" value={ d.CSRF }/>
+										<button type="submit" class="btn btn-sm btn-danger">Delete</button>
+									</form>
+								}
+							</td>
+						</tr>
 					}
-				</div>
-			</div>
+				}
+			}
 		}
 	</div>
 }
@@ -274,22 +324,45 @@ templ moduleParametersTab(d ModuleEditorData) {
 		if !d.HasSelected {
 			<p class="cg-muted">No version selected. Create a draft on the Versions tab first.</p>
 		} else {
-			<section class="asset-detail-section card" data-pm-params-root data-can-edit={ strconv.FormatBool(d.CanEdit && d.IsDraft) } data-save-url={ moduleVersionFieldsSaveURL(d) } data-csrf={ d.CSRF }>
-				<h4 class="asset-detail-section-title">Input parameters</h4>
-				<p class="cg-hint">The single source of truth for this module version's input schema. Serializes to JSON Schema on save.</p>
-				<table class="pm-table" id="pm-params-rows">
-					<thead>
-						<tr><th>Key</th><th>Label</th><th>Type</th><th>Default</th><th>Required</th><th>Enum values</th><th></th></tr>
-					</thead>
-					<tbody id="pm-params-tbody"></tbody>
-				</table>
-				if d.CanEdit && d.IsDraft {
-					<button type="button" class="btn" id="pm-params-add-row" style="margin-top:8px;">Add parameter</button>
-					<button type="button" class="btn btn-primary" id="pm-params-save" style="margin-top:8px;">Save schema</button>
-				}
-				<h4 class="asset-detail-section-title" style="margin-top:16px;">Raw JSON Schema (read-only preview)</h4>
-				<textarea data-code-editor="json" id="pm-params-preview" readonly rows="10">{ d.ParametersSchemaRaw }</textarea>
-			</section>
+			@moduleSchemaEditor(d, "parameters_schema", "Input parameters",
+				"The single source of truth for this module version's input schema. Serializes to JSON Schema on save.",
+				"Add parameter", d.ParametersSchemaRaw)
+		}
+	</div>
+}
+
+// moduleSchemaEditor is THE structured JSON-Schema row editor — mounted
+// by the Parameters tab (parameters_schema) and the Report tab
+// (report_schema) with a different field key, one component (INV-U).
+templ moduleSchemaEditor(d ModuleEditorData, fieldKey, title, hint, addLabel, raw string) {
+	<section class="asset-detail-section card" data-pm-params-root data-field-key={ fieldKey } data-can-edit={ strconv.FormatBool(d.CanEdit && d.IsDraft) } data-save-url={ moduleVersionFieldsSaveURL(d) } data-csrf={ d.CSRF }>
+		<h4 class="asset-detail-section-title">{ title }</h4>
+		<p class="cg-hint">{ hint }</p>
+		<table class="pm-table">
+			<thead>
+				<tr><th>Key</th><th>Label</th><th>Type</th><th>Default</th><th>Required</th><th>Enum values</th><th></th></tr>
+			</thead>
+			<tbody data-pm-rows></tbody>
+		</table>
+		if d.CanEdit && d.IsDraft {
+			<button type="button" class="btn" data-pm-add-row style="margin-top:8px;">{ addLabel }</button>
+			<button type="button" class="btn btn-primary" data-pm-save-schema style="margin-top:8px;">Save schema</button>
+		}
+		<h4 class="asset-detail-section-title" style="margin-top:16px;">Raw JSON Schema (read-only preview)</h4>
+		<textarea data-code-editor="json" data-pm-preview readonly rows="10">{ raw }</textarea>
+	</section>
+}
+
+// ---- Report tab -----------------------------------------------------
+
+templ moduleReportTab(d ModuleEditorData) {
+	<div class="asset-detail-grid">
+		if !d.HasSelected {
+			<p class="cg-muted">No version selected. Create a draft on the Versions tab first.</p>
+		} else {
+			@moduleSchemaEditor(d, "report_schema", "Report schema",
+				"JSON Schema for the report phase's structured output. Empty means this module produces no report.",
+				"Add report field", d.ReportSchemaRaw)
 		}
 	</div>
 }
@@ -357,55 +430,257 @@ templ moduleSandboxTab(d ModuleEditorData) {
 
 templ moduleDependenciesTab(d ModuleEditorData) {
 	<div class="asset-detail-grid">
+		@moduleWarnBanner(d.Warn)
 		if !d.HasSelected {
 			<p class="cg-muted">No version selected. Create a draft on the Versions tab first.</p>
 		} else {
-			<section class="asset-detail-section card" data-section="dependencies" data-save-url={ moduleVersionFieldsSaveURL(d) }>
-				<div class="section-header">
-					<h4 class="asset-detail-section-title">Module dependencies (v1 lists)</h4>
-					if d.CanEdit && d.IsDraft {
-						<div class="section-actions">
-							<button type="button" class="section-edit-btn" onclick="toggleSectionEdit(this)" title="Edit section">
-								<svg class="section-edit-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"></path><path d="m15 5 4 4"></path></svg>
-							</button>
-							<button type="button" class="section-cancel-btn" style="display:none" onclick="cancelSectionEdit(this)">Cancel</button>
-							<button type="button" class="section-save-btn btn-primary" style="display:none" onclick="saveSectionEdit(this)">Save</button>
-						</div>
-					}
-				</div>
-				<dl class="asset-detail-defs">
-					<dt>Depends on <span class="cg-hint">(comma-separated module URNs)</span></dt>
-					<dd>
-						if d.CanEdit && d.IsDraft {
-							<span class="field-value" data-editable="true" data-field-key="depends_on" data-copy={ d.DependsOnCSV }>{ d.DependsOnCSV }</span>
-						} else {
-							<span class="field-value" data-readonly="true">{ d.DependsOnCSV }</span>
-						}
-					</dd>
-					<dt>Conflicts with <span class="cg-hint">(comma-separated module URNs)</span></dt>
-					<dd>
-						if d.CanEdit && d.IsDraft {
-							<span class="field-value" data-editable="true" data-field-key="conflicts" data-copy={ d.ConflictsCSV }>{ d.ConflictsCSV }</span>
-						} else {
-							<span class="field-value" data-readonly="true">{ d.ConflictsCSV }</span>
-						}
-					</dd>
-				</dl>
-			</section>
+			@moduleDependsOnSection(d)
+			@moduleConflictsSection(d)
+			@moduleTestsSection(d)
 			<section class="asset-detail-section card">
-				<h4 class="asset-detail-section-title">Dependency groups</h4>
-				<p class="cg-hint">Reused from the Modules library row's expander (Task 7) -- linking a dependency group here has the same effect as linking it from the Library.</p>
+				<h4 class="asset-detail-section-title">Reusable dependency groups</h4>
+				<p class="cg-hint">Shared platform/requirement groups linked to this module -- distinct from the per-version tests above. Linking a group here has the same effect as linking it from the Library.</p>
 				@moduleDepsDetails(d.Row.ModuleUrn, d.Deps, d.AllDepGroups, d.CSRF, d.CanAdmin)
 			</section>
+			@ConditionBuilderDialog()
+			@moduleConditionScript(d)
 		}
 	</div>
 }
 
-func scriptLanguage(ph policymodules.LifecyclePhase) string {
-	if ph.Runtime() == policymodules.RuntimeWASM {
-		return ""
+templ moduleDependsOnSection(d ModuleEditorData) {
+	<section class="asset-detail-section card" data-testid="pm-deps-section">
+		<h4 class="asset-detail-section-title">Module dependencies</h4>
+		<p class="cg-hint">Modules that must be installed and applied before this one.</p>
+		if len(d.DependsOn) == 0 {
+			<p class="cg-muted">No dependencies.</p>
+		} else {
+			<table class="pm-table">
+				<thead><tr><th>Module</th><th>Version constraint</th><th></th></tr></thead>
+				<tbody>
+					for _, dep := range d.DependsOn {
+						<tr>
+							<td><a class="font-mono" href={ templ.SafeURL("/policy/modules/" + dep.ModuleID) }>{ dep.ModuleID }</a></td>
+							<td class="font-mono">{ dep.VersionConstraint }</td>
+							<td>
+								if d.CanEdit && d.IsDraft {
+									<form method="post" action={ templ.SafeURL(moduleVersionActionURL(d, "deps/remove")) } style="display:inline;">
+										<input type="hidden" name="_csrf" value={ d.CSRF }/>
+										<input type="hidden" name="module_urn" value={ dep.ModuleID }/>
+										<button type="submit" class="btn btn-sm">Remove</button>
+									</form>
+								}
+							</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		}
+		if d.CanEdit && d.IsDraft {
+			<form method="post" action={ templ.SafeURL(moduleVersionActionURL(d, "deps")) } style="display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap; margin-top:8px;">
+				<input type="hidden" name="_csrf" value={ d.CSRF }/>
+				<div class="cg-field">
+					<label for="pm-dep-pick">Module</label>
+					<select id="pm-dep-pick" name="module_urn" class="input" required>
+						<option value="">— select a module —</option>
+						for _, opt := range d.PickerModules {
+							<option value={ opt.URN }>{ opt.Title } ({ opt.URN })</option>
+						}
+					</select>
+				</div>
+				<div class="cg-field">
+					<label for="pm-dep-constraint">Version constraint</label>
+					<input id="pm-dep-constraint" name="version_constraint" class="input font-mono" placeholder="*" value="*"/>
+				</div>
+				<button type="submit" class="btn btn-primary">Add dependency</button>
+			</form>
+		}
+	</section>
+}
+
+templ moduleConflictsSection(d ModuleEditorData) {
+	<section class="asset-detail-section card" data-testid="pm-conflicts-section">
+		<h4 class="asset-detail-section-title">Conflicts</h4>
+		<p class="cg-hint">Modules that must NOT be installed alongside this one.</p>
+		if len(d.Conflicts) == 0 {
+			<p class="cg-muted">No conflicts.</p>
+		} else {
+			<div style="display:flex; gap:6px; flex-wrap:wrap;">
+				for _, urn := range d.Conflicts {
+					<span class="pm-urn-chip">
+						<a class="font-mono" href={ templ.SafeURL("/policy/modules/" + urn) }>{ urn }</a>
+						if d.CanEdit && d.IsDraft {
+							<form method="post" action={ templ.SafeURL(moduleVersionActionURL(d, "conflicts/remove")) } style="display:inline;">
+								<input type="hidden" name="_csrf" value={ d.CSRF }/>
+								<input type="hidden" name="module_urn" value={ urn }/>
+								<button type="submit" class="pm-deps-remove" title="Remove conflict">×</button>
+							</form>
+						}
+					</span>
+				}
+			</div>
+		}
+		if d.CanEdit && d.IsDraft {
+			<form method="post" action={ templ.SafeURL(moduleVersionActionURL(d, "conflicts")) } style="display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap; margin-top:8px;">
+				<input type="hidden" name="_csrf" value={ d.CSRF }/>
+				<div class="cg-field">
+					<label for="pm-conflict-pick">Module</label>
+					<select id="pm-conflict-pick" name="module_urn" class="input" required>
+						<option value="">— select a module —</option>
+						for _, opt := range d.PickerModules {
+							<option value={ opt.URN }>{ opt.Title } ({ opt.URN })</option>
+						}
+					</select>
+				</div>
+				<button type="submit" class="btn btn-primary">Add conflict</button>
+			</form>
+		}
+	</section>
+}
+
+templ moduleTestsSection(d ModuleEditorData) {
+	<section class="asset-detail-section card" data-testid="pm-tests-section">
+		<div class="section-header" style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+			<h4 class="asset-detail-section-title">Tests (conditions &amp; queries)</h4>
+			if d.CanEdit && d.IsDraft {
+				<form method="post" action={ templ.SafeURL(moduleVersionActionURL(d, "conditions-match-mode")) } style="display:flex; gap:6px; align-items:center;">
+					<input type="hidden" name="_csrf" value={ d.CSRF }/>
+					<label for="pm-tests-match-mode" class="cg-hint" style="margin:0;">Match mode</label>
+					<select id="pm-tests-match-mode" name="match_mode" class="input" onchange="this.form.submit()">
+						<option value="all" selected?={ d.ConditionsMatchMode != "any" }>Match all tests (AND)</option>
+						<option value="any" selected?={ d.ConditionsMatchMode == "any" }>Match any test (OR)</option>
+					</select>
+				</form>
+				<button type="button" class="btn btn-primary" data-condition-builder-open>Add test</button>
+			} else {
+				<select class="input" disabled title="Create a draft to change match mode">
+					if d.ConditionsMatchMode == "any" {
+						<option selected>Match any test (OR)</option>
+					} else {
+						<option selected>Match all tests (AND)</option>
+					}
+				</select>
+			}
+		</div>
+		<p class="cg-hint">Unlimited applicability tests for this version: Pluris conditions, bash commands, and scripts -- each as test · operator · expected value. Agent-run tests report "unknown" until an agent checks in.</p>
+		if len(d.Conditions) == 0 {
+			<p class="cg-muted">No tests yet.</p>
+		} else {
+			<table class="pm-table">
+				<tbody>
+					for _, cond := range d.Conditions {
+						<tr>
+							<td>{ conditionRowSummary(moduleConditionAsDGRow(cond)) }</td>
+							<td style="display:flex; gap:6px; flex-wrap:wrap;">
+								if d.CanEdit && d.IsDraft {
+									<button
+										type="button"
+										class="btn btn-sm"
+										data-condition-builder-open
+										data-cb-prefill={ conditionPrefillJSON(moduleConditionAsDGRow(cond)) }
+										data-cb-cond-id={ strconv.FormatInt(cond.ID, 10) }
+									>Edit</button>
+									<form method="post" action={ templ.SafeURL(moduleVersionActionURL(d, "conditions/"+strconv.FormatInt(cond.ID, 10)+"/remove")) } onsubmit="return confirm('Remove this test?')" style="display:inline;">
+										<input type="hidden" name="_csrf" value={ d.CSRF }/>
+										<button type="submit" class="btn btn-sm">Remove</button>
+									</form>
+								}
+							</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		}
+		<div id="pm-cond-error" class="cb-param-error" hidden role="alert"></div>
+	</section>
+}
+
+// moduleConditionScript wires the shared dialog's condition:save event
+// to the module condition routes — same remove-then-add edit flow and
+// repeated values= encoding as dependencyGroupConditionScript, pointed
+// at the module version's endpoints.
+templ moduleConditionScript(d ModuleEditorData) {
+	<div data-pm-cond-root data-cond-add-url={ moduleVersionActionURL(d, "conditions") } data-cond-base-url={ moduleVersionActionURL(d, "conditions") } data-csrf={ d.CSRF } hidden></div>
+	@templ.Raw(`<script>
+(function () {
+	var root = document.querySelector('[data-pm-cond-root]');
+	var errEl = document.getElementById('pm-cond-error');
+	if (!root) return;
+	var addURL = root.dataset.condAddUrl;
+	var baseURL = root.dataset.condBaseUrl;
+	var csrf = root.dataset.csrf;
+	var pendingEditCondID = null;
+
+	function showError(msg) {
+		if (!errEl) return;
+		errEl.textContent = msg;
+		errEl.hidden = false;
 	}
-	return "bash"
+
+	try {
+		var stashed = sessionStorage.getItem('pmCondError');
+		if (stashed) {
+			showError(stashed);
+			sessionStorage.removeItem('pmCondError');
+		}
+	} catch (e) { /* sessionStorage unavailable */ }
+
+	document.addEventListener('click', function (e) {
+		var opener = e.target.closest('[data-condition-builder-open]');
+		if (!opener) return;
+		pendingEditCondID = opener.dataset.cbCondId || null;
+	});
+
+	function addBody(detail) {
+		var p = new URLSearchParams();
+		p.set('_csrf', csrf);
+		p.set('kind', detail.kind || 'param');
+		p.set('param_path', detail.paramPath || '');
+		p.set('operator', detail.operator || '');
+		(detail.values || []).forEach(function (v) { p.append('values', v); });
+		p.set('script_source', detail.scriptSource || '');
+		p.set('script_ref', detail.scriptRef || '');
+		return p.toString();
+	}
+
+	function postForm(url, body) {
+		return fetch(url, {
+			method: 'POST',
+			credentials: 'same-origin',
+			headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+			body: body,
+		});
+	}
+
+	document.addEventListener('condition:save', function (e) {
+		var detail = e.detail || {};
+		var editID = pendingEditCondID;
+		pendingEditCondID = null;
+
+		if (!editID) {
+			postForm(addURL, addBody(detail)).then(function (r) {
+				if (r.ok || r.redirected) { window.location.reload(); return; }
+				return r.text().then(function (t) { showError('Could not add test: ' + t); });
+			}).catch(function (err) { showError('Could not add test: ' + err); });
+			return;
+		}
+
+		var removeBody = new URLSearchParams();
+		removeBody.set('_csrf', csrf);
+		postForm(baseURL + '/' + editID + '/remove', removeBody.toString()).then(function (r) {
+			if (!r.ok && !r.redirected) { throw new Error('remove rejected'); }
+			return postForm(addURL, addBody(detail));
+		}).then(function (r) {
+			if (r && !r.ok && !r.redirected) {
+				try { sessionStorage.setItem('pmCondError', 'Edit partially failed: the old test was removed but the new one was rejected.'); } catch (e2) {}
+			}
+			window.location.reload();
+		}).catch(function () {
+			showError('Could not edit test.');
+		});
+	});
+})();
+</script>`)
 }
 
 // ---- Create page --------------------------------------------------------
@@ -416,7 +691,7 @@ func scriptLanguage(ph policymodules.LifecyclePhase) string {
 // else (scripts, parameters, sandbox, dependencies) is added on the
 // detail page after creation via its first draft version.
 templ PolicyModuleNewPage(csrf string, errMsg string) {
-	@Layout("policy-modules", "New Policy Module") {
+	@Layout("policy-modules", "New Policy Module", "/policy/modules") {
 		@PageHeader("New Policy Module", "Create a tenant-owned policy module. You can add scripts, parameters, and a sandbox profile after creating it.", "", "")
 		<div data-testid="page-policy-module-new">
 			if errMsg != "" {

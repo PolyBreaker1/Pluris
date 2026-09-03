@@ -57,6 +57,10 @@ var (
 	// published or superseded. Drafts should be deleted, not revoked;
 	// already-revoked versions stay revoked.
 	ErrRevokeInvalidState = errors.New("only published or superseded module versions can be revoked")
+
+	// ErrNoExportableVersion is returned by ExportVersionIDs when the
+	// module has no version matching the export selection.
+	ErrNoExportableVersion = errors.New("no exportable version for this module")
 )
 
 func validLifecyclePhase(phase policymodules.LifecyclePhase) bool {
@@ -111,28 +115,69 @@ func (s *PolicyModuleService) UpdateModule(ctx context.Context, id int64, title,
 	})
 }
 
-// DeleteModule refuses to delete a module still referenced by a
-// dependency-group link, a configuration-group binding, or a module
-// installation (ErrModuleReferenced). tenantID+urn identify the module
-// for the dependency-group-link check (that table keys on the URN
-// string, not the numeric id -- see db/schema/004).
-func (s *PolicyModuleService) DeleteModule(ctx context.Context, tenantID int64, id int64, urn string) error {
-	if n, err := s.db.Queries.CountLinksForModule(ctx, db.CountLinksForModuleParams{TenantID: tenantID, ModuleID: urn}); err != nil {
+// DeleteModule follows the policy-module retention setting. Soft mode marks
+// the module deleted without breaking references; immediate mode applies the
+// reference guards and permanently removes it.
+func (s *PolicyModuleService) DeleteModule(ctx context.Context, tenantID, id int64, urn string, actorID int64) error {
+	setting, err := s.db.Queries.GetRetentionSetting(ctx, EntityKindPolicyModule)
+	if err != nil {
+		return err
+	}
+	if setting.Mode == RetentionModeImmediate {
+		return hardDeletePolicyModule(ctx, s.db.Queries, tenantID, id, urn)
+	}
+	_, err = s.db.Queries.SoftDeletePolicyModule(ctx, db.SoftDeletePolicyModuleParams{ID: id, DeletedBy: actorID})
+	return err
+}
+
+// RestoreModule makes a soft-deleted module active again.
+func (s *PolicyModuleService) RestoreModule(ctx context.Context, id int64) error {
+	_, err := s.db.Queries.RestorePolicyModule(ctx, id)
+	return err
+}
+
+// PermanentlyDeleteModule applies reference guards at the irreversible boundary.
+func (s *PolicyModuleService) PermanentlyDeleteModule(ctx context.Context, tenantID, id int64, urn string) error {
+	return hardDeletePolicyModule(ctx, s.db.Queries, tenantID, id, urn)
+}
+
+func hardDeletePolicyModule(ctx context.Context, q *db.Queries, tenantID, id int64, urn string) error {
+	if n, err := q.CountLinksForModule(ctx, db.CountLinksForModuleParams{TenantID: tenantID, ModuleID: urn}); err != nil {
 		return err
 	} else if n > 0 {
 		return ErrModuleReferenced
 	}
-	if n, err := s.db.Queries.CountBindingsByModule(ctx, sql.NullInt64{Int64: id, Valid: true}); err != nil {
+	if n, err := q.CountBindingsByModule(ctx, sql.NullInt64{Int64: id, Valid: true}); err != nil {
 		return err
 	} else if n > 0 {
 		return ErrModuleReferenced
 	}
-	if n, err := s.db.Queries.CountInstallationsByModule(ctx, id); err != nil {
+	if n, err := q.CountInstallationsByModule(ctx, id); err != nil {
 		return err
 	} else if n > 0 {
 		return ErrModuleReferenced
 	}
-	return s.db.Queries.DeletePolicyModule(ctx, id)
+	return q.DeletePolicyModule(ctx, id)
+}
+
+// RevokeVersions revokes every deployable version of a module. Revoked
+// versions must not run on agents; drafts remain intact so an editor can
+// prepare and publish a replacement later. Repeating the operation is
+// intentionally harmless when no published or superseded versions remain.
+func (s *PolicyModuleService) RevokeVersions(ctx context.Context, moduleID int64) error {
+	versions, err := s.db.Queries.ListVersionsByModule(ctx, moduleID)
+	if err != nil {
+		return err
+	}
+	for _, version := range versions {
+		if version.State != "published" && version.State != "superseded" {
+			continue
+		}
+		if err := s.Revoke(ctx, version.ID); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // GetModule loads one module row plus every version and its scripts,
@@ -178,6 +223,17 @@ func (s *PolicyModuleService) GetModuleRow(ctx context.Context, urn string) (db.
 	return row, nil
 }
 
+func (s *PolicyModuleService) GetModuleRowIncludingDeleted(ctx context.Context, urn string) (db.PolicyModule, error) {
+	row, err := s.db.Queries.GetPolicyModuleByURNIncludingDeleted(ctx, urn)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return db.PolicyModule{}, ErrModuleNotFound
+		}
+		return db.PolicyModule{}, err
+	}
+	return row, nil
+}
+
 // ListModules returns every module visible to tenantID (its own
 // tenant-authored modules plus every bundled module), each hydrated
 // with versions + scripts. This is the read path for the Modules
@@ -195,6 +251,22 @@ func (s *PolicyModuleService) ListModules(ctx context.Context, tenantID int64) (
 			return nil, err
 		}
 		out = append(out, m)
+	}
+	return out, nil
+}
+
+func (s *PolicyModuleService) ListDeletedModules(ctx context.Context, tenantID int64) ([]policymodules.Module, error) {
+	rows, err := s.db.Queries.ListDeletedVisibleModules(ctx, sql.NullInt64{Int64: tenantID, Valid: true})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]policymodules.Module, 0, len(rows))
+	for _, row := range rows {
+		module, err := s.hydrateModule(ctx, row)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, module)
 	}
 	return out, nil
 }
@@ -255,10 +327,13 @@ func (s *PolicyModuleService) hydrateModule(ctx context.Context, row db.PolicyMo
 	return m, nil
 }
 
-// moduleOrigin maps is_bundled/tenant_id onto the mock's Origin
-// vocabulary. "imported"/"community" aren't representable yet (no
-// column tracks them); every tenant-authored row maps to "tenant".
+// moduleOrigin reads the origin column (migration 011: bundled |
+// tenant | imported, backfilled from is_bundled), falling back to the
+// legacy is_bundled mapping for any row with an empty origin.
 func moduleOrigin(row db.PolicyModule) string {
+	if row.Origin != "" {
+		return row.Origin
+	}
 	if row.IsBundled {
 		return "bundled"
 	}
@@ -303,11 +378,23 @@ func (s *PolicyModuleService) hydrateVersion(ctx context.Context, versionID int6
 	if err != nil {
 		return hydratedVersion{}, err
 	}
+	// Migration 012 replaced phase-keyed rows with named ones. For the
+	// UI's phase strip / editor to keep working unmodified in this
+	// backend-only checkpoint, a script whose name is one of the five
+	// legacy phase strings maps back onto LifecycleScript.Phase (true for
+	// every migrated row and every SetScript-written row, since both use
+	// the phase string as the name). A script under a genuinely new,
+	// non-phase name has no phase slot to render into yet and is
+	// skipped here -- CP2+ replaces LifecycleScript-based rendering with
+	// the named Script list directly.
 	scripts := make([]policymodules.LifecycleScript, 0, len(scriptRows))
 	for _, sc := range scriptRows {
+		if !validLifecyclePhase(policymodules.LifecyclePhase(sc.Name)) {
+			continue
+		}
 		scripts = append(scripts, policymodules.LifecycleScript{
-			Phase:    policymodules.LifecyclePhase(sc.Phase),
-			Filename: sc.Filename,
+			Phase:    policymodules.LifecyclePhase(sc.Name),
+			Filename: sc.Name,
 			Source:   sc.Source,
 		})
 	}
@@ -472,8 +559,30 @@ func (s *PolicyModuleService) ForkLatestPublished(ctx context.Context, moduleID 
 		return db.PolicyModuleVersion{}, err
 	}
 	for _, sc := range scripts {
-		if _, err := s.db.Queries.UpsertModuleScript(ctx, db.UpsertModuleScriptParams{
-			VersionID: draft.ID, Phase: sc.Phase, Filename: sc.Filename, Source: sc.Source, Seq: sc.Seq,
+		// draft.ID was just created above, so its state is 'draft' --
+		// the guard on UpsertModuleScriptGuarded cannot reject this.
+		if _, err := s.db.Queries.UpsertModuleScriptGuarded(ctx, db.UpsertModuleScriptGuardedParams{
+			VersionID: draft.ID, Name: sc.Name, Language: sc.Language, Source: sc.Source, Origin: sc.Origin, Seq: sc.Seq,
+		}); err != nil {
+			return db.PolicyModuleVersion{}, err
+		}
+	}
+	conds, err := s.db.Queries.ListVersionConditions(ctx, src.ID)
+	if err != nil {
+		return db.PolicyModuleVersion{}, err
+	}
+	for _, cond := range conds {
+		if _, err := s.db.Queries.CreateVersionConditionGuarded(ctx, db.CreateVersionConditionGuardedParams{
+			VersionID: draft.ID, Kind: cond.Kind, ParamPath: cond.ParamPath,
+			Operator: cond.Operator, ValueJson: cond.ValueJson,
+			ScriptSource: cond.ScriptSource, ScriptRef: cond.ScriptRef, Seq: cond.Seq,
+		}); err != nil {
+			return db.PolicyModuleVersion{}, err
+		}
+	}
+	if src.ConditionsMatchMode != "all" && src.ConditionsMatchMode != "" {
+		if _, err := s.db.Queries.UpdateVersionConditionsMatchMode(ctx, db.UpdateVersionConditionsMatchModeParams{
+			ID: draft.ID, ConditionsMatchMode: src.ConditionsMatchMode,
 		}); err != nil {
 			return db.PolicyModuleVersion{}, err
 		}
@@ -544,7 +653,7 @@ func (s *PolicyModuleService) Publish(ctx context.Context, versionID int64, publ
 	}
 	hasApply := false
 	for _, sc := range scripts {
-		if sc.Phase == string(policymodules.PhaseApply) {
+		if sc.Name == string(policymodules.PhaseApply) {
 			hasApply = true
 			break
 		}
@@ -608,38 +717,29 @@ func (s *PolicyModuleService) Revoke(ctx context.Context, versionID int64) error
 // Scripts
 // ----------------------------------------------------------------------
 
-// SetScript upserts the (single, v1) script for one lifecycle phase of
-// a version. Runtime is never stored -- it's derived from phase via
-// policymodules.LifecyclePhase.Runtime() wherever it's needed (the
-// agent / editor read the phase and derive bash vs wasm themselves).
-//
-// Task 4.3 mandatory fix: this now writes through
-// UpsertModuleScriptGuarded, which only inserts/updates when the target
-// version's state = 'draft' (checked inside the same atomic INSERT --
-// see that query's doc comment). Previously this had NO draft guard at
-// all, so a published version's scripts could be silently overwritten,
-// breaking ADR-007 immutability. A non-draft version (or an id that
-// doesn't exist) now surfaces as sql.ErrNoRows from the guarded query;
-// distinguish "no such version" from "exists but frozen" the same way
-// UpdateDraft does, so callers get ErrVersionNotDraft specifically when
-// the version is real but not a draft.
+// Deprecated: SetScript is a thin compatibility wrapper over UpsertScript
+// for callers still speaking the old phase-keyed API (migration 008).
+// filename is accepted but discarded -- migration 012's
+// policy_module_scripts has no filename column; the script's name is the
+// phase string itself, matching what migration 012's copy-forward did
+// for pre-existing rows. New callers should use UpsertScript directly.
 func (s *PolicyModuleService) SetScript(ctx context.Context, versionID int64, phase policymodules.LifecyclePhase, filename, source string) (db.PolicyModuleScript, error) {
 	if !validLifecyclePhase(phase) {
 		return db.PolicyModuleScript{}, ErrInvalidLifecyclePhase
 	}
-	sc, err := s.db.Queries.UpsertModuleScriptGuarded(ctx, db.UpsertModuleScriptGuardedParams{
-		VersionID: versionID, Phase: string(phase), Filename: filename, Source: source, Seq: 0,
+	lang := string(policymodules.LangSh)
+	if phase.Runtime() == policymodules.RuntimeWASM {
+		lang = string(policymodules.LangPython)
+	}
+	sc, err := s.UpsertScript(ctx, versionID, policymodules.Script{
+		Name: string(phase), Language: lang, Source: source, Origin: "custom",
 	})
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			if _, gerr := s.db.Queries.GetPolicyModuleVersion(ctx, versionID); gerr == nil {
-				return db.PolicyModuleScript{}, ErrVersionNotDraft
-			}
-			return db.PolicyModuleScript{}, sql.ErrNoRows
-		}
 		return db.PolicyModuleScript{}, err
 	}
-	return sc, nil
+	return db.PolicyModuleScript{
+		VersionID: versionID, Name: sc.Name, Language: sc.Language, Source: sc.Source, Origin: sc.Origin, Seq: int64(sc.Seq),
+	}, nil
 }
 
 // ----------------------------------------------------------------------
@@ -857,8 +957,15 @@ func (s *PolicyModuleService) SeedBundled(ctx context.Context) error {
 				return err
 			}
 			for _, sc := range sv.Scripts {
-				if _, err := s.db.Queries.UpsertModuleScript(ctx, db.UpsertModuleScriptParams{
-					VersionID: ver.ID, Phase: string(sc.Phase), Filename: sc.Filename, Source: sc.Source, Seq: 0,
+				lang := string(policymodules.LangSh)
+				if sc.Phase.Runtime() == policymodules.RuntimeWASM {
+					lang = string(policymodules.LangPython)
+				}
+				// ver.State is 'draft' at this point (published below),
+				// so the guard on UpsertModuleScriptGuarded cannot reject
+				// this seed write.
+				if _, err := s.db.Queries.UpsertModuleScriptGuarded(ctx, db.UpsertModuleScriptGuardedParams{
+					VersionID: ver.ID, Name: string(sc.Phase), Language: lang, Source: sc.Source, Origin: "custom", Seq: 0,
 				}); err != nil {
 					return err
 				}

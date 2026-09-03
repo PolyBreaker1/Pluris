@@ -109,6 +109,9 @@ func (d *Database) migrate() error {
 		"db/schema/007_module_ownership_grants.sql",
 		"db/schema/008_module_scripts.sql",
 		"db/schema/009_group_kinds_rules.sql",
+		"db/schema/010_soft_delete_retention.sql",
+		"db/schema/011_module_tests_origin.sql",
+		"db/schema/012_module_scripts_actions.sql",
 	}
 
 	for _, migrationFile := range migrations {

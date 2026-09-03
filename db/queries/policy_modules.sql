@@ -17,7 +17,7 @@ INSERT INTO policy_modules (
 ) RETURNING *;
 
 -- name: GetPolicyModule :one
-SELECT * FROM policy_modules WHERE id = @id LIMIT 1;
+SELECT * FROM policy_modules WHERE id = @id AND deleted_at IS NULL LIMIT 1;
 
 -- name: SetModuleOwner :exec
 -- Sets (or clears, with a NULL @owner_identity_id) the owning identity of
@@ -35,21 +35,29 @@ SELECT owner_identity_id FROM policy_modules WHERE id = @id LIMIT 1;
 -- name: GetPolicyModuleByURN :one
 SELECT * FROM policy_modules 
 WHERE module_urn = @module_urn 
+  AND deleted_at IS NULL
+LIMIT 1;
+
+-- name: GetPolicyModuleByURNIncludingDeleted :one
+SELECT * FROM policy_modules
+WHERE module_urn = @module_urn
 LIMIT 1;
 
 -- name: ListPolicyModulesByTenant :many
 SELECT * FROM policy_modules 
 WHERE tenant_id = @tenant_id 
+  AND deleted_at IS NULL
 ORDER BY title
 LIMIT @limit OFFSET @offset;
 
 -- name: ListBundledModules :many
 SELECT * FROM policy_modules 
 WHERE is_bundled = TRUE
+  AND deleted_at IS NULL
 ORDER BY title;
 
 -- name: CountPolicyModulesByTenant :one
-SELECT COUNT(*) FROM policy_modules WHERE tenant_id = @tenant_id;
+SELECT COUNT(*) FROM policy_modules WHERE tenant_id = @tenant_id AND deleted_at IS NULL;
 
 -- name: UpdatePolicyModule :one
 UPDATE policy_modules SET
@@ -61,17 +69,41 @@ RETURNING *;
 -- name: DeletePolicyModule :exec
 DELETE FROM policy_modules WHERE id = @id;
 
+-- name: SoftDeletePolicyModule :execrows
+UPDATE policy_modules
+SET deleted_at = CURRENT_TIMESTAMP, deleted_by = @deleted_by
+WHERE id = @id AND deleted_at IS NULL;
+
+-- name: RestorePolicyModule :execrows
+UPDATE policy_modules
+SET deleted_at = NULL, deleted_by = NULL
+WHERE id = @id AND deleted_at IS NOT NULL;
+
+-- name: ListDeletedVisibleModules :many
+SELECT * FROM policy_modules
+WHERE (tenant_id = @tenant_id OR is_bundled = TRUE)
+  AND deleted_at IS NOT NULL
+ORDER BY title;
+
+-- name: ListExpiredPolicyModules :many
+SELECT * FROM policy_modules
+WHERE deleted_at IS NOT NULL
+  AND deleted_at <= @cutoff
+ORDER BY deleted_at, id;
+
 -- name: ListVisibleModules :many
 -- Every module a tenant can see: its own tenant-authored modules plus
 -- every bundled module. Used by the service's ListModules (read path
 -- for the Modules Library/Defaults/Sources pages).
 SELECT * FROM policy_modules
-WHERE tenant_id = @tenant_id OR is_bundled = TRUE
+WHERE (tenant_id = @tenant_id OR is_bundled = TRUE)
+  AND deleted_at IS NULL
 ORDER BY title;
 
 -- name: SearchPolicyModules :many
 SELECT * FROM policy_modules
 WHERE (tenant_id = @tenant_id OR is_bundled = TRUE)
+  AND deleted_at IS NULL
   AND (title LIKE '%' || @search || '%' OR module_urn LIKE '%' || @search || '%')
 ORDER BY title
 LIMIT @limit;
@@ -194,6 +226,13 @@ WHERE id = @id AND state IN ('published', 'superseded');
 -- name: DeletePolicyModuleVersion :exec
 DELETE FROM policy_module_versions WHERE id = @id;
 
+-- name: DeleteDraftModuleVersion :execrows
+-- State-guarded in the statement itself (same pattern as
+-- PublishModuleVersion): only a draft can be deleted, so a concurrent
+-- publish landing between a caller's read and this delete can never
+-- destroy a published version.
+DELETE FROM policy_module_versions WHERE id = @id AND state = 'draft';
+
 -- name: GetModuleWithLatestVersion :one
 SELECT
     m.*,
@@ -207,56 +246,157 @@ ORDER BY v.published_at DESC
 LIMIT 1;
 
 -- ============================================================================
--- Policy Module Scripts (migration 008)
+-- Policy Module Scripts + Actions (migration 012, replaces migration 008)
+--
+-- Scripts are now first-class named rows (name/language/origin) instead
+-- of phase-keyed. Actions are the enforcement wiring: a separate table
+-- that references a script by name (kind='script') or holds an inline
+-- command (kind='command'). origin distinguishes seeded defaults
+-- (never mutated in place; the Go service layer forks an edited
+-- default into a custom row) from tenant-authored rows.
 -- ============================================================================
 
--- name: UpsertModuleScript :one
--- Insert-or-replace the script for (version_id, phase, seq). v1 always
--- writes seq=0 (one script per phase); the seq column exists for a
--- future multi-file phase.
---
--- UNGUARDED -- only safe to call when the caller has already established
--- the version is a draft (e.g. ForkLatestPublished copying a brand-new
--- draft's scripts forward). Editor-facing script writes MUST go through
--- UpsertModuleScriptGuarded below instead.
-INSERT INTO policy_module_scripts (version_id, phase, filename, source, seq)
-VALUES (@version_id, @phase, @filename, @source, @seq)
-ON CONFLICT(version_id, phase, seq) DO UPDATE SET
-    filename = excluded.filename,
-    source = excluded.source
-RETURNING *;
+-- name: ListScriptsForVersion :many
+SELECT * FROM policy_module_scripts WHERE version_id = @version_id ORDER BY seq, name;
+
+-- name: GetScriptByName :one
+SELECT * FROM policy_module_scripts WHERE version_id = @version_id AND name = @name;
 
 -- name: UpsertModuleScriptGuarded :one
--- Task 4.3 mandatory fix: the plain UpsertModuleScript above has no
--- draft guard, so a published/superseded/revoked version's scripts could
--- be silently overwritten -- breaking ADR-007 immutability the same way
--- an unguarded version-field UPDATE would. This variant only inserts (or
--- upserts) a row when the target version's state = 'draft'; the WHERE
--- EXISTS subquery is evaluated as part of the same atomic INSERT
--- statement (no separate read-then-write), so it holds even if a Publish
--- races between the service's pre-check and this call. When the version
--- isn't a draft, the SELECT yields zero rows, nothing is inserted, and
+-- Insert-or-replace the script identified by (version_id, name), only
+-- when the target version's state = 'draft'. The WHERE EXISTS subquery
+-- is evaluated as part of the same atomic INSERT statement (no separate
+-- read-then-write), so the guard holds even if a Publish races between
+-- the service's pre-check and this call. When the version isn't a
+-- draft, the SELECT yields zero rows, nothing is inserted, and
 -- RETURNING produces no row -- the :one code path surfaces that as
 -- sql.ErrNoRows, which the service maps to the typed ErrVersionNotDraft.
-INSERT INTO policy_module_scripts (version_id, phase, filename, source, seq)
-SELECT @version_id, @phase, @filename, @source, @seq
+INSERT INTO policy_module_scripts (version_id, name, language, source, origin, seq)
+SELECT @version_id, @name, @language, @source, @origin, @seq
 WHERE EXISTS (
     SELECT 1 FROM policy_module_versions
     WHERE id = @version_id AND state = 'draft'
 )
-ON CONFLICT(version_id, phase, seq) DO UPDATE SET
-    filename = excluded.filename,
-    source = excluded.source
+ON CONFLICT(version_id, name) DO UPDATE SET
+    language = excluded.language,
+    source = excluded.source,
+    origin = excluded.origin
 RETURNING *;
 
--- name: ListScriptsForVersion :many
-SELECT * FROM policy_module_scripts
-WHERE version_id = @version_id
-ORDER BY phase, seq;
+-- name: RenameModuleScriptGuarded :execrows
+UPDATE policy_module_scripts
+SET name = @new_name
+WHERE version_id = @version_id AND name = @old_name
+  AND EXISTS (
+    SELECT 1 FROM policy_module_versions
+    WHERE id = @version_id AND state = 'draft'
+  );
 
--- name: DeleteModuleScript :exec
+-- name: DeleteModuleScriptGuarded :execrows
 DELETE FROM policy_module_scripts
-WHERE version_id = @version_id AND phase = @phase AND seq = @seq;
+WHERE version_id = @version_id AND name = @name
+  AND EXISTS (
+    SELECT 1 FROM policy_module_versions
+    WHERE id = @version_id AND state = 'draft'
+  );
 
--- name: DeleteScriptsForVersion :exec
-DELETE FROM policy_module_scripts WHERE version_id = @version_id;
+-- name: DeleteCustomScriptsForVersion :exec
+DELETE FROM policy_module_scripts WHERE version_id = @version_id AND origin = 'custom';
+
+-- name: ListActionsForVersion :many
+SELECT * FROM policy_module_actions WHERE version_id = @version_id ORDER BY seq, action_key;
+
+-- name: UpsertModuleActionGuarded :one
+-- Insert-or-replace the action identified by (version_id, action_key),
+-- draft-guarded the same way UpsertModuleScriptGuarded is.
+INSERT INTO policy_module_actions (version_id, action_key, label, kind, value, origin, seq)
+SELECT @version_id, @action_key, @label, @kind, @value, @origin, @seq
+WHERE EXISTS (
+    SELECT 1 FROM policy_module_versions
+    WHERE id = @version_id AND state = 'draft'
+)
+ON CONFLICT(version_id, action_key) DO UPDATE SET
+    label = excluded.label,
+    kind = excluded.kind,
+    value = excluded.value,
+    origin = excluded.origin
+RETURNING *;
+
+-- name: DeleteModuleActionGuarded :execrows
+DELETE FROM policy_module_actions
+WHERE version_id = @version_id AND action_key = @action_key
+  AND EXISTS (
+    SELECT 1 FROM policy_module_versions
+    WHERE id = @version_id AND state = 'draft'
+  );
+
+-- name: DeleteCustomActionsForVersion :exec
+DELETE FROM policy_module_actions WHERE version_id = @version_id AND origin = 'custom';
+
+-- ============================================================================
+-- Module Version Conditions (migration 011)
+--
+-- Per-version applicability tests, column parity with
+-- dependency_group_conditions so the same eval engine and condition
+-- builder drive both (INV-CB). All writes are draft-guarded via a
+-- WHERE EXISTS subquery on the parent version state, mirroring
+-- UpsertModuleScriptGuarded: zero rows affected on a non-draft version
+-- surfaces as sql.ErrNoRows / 0 execrows, which the service maps to
+-- ErrVersionNotDraft. script_expect exists for parity only and is
+-- never written (legacy dead column, see 011 header).
+-- ============================================================================
+
+-- name: ListVersionConditions :many
+SELECT * FROM module_version_conditions
+WHERE version_id = @version_id
+ORDER BY seq, id;
+
+-- name: CreateVersionConditionGuarded :one
+INSERT INTO module_version_conditions (version_id, kind, param_path, operator, value_json, script_source, script_ref, seq)
+SELECT @version_id, @kind, @param_path, @operator, @value_json, @script_source, @script_ref, @seq
+WHERE EXISTS (
+    SELECT 1 FROM policy_module_versions
+    WHERE id = @version_id AND state = 'draft'
+)
+RETURNING *;
+
+-- name: UpdateVersionConditionGuarded :execrows
+UPDATE module_version_conditions
+SET kind = @kind,
+    param_path = @param_path,
+    operator = @operator,
+    value_json = @value_json,
+    script_source = @script_source,
+    script_ref = @script_ref
+WHERE module_version_conditions.id = @id AND version_id = @version_id
+  AND EXISTS (
+    SELECT 1 FROM policy_module_versions v
+    WHERE v.id = @version_id AND v.state = 'draft'
+  );
+
+-- name: DeleteVersionConditionGuarded :execrows
+DELETE FROM module_version_conditions
+WHERE module_version_conditions.id = @id AND version_id = @version_id
+  AND EXISTS (
+    SELECT 1 FROM policy_module_versions v
+    WHERE v.id = @version_id AND v.state = 'draft'
+  );
+
+-- name: MaxVersionConditionSeq :one
+SELECT COALESCE(MAX(seq), -1) FROM module_version_conditions
+WHERE version_id = @version_id;
+
+-- name: UpdateVersionConditionsMatchMode :execrows
+-- Draft-guarded in the statement itself, same pattern as the other
+-- version mutators.
+UPDATE policy_module_versions
+SET conditions_match_mode = @conditions_match_mode
+WHERE id = @id AND state = 'draft';
+
+-- name: SetModuleOrigin :exec
+UPDATE policy_modules SET origin = @origin WHERE id = @id;
+
+-- name: CacheVersionManifest :exec
+-- manifest_yaml is a derived export artifact (008 header); this cache
+-- write happens at .pmdl export time and is never read back as input.
+UPDATE policy_module_versions SET manifest_yaml = @manifest_yaml WHERE id = @id;

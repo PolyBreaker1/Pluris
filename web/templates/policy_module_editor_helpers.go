@@ -1,6 +1,7 @@
 package templates
 
 import (
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -43,6 +44,15 @@ type ModuleEditorData struct {
 	IsDraft     bool
 	Scripts     map[string]db.PolicyModuleScript // phase -> script; missing phase = zero value
 
+	// ScriptList/ScriptUsedBy back the Scripts tab's INV-L list (CP2 of
+	// the Scripts+Enforcement redesign): ScriptList is every named
+	// script row for the selected version (services.ListScripts);
+	// ScriptUsedBy maps a script name to the labels of every enforcement
+	// action (services.ListActions, Kind=="script") that references it
+	// by name, for the "Used by" column.
+	ScriptList   []policymodules.Script
+	ScriptUsedBy map[string][]string
+
 	CanEdit   bool
 	CanAdmin  bool
 	IsBundled bool
@@ -52,6 +62,12 @@ type ModuleEditorData struct {
 
 	Deps         ModuleDepsView
 	AllDepGroups []dependencygroups.Group
+
+	DependsOn           []policymodules.Dependency
+	Conflicts           []string
+	Conditions          []db.ModuleVersionCondition
+	ConditionsMatchMode string
+	PickerModules       []ModulePickerOption
 
 	CSRF string
 	Warn string
@@ -65,13 +81,17 @@ type ModuleEditorData struct {
 	DependsOnCSV        string
 	ConflictsCSV        string
 	ParametersSchemaRaw string
+	ReportSchemaRaw     string
 }
 
 // moduleEditorHero builds the HeroSpec for the module editor page.
 func moduleEditorHero(d ModuleEditorData) HeroSpec {
-	origin := "tenant"
-	if d.IsBundled {
-		origin = "bundled"
+	origin := d.Module.Origin
+	if origin == "" {
+		origin = "tenant"
+		if d.IsBundled {
+			origin = "bundled"
+		}
 	}
 	chips := []Chip{{Label: origin, Class: "asset-chip-enroll-" + moduleOriginChipClass(origin)}}
 	if d.Module.Scope != "" {
@@ -101,13 +121,20 @@ func moduleEditorHero(d ModuleEditorData) HeroSpec {
 		Chips: chips,
 		Defs:  defs,
 	}
-	if d.IsBundled {
-		spec.Action = moduleCloneAction(d.Row.ModuleUrn, d.CSRF)
+	if d.IsBundled || len(d.Module.Satisfies) > 0 {
+		spec.Action = modulePickAction(d)
 	}
 	if d.CanAdmin && !d.IsBundled {
 		spec.DeleteForm = moduleDeleteAction(d.Row.ModuleUrn, d.CSRF)
 	}
 	return spec
+}
+
+func modulePickerOS(m policymodules.Module) string {
+	if len(m.TargetOS) == 0 {
+		return "any"
+	}
+	return string(m.TargetOS[0])
 }
 
 func pluralY(n int) string {
@@ -131,8 +158,35 @@ func moduleEditorTabs(d ModuleEditorData) []TabSpec {
 		{Slug: "versions", Label: "Versions", Body: moduleVersionsTab(d)},
 		{Slug: "scripts", Label: "Scripts", Body: moduleScriptsTab(d)},
 		{Slug: "parameters", Label: "Parameters", Body: moduleParametersTab(d)},
+		{Slug: "report", Label: "Report", Body: moduleReportTab(d)},
 		{Slug: "sandbox", Label: "Sandbox", Body: moduleSandboxTab(d)},
 		{Slug: "dependencies", Label: "Dependencies", Body: moduleDependenciesTab(d)},
+	}
+}
+
+// ModulePickerOption is one entry of the Dependencies tab's module
+// picker <select> — every module the tenant can see except this one.
+type ModulePickerOption struct {
+	URN   string
+	Title string
+}
+
+// moduleVersionActionURL builds the POST target for the Dependencies
+// tab's structured actions (deps/conflicts/conditions routes).
+func moduleVersionActionURL(d ModuleEditorData, action string) string {
+	return "/policy/modules/" + d.Row.ModuleUrn + "/versions/" + strconv.FormatInt(d.SelectedID, 10) + "/" + action
+}
+
+// moduleConditionAsDGRow adapts a module_version_conditions row onto the
+// dependency-condition row shape so the Tests section reuses
+// conditionRowSummary / conditionPrefillJSON verbatim — the tables are
+// column-parity mirrors by design (011's header comment), same adapter
+// pattern as ruleAsCondition.
+func moduleConditionAsDGRow(c db.ModuleVersionCondition) db.DependencyGroupCondition {
+	return db.DependencyGroupCondition{
+		ID: c.ID, ParamPath: c.ParamPath, Operator: c.Operator,
+		ValueJson: c.ValueJson, Seq: c.Seq, Kind: c.Kind,
+		ScriptSource: c.ScriptSource, ScriptRef: c.ScriptRef, ScriptExpect: c.ScriptExpect,
 	}
 }
 
@@ -159,23 +213,39 @@ func joinTargetOS(os []policymodules.TargetOS) string {
 	return strings.Join(parts, ", ")
 }
 
-func scriptSource(d ModuleEditorData, phase policymodules.LifecyclePhase) string {
-	if sc, ok := d.Scripts[string(phase)]; ok {
-		return sc.Source
+// scriptOriginLabel/scriptOriginChipClass render the Scripts tab's
+// Origin column (CP2): "default" is the pristine bundled/seeded script
+// (forked on first edit -- see policymodules_scripts.go's package
+// comment), "custom" is tenant-authored or the edited working copy.
+func scriptOriginLabel(origin string) string {
+	if origin == "default" {
+		return "(default)"
 	}
-	return ""
+	return "(custom)"
 }
 
-func scriptFilename(d ModuleEditorData, phase policymodules.LifecyclePhase) string {
-	if sc, ok := d.Scripts[string(phase)]; ok {
-		return sc.Filename
+func scriptOriginChipClass(origin string) string {
+	if origin == "default" {
+		return "pm-status pm-status-superseded"
 	}
-	return defaultScriptFilename(phase)
+	return "pm-status pm-status-published"
 }
 
-func defaultScriptFilename(phase policymodules.LifecyclePhase) string {
-	if phase.Runtime() == policymodules.RuntimeWASM {
-		return string(phase) + ".wasm"
+// scriptUsedByLabel renders the Scripts tab's "Used by" column: the
+// comma-joined labels of every enforcement action referencing name, or
+// an em dash when nothing references it yet.
+func scriptUsedByLabel(d ModuleEditorData, name string) string {
+	labels := d.ScriptUsedBy[name]
+	if len(labels) == 0 {
+		return "—"
 	}
-	return string(phase) + ".sh"
+	return strings.Join(labels, ", ")
+}
+
+// scriptEditURL is the Scripts tab row's primary link -- the standalone
+// script editor route (CP3). Uses the same :id/versions/:vid shape as
+// its sibling CP2 routes (moduleVersionActionURL) so moduleVersionEditContext
+// resolves tenant+module+version+permission identically.
+func scriptEditURL(d ModuleEditorData, name string) string {
+	return "/policy/modules/" + d.Row.ModuleUrn + "/versions/" + strconv.FormatInt(d.SelectedID, 10) + "/scripts/" + url.PathEscape(name) + "/edit"
 }

@@ -129,6 +129,67 @@ func (p LifecyclePhase) HelpText() string {
 	return ""
 }
 
+// Language — the interpreter a first-class named Script runs under
+// (migration 012, replaces the phase-derived Runtime split above).
+// Kept separate from Runtime: Runtime still describes the two lifecycle
+// sandboxes (bash vs wasm); Language is the finer-grained script
+// authoring language the editor and agent actually invoke.
+type Language string
+
+const (
+	LangSh         Language = "sh"
+	LangPowershell Language = "powershell"
+	LangPython     Language = "python"
+)
+
+// Valid reports whether l is one of the three languages the
+// policy_module_scripts.language CHECK constraint (migration 012)
+// allows.
+func (l Language) Valid() bool {
+	switch l {
+	case LangSh, LangPowershell, LangPython:
+		return true
+	}
+	return false
+}
+
+// Script — one first-class named script row (migration 012). Replaces
+// the phase-keyed LifecycleScript for new persistence; LifecycleScript
+// is kept for the read side of the module editor/export/UI (built from
+// Script rows by the service layer) until CP2/CP4 replace it.
+type Script struct {
+	Name     string
+	Language string
+	Source   string
+	Origin   string // "default" | "custom"
+	Seq      int
+}
+
+// ModuleAction — one row of the enforcement wiring table (migration
+// 012): what runs, either by referencing a Script by name (kind=
+// "script", value=<script name>) or an inline command (kind=
+// "command", value=<command text>).
+type ModuleAction struct {
+	Key    string // action_key
+	Label  string
+	Kind   string // "command" | "script"
+	Value  string
+	Origin string // "default" | "custom"
+	Seq    int
+}
+
+// DefaultActionKeys — the default action-key seed list. Reuses the
+// five lifecycle phase strings verbatim (apply/disable/uninstall/
+// validate/report) since those remain the canonical default wiring
+// names even though scripts are no longer phase-keyed.
+var DefaultActionKeys = func() []string {
+	keys := make([]string, 0, len(AllLifecyclePhases))
+	for _, p := range AllLifecyclePhases {
+		keys = append(keys, string(p))
+	}
+	return keys
+}()
+
 // TargetOS — which operating systems a module may run on. Used by the
 // compatibility filter on every entry point that surfaces modules.
 type TargetOS string
@@ -263,7 +324,7 @@ func (m *Module) SupportsOS(os TargetOS) bool {
 // ----------------------------------------------------------------------
 
 // InstallationState — runtime status of a ModuleInstallation row.
-// Mirrors UX_INVARIANTS §VII Concept Registry → ModuleInstallation.
+// Mirrors docs/endpoint-management/ui/invariants.md → ModuleInstallation.
 type InstallationState string
 
 const (

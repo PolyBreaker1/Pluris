@@ -67,12 +67,30 @@
 		}
 	}
 
+	// languageExtension maps a PlurisCodeEditor `language` option to a CM6
+	// language extension. The vendored bundle (codemirror-pluris.js)
+	// exposes exactly: EditorState, EditorView, Compartment, basicSetup,
+	// keymap, json, yaml, shellStreamLanguage, StreamLanguage,
+	// autocompletion, oneDark, highlightWhitespace, placeholder — no
+	// python or powershell mode/grammar of any kind (checked: the bundle
+	// contains zero occurrences of "python" or "powershell", and no
+	// @codemirror/legacy-modes package is vendored). Per AGENTS.md's "no
+	// new dependencies" rule we do NOT add one just for syntax coloring,
+	// so 'powershell' and 'python' return null here (no language
+	// extension pushed at all -- see mount() below, which now skips a
+	// falsy return instead of pushing it into the extensions array) and
+	// the editor still works, just as plain text. Module scripts pass
+	// 'sh' for language 'sh' (bash highlighting via shellStreamLanguage).
 	function languageExtension(CM, language) {
 		switch (language) {
 			case 'json':
 				return CM.json();
 			case 'yaml':
 				return CM.yaml();
+			case 'powershell':
+			case 'python':
+				// No bundled mode for either -- plain text, no crash.
+				return null;
 			case 'bash':
 			default:
 				return CM.shellStreamLanguage;
@@ -133,7 +151,11 @@
 
 		var CM = window.CM6;
 		var extensions = CM.basicSetup.slice();
-		extensions.push(languageExtension(CM, language));
+		// languageExtension returns null for languages with no bundled
+		// mode (powershell/python -- see its doc comment); only push a
+		// real extension, never null, into the CM6 extensions array.
+		var langExt = languageExtension(CM, language);
+		if (langExt) extensions.push(langExt);
 		extensions.push(CM.oneDark);
 		extensions.push(themeExtension(CM));
 		extensions.push(CM.EditorView.lineWrapping);

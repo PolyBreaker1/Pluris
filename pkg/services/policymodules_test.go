@@ -96,7 +96,11 @@ func TestModuleVersionScriptRoundTrip(t *testing.T) {
 		switch sc.Phase {
 		case policymodules.PhaseApply:
 			sawApply = true
-			if sc.Filename != "enforce.sh" || sc.Source != "#!/bin/bash\necho hi\n" {
+			// Migration 012 dropped the filename column; the SetScript
+			// filename argument is now discarded (deprecated wrapper),
+			// and hydrateVersion derives LifecycleScript.Filename from
+			// the stored script name ("apply") instead.
+			if sc.Filename != "apply" || sc.Source != "#!/bin/bash\necho hi\n" {
 				t.Errorf("apply script mismatch: %+v", sc)
 			}
 		case policymodules.PhaseUninstall:
@@ -520,7 +524,7 @@ func TestDeleteModule_BlockedWhenReferenced(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.DeleteModule(ctx, ten, free.ID, free.ModuleUrn); err != nil {
+	if err := svc.PermanentlyDeleteModule(ctx, ten, free.ID, free.ModuleUrn); err != nil {
 		t.Fatalf("DeleteModule on unreferenced module: %v", err)
 	}
 
@@ -539,7 +543,107 @@ func TestDeleteModule_BlockedWhenReferenced(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := svc.DeleteModule(ctx, ten, mod.ID, mod.ModuleUrn); !errors.Is(err, services.ErrModuleReferenced) {
+	if err := svc.PermanentlyDeleteModule(ctx, ten, mod.ID, mod.ModuleUrn); !errors.Is(err, services.ErrModuleReferenced) {
 		t.Fatalf("want ErrModuleReferenced, got %v", err)
+	}
+}
+
+func TestPolicyModuleSoftDeleteRestoreImmediateAndPurge(t *testing.T) {
+	svc, d, ten := newModuleSvc(t)
+	ctx := context.Background()
+	retention := services.NewRetentionService(d)
+
+	mod, err := svc.CreateModule(ctx, &ten, nil, "tenant.acme.recycle", "Recycle", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.DeleteModule(ctx, ten, mod.ID, mod.ModuleUrn, 42); err != nil {
+		t.Fatalf("soft delete: %v", err)
+	}
+	if _, err := svc.GetModuleByURN(ctx, mod.ModuleUrn); !errors.Is(err, services.ErrModuleNotFound) {
+		t.Fatalf("default read after soft delete = %v, want ErrModuleNotFound", err)
+	}
+	deleted, err := d.Queries.GetPolicyModuleByURNIncludingDeleted(ctx, mod.ModuleUrn)
+	if err != nil || deleted.DeletedAt == nil {
+		t.Fatalf("including-deleted read = %+v, %v", deleted, err)
+	}
+	if err := svc.RestoreModule(ctx, mod.ID); err != nil {
+		t.Fatalf("restore: %v", err)
+	}
+	if _, err := svc.GetModuleByURN(ctx, mod.ModuleUrn); err != nil {
+		t.Fatalf("read after restore: %v", err)
+	}
+
+	if _, err := retention.UpdateSetting(ctx, services.EntityKindPolicyModule, services.RetentionModeImmediate, nil, 42); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.DeleteModule(ctx, ten, mod.ID, mod.ModuleUrn, 42); err != nil {
+		t.Fatalf("immediate delete: %v", err)
+	}
+	if _, err := d.Queries.GetPolicyModuleByURNIncludingDeleted(ctx, mod.ModuleUrn); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("immediate row lookup = %v, want sql.ErrNoRows", err)
+	}
+
+	if _, err := retention.UpdateSetting(ctx, services.EntityKindPolicyModule, services.RetentionModeSoft, nil, 42); err != nil {
+		t.Fatal(err)
+	}
+	expired, err := svc.CreateModule(ctx, &ten, nil, "tenant.acme.expired", "Expired", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.DeleteModule(ctx, ten, expired.ID, expired.ModuleUrn, 42); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.Conn().ExecContext(ctx, "UPDATE policy_modules SET deleted_at = datetime('now', '-2 days') WHERE id = ?", expired.ID); err != nil {
+		t.Fatal(err)
+	}
+	results, err := retention.PurgeExpired(ctx)
+	if err != nil || len(results) != 0 {
+		t.Fatalf("NULL-window purge = %+v, %v; want no work", results, err)
+	}
+	days := int64(1)
+	if _, err := retention.UpdateSetting(ctx, services.EntityKindPolicyModule, services.RetentionModeSoft, &days, 42); err != nil {
+		t.Fatal(err)
+	}
+	results, err = retention.PurgeExpired(ctx)
+	if err != nil || len(results) != 1 || !results[0].Purged {
+		t.Fatalf("expired purge = %+v, %v", results, err)
+	}
+}
+
+func TestPolicyModuleSoftDeleteAllowsReferencesButPurgeSkips(t *testing.T) {
+	svc, d, ten := newModuleSvc(t)
+	ctx := context.Background()
+	retention := services.NewRetentionService(d)
+	mod, err := svc.CreateModule(ctx, &ten, nil, "tenant.acme.referenced-soft", "Referenced soft", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cg, err := d.Queries.CreateConfigurationGroup(ctx, db.CreateConfigurationGroupParams{TenantID: ten, Name: "Guard", Scope: "machine"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.Queries.CreateConfigurationGroupBinding(ctx, db.CreateConfigurationGroupBindingParams{
+		ConfigurationGroupID: cg.ID, PolicyUrn: "sec.guard", State: "enabled",
+		ModuleID: sql.NullInt64{Int64: mod.ID, Valid: true},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.DeleteModule(ctx, ten, mod.ID, mod.ModuleUrn, 42); err != nil {
+		t.Fatalf("referenced soft delete must succeed: %v", err)
+	}
+	if _, err := d.Conn().ExecContext(ctx, "UPDATE policy_modules SET deleted_at = datetime('now', '-2 days') WHERE id = ?", mod.ID); err != nil {
+		t.Fatal(err)
+	}
+	days := int64(1)
+	if _, err := retention.UpdateSetting(ctx, services.EntityKindPolicyModule, services.RetentionModeSoft, &days, 42); err != nil {
+		t.Fatal(err)
+	}
+	results, err := retention.PurgeExpired(ctx)
+	if err != nil || len(results) != 1 || !results[0].Skipped || !errors.Is(results[0].Err, services.ErrModuleReferenced) {
+		t.Fatalf("referenced purge = %+v, %v", results, err)
+	}
+	if _, err := d.Queries.GetPolicyModuleByURNIncludingDeleted(ctx, mod.ModuleUrn); err != nil {
+		t.Fatalf("skipped module must remain: %v", err)
 	}
 }

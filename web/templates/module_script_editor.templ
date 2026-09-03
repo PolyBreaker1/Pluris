@@ -1,0 +1,156 @@
+package templates
+
+import "strconv"
+
+// CP3 of the Scripts+Enforcement redesign: the standalone, full-window
+// per-script code editor opened from the Scripts tab's row links
+// (target="_blank" — see moduleScriptsTab in policy_module_editor.templ).
+// Deliberately NOT built on DetailShell/Layout: this is a chromeless
+// full-viewport window (name/language header, left parameter tree,
+// CodeMirror body filling the rest), the same shape auth.templ's
+// AuthLayout uses for its own non-Layout page, just full-window instead
+// of a centered card.
+
+// ModuleScriptEditorData is everything the standalone editor page needs
+// to render, computed by PolicyModuleScriptEdit
+// (console/handlers/policy_module_scripts.go) so the templ side stays
+// declarative, matching ModuleEditorData's split.
+type ModuleScriptEditorData struct {
+	ModuleUrn string
+	VersionID int64
+	Name      string
+	Language  string
+	Source    string
+
+	// ReadOnly is true when the resolved version isn't a draft
+	// (published/superseded/revoked) -- moduleVersionEditContext already
+	// hard-403s a caller with no edit permission at all, so ReadOnly
+	// here is specifically the "edit-permitted but this version is
+	// frozen" case: no name/language editing, no Save button,
+	// PlurisCodeEditor mounted with readOnly:true.
+	ReadOnly bool
+
+	CSRF string
+}
+
+// moduleScriptSourceSaveURL is the CP3 save endpoint (Task 3.3) this
+// page's Save button posts to.
+func moduleScriptSourceSaveURL(d ModuleScriptEditorData) string {
+	return "/policy/modules/" + d.ModuleUrn + "/versions/" + strconv.FormatInt(d.VersionID, 10) + "/scripts/" + d.Name
+}
+
+templ ModuleScriptEditorPage(d ModuleScriptEditorData) {
+	<!DOCTYPE html>
+	<html lang="en">
+		<head>
+			<meta charset="UTF-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+			<title>{ d.Name } — Script Editor — Pluris</title>
+			<link rel="preconnect" href="https://fonts.googleapis.com"/>
+			<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+			<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+			<style>
+				:root { --font-mono: 'JetBrains Mono', ui-monospace, monospace; }
+				* { box-sizing: border-box; }
+				html, body { height: 100%; margin: 0; }
+				body {
+					font-family: 'Inter', system-ui, -apple-system, sans-serif;
+					background: #0f1115; color: #e6e8eb;
+					font-size: 13px; line-height: 1.5;
+				}
+				.font-mono { font-family: var(--font-mono); }
+				.mse-root { display: flex; flex-direction: column; height: 100vh; }
+				.mse-header {
+					display: flex; align-items: center; gap: 12px;
+					padding: 10px 14px; background: #171a21; border-bottom: 1px solid #2a2e38;
+					flex: 0 0 auto;
+				}
+				.mse-header .input {
+					background: #0f1115; border: 1px solid #2a2e38; border-radius: 6px;
+					color: #e6e8eb; font-size: 13px; padding: 6px 8px;
+				}
+				#mse-name { flex: 0 1 320px; font-family: var(--font-mono); }
+				#mse-language { flex: 0 0 auto; }
+				.mse-spacer { flex: 1 1 auto; }
+				.mse-save-status { font-size: 12px; color: #7ee787; min-width: 60px; }
+				.mse-readonly-badge {
+					font-size: 12px; padding: 4px 8px; border-radius: 6px;
+					background: #3a1d21; color: #ff9aa6;
+				}
+				.btn {
+					padding: 6px 14px; border: none; border-radius: 6px;
+					background: #4f7cff; color: #fff; font-size: 13px; font-weight: 600;
+					cursor: pointer;
+				}
+				.btn:disabled { opacity: 0.6; cursor: not-allowed; }
+				.mse-body { flex: 1 1 auto; display: flex; min-height: 0; }
+				.mse-params {
+					flex: 0 0 280px; overflow-y: auto; border-right: 1px solid #2a2e38;
+					background: #12151b; padding: 10px;
+				}
+				.mse-params .input { width: 100%; margin-bottom: 8px; }
+				.mse-editor { flex: 1 1 auto; min-width: 0; display: flex; padding: 8px; }
+				.mse-editor .pluris-code-editor, .mse-editor textarea { flex: 1 1 auto; min-width: 0; }
+				.mse-editor textarea {
+					width: 100%; height: 100%; resize: none;
+					background: #0f1115; color: #e6e8eb; border: 1px solid #2a2e38;
+					border-radius: 6px; font-family: var(--font-mono); font-size: 12.5px; padding: 8px;
+				}
+				.cm-editor { height: 100%; }
+				.cg-muted { color: #8b93a3; font-size: 12px; }
+				details.pm-param-entity, details.pm-param-section { margin-bottom: 4px; }
+				details summary { cursor: pointer; font-size: 12px; padding: 3px 0; }
+				ul.pm-param-list { list-style: none; margin: 0; padding-left: 10px; }
+				li.pm-param-item {
+					cursor: pointer; padding: 3px 4px; border-radius: 4px; font-size: 12px;
+					display: flex; flex-direction: column; gap: 1px;
+				}
+				li.pm-param-item:hover { background: #1c2330; }
+				.pm-param-path { color: #8b93a3; font-size: 11px; }
+			</style>
+		</head>
+		<body>
+			<div
+				id="mse-root"
+				class="mse-root"
+				data-mse-root
+				data-module-urn={ d.ModuleUrn }
+				data-version-id={ strconv.FormatInt(d.VersionID, 10) }
+				data-script-name={ d.Name }
+				data-read-only={ strconv.FormatBool(d.ReadOnly) }
+				data-csrf={ d.CSRF }
+				data-save-url={ moduleScriptSourceSaveURL(d) }
+			>
+				<div class="mse-header">
+					<input id="mse-name" class="input font-mono" value={ d.Name } disabled?={ d.ReadOnly }/>
+					<select id="mse-language" class="input" disabled?={ d.ReadOnly }>
+						<option value="sh" selected?={ d.Language == "sh" }>sh</option>
+						<option value="powershell" selected?={ d.Language == "powershell" }>powershell</option>
+						<option value="python" selected?={ d.Language == "python" }>python</option>
+					</select>
+					<div class="mse-spacer"></div>
+					if d.ReadOnly {
+						<span class="mse-readonly-badge">Read-only — published version</span>
+					} else {
+						<span id="mse-save-status" class="mse-save-status"></span>
+						<button id="mse-save" type="button" class="btn">Save</button>
+					}
+				</div>
+				<div class="mse-body">
+					<aside class="mse-params">
+						<input id="pm-param-search" type="text" class="input" placeholder="Filter parameters…"/>
+						<div id="pm-param-tree">
+							<div id="pm-param-tree-body"></div>
+						</div>
+					</aside>
+					<div class="mse-editor">
+						<textarea id="mse-source" data-code-editor={ d.Language } readonly?={ d.ReadOnly }>{ d.Source }</textarea>
+					</div>
+				</div>
+			</div>
+			@templ.Raw(`<script src="/static/vendor/codemirror/codemirror-pluris.js"></script>`)
+			<script src="/static/code-editor.js"></script>
+			<script src="/static/module-script-editor.js"></script>
+		</body>
+	</html>
+}

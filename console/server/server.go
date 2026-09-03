@@ -7,16 +7,20 @@ package server
 
 import (
 	"context"
+	"database/sql"
 	"log"
+	"time"
 
 	"github.com/labstack/echo/v4"
 	emw "github.com/labstack/echo/v4/middleware"
 
 	"github.com/pluris/pluris/catalog/policymodules"
 	"github.com/pluris/pluris/console/handlers"
+	sqldb "github.com/pluris/pluris/db"
 	"github.com/pluris/pluris/pkg/auth"
 	"github.com/pluris/pluris/pkg/database"
 	"github.com/pluris/pluris/pkg/services"
+	staticassets "github.com/pluris/pluris/web/static"
 )
 
 // New returns a configured Echo router using the default "pluris.db" path.
@@ -76,6 +80,7 @@ func NewWithDB(dbPath string) *echo.Echo {
 		}
 		return mods
 	})
+	startPurgeScheduler(db)
 
 	sessions := auth.NewSessionManager(db)
 
@@ -127,9 +132,12 @@ func NewWithDB(dbPath string) *echo.Echo {
 	e.GET("/healthz", func(c echo.Context) error { return c.String(200, "ok") })
 
 	// Static assets — shared lists.js / lists.css power every list table
-	// (INV-L9). Served from web/static/. Path is process-cwd-relative;
-	// the binary must be run from the repo root or via `make dev`.
-	e.Static("/static", "web/static")
+	// (INV-L9). Embedded into the binary (web/static/embed.go), same fix
+	// already applied to migrations in db/schema/embed.go — a bare
+	// e.Static("/static", "web/static") is process-cwd-relative and 404s
+	// every stylesheet/script (silently unstyled UI, no list/detail JS)
+	// unless the binary happens to be launched from the repo root.
+	e.StaticFS("/static", staticassets.Files)
 
 	// Auth (not in sidebar). Gated by SetupGate/RequireAuth/RequireRole/CSRF
 	// above via authExemptPaths/setupExemptPaths in pkg/auth/middleware.go.
@@ -207,12 +215,35 @@ func NewWithDB(dbPath string) *echo.Echo {
 	// the asset-enroll and dependency-groups routes above).
 	e.GET("/policy/modules/new", h.PolicyModuleNewShow)
 	e.POST("/policy/modules/new", h.PolicyModuleCreateSubmit)
+	e.POST("/policy/modules/import", h.PolicyModuleImport)
+	e.GET("/policy/modules/:id/export", h.PolicyModuleExport)
 	e.GET("/policy/modules/:id", h.PolicyModuleDetail)
 	e.POST("/policy/modules/:id/delete", h.PolicyModuleDeleteSubmit)
 	e.POST("/policy/modules/:id/clone", h.PolicyModuleClone)
 	e.POST("/policy/modules/:id/versions", h.PolicyModuleVersionCreate)
 	e.POST("/policy/modules/:id/versions/:vid/publish", h.PolicyModuleVersionPublish)
 	e.POST("/policy/modules/:id/versions/:vid/revoke", h.PolicyModuleVersionRevoke)
+	// Dependencies-tab structured editing (2026-07-17 spec): picker-based
+	// depends_on/conflicts rows and the version's tests
+	// (module_version_conditions), all draft-guarded in the service.
+	e.POST("/policy/modules/:id/versions/:vid/deps", h.PolicyModuleDependencyAddURN)
+	e.POST("/policy/modules/:id/versions/:vid/deps/remove", h.PolicyModuleDependencyRemoveURN)
+	e.POST("/policy/modules/:id/versions/:vid/conflicts", h.PolicyModuleConflictAdd)
+	e.POST("/policy/modules/:id/versions/:vid/conflicts/remove", h.PolicyModuleConflictRemove)
+	e.POST("/policy/modules/:id/versions/:vid/conditions", h.PolicyModuleConditionAdd)
+	e.POST("/policy/modules/:id/versions/:vid/conditions/:cid/remove", h.PolicyModuleConditionRemove)
+	e.POST("/policy/modules/:id/versions/:vid/conditions-match-mode", h.PolicyModuleConditionsMatchMode)
+	e.POST("/policy/modules/:id/versions/:vid/delete", h.PolicyModuleVersionDelete)
+	// Scripts tab (Scripts+Enforcement redesign, CP2): named-script
+	// add/rename/delete, same draft + edit-permission gate as the
+	// deps/conflicts/conditions routes above.
+	e.POST("/policy/modules/:id/versions/:vid/scripts", h.PolicyModuleScriptCreate)
+	e.POST("/policy/modules/:id/versions/:vid/scripts/:name/rename", h.PolicyModuleScriptRename)
+	e.POST("/policy/modules/:id/versions/:vid/scripts/:name/delete", h.PolicyModuleScriptRemove)
+	// Standalone full-window script editor (CP3): GET renders the page
+	// (read-only if not a draft), POST saves source+language.
+	e.GET("/policy/modules/:id/versions/:vid/scripts/:name/edit", h.PolicyModuleScriptEdit)
+	e.POST("/policy/modules/:id/versions/:vid/scripts/:name", h.PolicyModuleScriptSourceSave)
 	e.GET("/policy/dependency-groups", h.DependencyGroups)
 	e.GET("/policy/dependency-groups/new", h.DependencyGroupNew)
 	e.POST("/policy/dependency-groups", h.DependencyGroupCreate)
@@ -277,6 +308,8 @@ func NewWithDB(dbPath string) *echo.Echo {
 
 	// 9. Server Administration
 	e.GET("/server-admin", h.ServerAdmin)
+	e.GET("/server-admin/data", h.DataManagement)
+	e.POST("/server-admin/data", h.DataManagementSave)
 
 	// 10. User/Admin Preferences
 	e.GET("/preferences", h.Preferences)
@@ -289,7 +322,9 @@ func NewWithDB(dbPath string) *echo.Echo {
 	// UserFieldUpdate/AssetFieldUpdate are the actual authorization gate
 	// here, same pattern as the Pluris Policy handlers.
 	e.POST("/api/users/:id/fields", h.UserFieldUpdate)
+	e.POST("/api/users/bulk", h.IdentityBulk)
 	e.POST("/api/assets/:subtype/:id/fields", h.AssetFieldUpdate)
+	e.POST("/api/assets/bulk", h.AssetBulk)
 
 	// Policy Module editor field-update + script-save APIs (Task 4.3).
 	// Route-level RBAC: "/api/modules" is registered in pkg/auth/rbac.go's
@@ -299,20 +334,25 @@ func NewWithDB(dbPath string) *echo.Echo {
 	// fine-grained gate, mirroring UserFieldUpdate/AssetFieldUpdate's
 	// handler-side pattern.
 	e.POST("/api/modules/:id/fields", h.PolicyModuleFieldUpdate)
+	e.POST("/api/modules/bulk", h.PolicyModuleBulk)
 	e.POST("/api/modules/:id/versions/:vid/fields", h.PolicyModuleVersionFieldUpdate)
 	e.POST("/api/modules/:id/versions/:vid/scripts", h.PolicyModuleScriptSave)
+	e.POST("/api/modules/:id/versions/:vid/scripts/delete", h.PolicyModuleScriptDelete)
 
 	// Configuration Group General-tab inline-edit API (Task 5.2). Route-
 	// level RBAC: "/api/config-groups" is registered in pkg/auth/rbac.go
 	// with endpoint_policy.manage_config_groups; the handler repeats the
 	// same requirePermission check as the fine-grained layer.
 	e.POST("/api/config-groups/:id/fields", h.ConfigGroupFieldUpdate)
+	e.POST("/api/config-groups/bulk", h.ConfigGroupBulk)
+	e.POST("/api/dependency-groups/bulk", h.DependencyGroupBulk)
 
 	// Group General-tab inline-edit API (Task 6.2). Route-level RBAC:
 	// "/api/*" falls through to the open "/" default, so the handler's
 	// requirePermission(group.update) is the gate — same pattern as the
 	// user/asset field APIs above.
 	e.POST("/api/groups/:id/fields", h.GroupFieldUpdate)
+	e.POST("/api/groups/bulk", h.GroupBulk)
 
 	// Avatar upload (Task 9). Same auth shape as the field-update API
 	// above: the route only requires an authenticated session, and
@@ -328,6 +368,11 @@ func NewWithDB(dbPath string) *echo.Echo {
 	// filtering IS the authorization, same shape as the /api routes above.
 	e.GET("/api/params", h.ParamsAPI)
 
+	// Scripts-library feed for the condition builder's script picker
+	// (empty until the Scripts library ships; the feed contract is the
+	// stable part). Open like /api/params, see rbac.go.
+	e.GET("/api/scripts", h.ScriptsAPI)
+
 	// Avatar static files. Deliberately left BEHIND the full auth chain
 	// (no isStaticPath/authExemptPaths exemption) rather than exempted
 	// like /static -- avatars are private-by-default, and same-origin
@@ -336,4 +381,42 @@ func NewWithDB(dbPath string) *echo.Echo {
 	e.Static("/avatars", handlers.AvatarDir)
 
 	return e
+}
+
+func startPurgeScheduler(database *database.Database) {
+	runPurgeCycle(database)
+	go func() {
+		ticker := time.NewTicker(time.Hour)
+		defer ticker.Stop()
+		for range ticker.C {
+			runPurgeCycle(database)
+		}
+	}()
+}
+
+func runPurgeCycle(database *database.Database) {
+	retention := services.NewRetentionService(database)
+	results, err := retention.PurgeExpired(context.Background())
+	if err != nil {
+		log.Printf("retention purge failed: %v", err)
+		return
+	}
+	for _, result := range results {
+		if result.Skipped {
+			log.Printf("retention purge skipped %s %d: %v", result.EntityKind, result.EntityID, result.Err)
+			continue
+		}
+		if result.Err != nil {
+			log.Printf("retention purge failed for %s %d: %v", result.EntityKind, result.EntityID, result.Err)
+			continue
+		}
+		if result.Purged && result.TenantID != 0 {
+			if err := database.Queries.InsertActivity(context.Background(), sqldb.InsertActivityParams{
+				TenantID: result.TenantID, EntityType: result.EntityKind, EntityID: result.EntityID,
+				Event: "entity_purged", Detail: sql.NullString{}, ActorIdentityID: sql.NullInt64{},
+			}); err != nil {
+				log.Printf("retention purge activity failed for %s %d: %v", result.EntityKind, result.EntityID, err)
+			}
+		}
+	}
 }

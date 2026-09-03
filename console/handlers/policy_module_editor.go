@@ -14,6 +14,7 @@ import (
 	"github.com/labstack/echo/v4"
 
 	"github.com/pluris/pluris/catalog/dependencygroups"
+	"github.com/pluris/pluris/catalog/policies"
 	"github.com/pluris/pluris/catalog/policymodules"
 	"github.com/pluris/pluris/db"
 	"github.com/pluris/pluris/pkg/auth"
@@ -207,6 +208,7 @@ func (h *Handler) PolicyModuleDetail(c echo.Context) error {
 			if vrow.DependsOn.Valid {
 				_ = json.Unmarshal([]byte(vrow.DependsOn.String), &deps)
 			}
+			data.DependsOn = deps
 			depStrs := make([]string, 0, len(deps))
 			for _, dep := range deps {
 				depStrs = append(depStrs, dep.ModuleID)
@@ -217,9 +219,16 @@ func (h *Handler) PolicyModuleDetail(c echo.Context) error {
 			if vrow.Conflicts.Valid {
 				_ = json.Unmarshal([]byte(vrow.Conflicts.String), &conflicts)
 			}
+			data.Conflicts = conflicts
 			data.ConflictsCSV = strings.Join(conflicts, ", ")
 
 			data.ParametersSchemaRaw = vrow.ParametersSchema.String
+			data.ReportSchemaRaw = vrow.ReportSchema
+
+			data.ConditionsMatchMode = vrow.ConditionsMatchMode
+			if conds, err := h.moduleSvc.ListVersionConditions(ctx, vrow.ID); err == nil {
+				data.Conditions = conds
+			}
 
 			scriptRows, err := h.db.Queries.ListScriptsForVersion(ctx, vrow.ID)
 			if err != nil {
@@ -227,8 +236,33 @@ func (h *Handler) PolicyModuleDetail(c echo.Context) error {
 			}
 			data.Scripts = make(map[string]db.PolicyModuleScript, len(scriptRows))
 			for _, sc := range scriptRows {
-				data.Scripts[sc.Phase] = sc
+				data.Scripts[sc.Name] = sc
 			}
+
+			// Scripts tab (CP2): the named-script list plus per-script
+			// "used by" labels, computed from this version's enforcement
+			// actions (kind=="script" actions reference a script by name).
+			scripts, err := h.moduleSvc.ListScripts(ctx, vrow.ID)
+			if err != nil {
+				return err
+			}
+			data.ScriptList = scripts
+			actions, err := h.moduleSvc.ListActions(ctx, vrow.ID)
+			if err != nil {
+				return err
+			}
+			usedBy := make(map[string][]string, len(actions))
+			for _, a := range actions {
+				if a.Kind != "script" {
+					continue
+				}
+				label := a.Label
+				if label == "" {
+					label = a.Key
+				}
+				usedBy[a.Value] = append(usedBy[a.Value], label)
+			}
+			data.ScriptUsedBy = usedBy
 		}
 	}
 
@@ -238,6 +272,15 @@ func (h *Handler) PolicyModuleDetail(c echo.Context) error {
 	}
 	data.Deps = dv
 	data.AllDepGroups = groups
+
+	if visible, err := h.moduleSvc.ListModules(ctx, sess.TenantID); err == nil {
+		for _, m := range visible {
+			if m.ID == row.ModuleUrn {
+				continue
+			}
+			data.PickerModules = append(data.PickerModules, templates.ModulePickerOption{URN: m.ID, Title: m.Title})
+		}
+	}
 
 	return render(c, templates.PolicyModuleDetailPage(data))
 }
@@ -278,7 +321,7 @@ func (h *Handler) moduleDepsViewFor(ctx context.Context, tenantID int64, urn str
 	return dv, groups, nil
 }
 
-// PolicyModuleDeleteSubmit deletes a module (blocked when referenced).
+// PolicyModuleDeleteSubmit deletes a module according to its retention mode.
 // Requires CanAdmin (never true for bundled modules).
 func (h *Handler) PolicyModuleDeleteSubmit(c echo.Context) error {
 	ctx := c.Request().Context()
@@ -294,7 +337,7 @@ func (h *Handler) PolicyModuleDeleteSubmit(c echo.Context) error {
 	if !authz.ModuleCanAdmin(access) {
 		return echo.NewHTTPError(http.StatusForbidden, "not allowed to delete this module")
 	}
-	if err := h.moduleSvc.DeleteModule(ctx, sess.TenantID, row.ID, row.ModuleUrn); err != nil {
+	if err := h.moduleSvc.DeleteModule(ctx, sess.TenantID, row.ID, row.ModuleUrn, sess.IdentityID); err != nil {
 		if err == services.ErrModuleReferenced {
 			return c.Redirect(http.StatusFound, "/policy/modules/"+row.ModuleUrn+"?warn="+url.QueryEscape("Cannot delete: this module is still referenced (a dependency-group link, binding, or installation)."))
 		}
@@ -386,6 +429,7 @@ func (h *Handler) PolicyModuleVersionFieldUpdate(c echo.Context) error {
 
 	fields := services.FieldsFromVersionRow(vrow)
 	var updated []string
+	var warning string
 	for key, raw := range req.Fields {
 		switch key {
 		case "target_os":
@@ -398,6 +442,9 @@ func (h *Handler) PolicyModuleVersionFieldUpdate(c echo.Context) error {
 			fields.Scope = raw
 		case "satisfies":
 			fields.Satisfies = splitCSV(raw)
+			if unknown := unknownPolicyURNs(fields.Satisfies); len(unknown) > 0 {
+				warning = "Unknown policy URN(s), saved anyway: " + strings.Join(unknown, ", ")
+			}
 		case "fs_read":
 			fields.SandboxProfile.FsRead = splitCSV(raw)
 		case "fs_write":
@@ -411,6 +458,11 @@ func (h *Handler) PolicyModuleVersionFieldUpdate(c echo.Context) error {
 				return echo.NewHTTPError(http.StatusBadRequest, "parameters_schema must be valid JSON")
 			}
 			fields.ParametersSchema = raw
+		case "report_schema":
+			if raw != "" && !json.Valid([]byte(raw)) {
+				return echo.NewHTTPError(http.StatusBadRequest, "report_schema must be valid JSON")
+			}
+			fields.ReportSchema = raw
 		case "depends_on":
 			var deps []policymodules.Dependency
 			for _, s := range splitCSV(raw) {
@@ -431,7 +483,25 @@ func (h *Handler) PolicyModuleVersionFieldUpdate(c echo.Context) error {
 		return fieldUpdateHTTPError(err)
 	}
 	sort.Strings(updated)
-	return c.JSON(http.StatusOK, FieldUpdateResponse{Updated: updated})
+	return c.JSON(http.StatusOK, FieldUpdateResponse{Updated: updated, Warning: warning})
+}
+
+// unknownPolicyURNs returns the satisfies entries that match no policy
+// in the catalog. Validation is warn-only by design: a module may
+// legitimately satisfy a URN from a newer catalog or a custom policy,
+// so an unknown URN never blocks the save.
+func unknownPolicyURNs(urns []string) []string {
+	known := make(map[string]bool)
+	for _, p := range policies.Catalog() {
+		known[p.ID] = true
+	}
+	var unknown []string
+	for _, u := range urns {
+		if !known[u] {
+			unknown = append(unknown, u)
+		}
+	}
+	return unknown
 }
 
 // splitCSV splits a comma-separated field-input list, trimming
@@ -606,16 +676,24 @@ func (h *Handler) PolicyModuleClone(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusForbidden, "not allowed to view this module")
 	}
 
-	src, err := h.moduleSvc.GetModule(ctx, row.ID)
+	newURN, err := h.clonePolicyModule(ctx, sess, row)
 	if err != nil {
 		return err
+	}
+	return c.Redirect(http.StatusFound, "/policy/modules/"+newURN)
+}
+
+func (h *Handler) clonePolicyModule(ctx context.Context, sess *auth.UserSession, row db.PolicyModule) (string, error) {
+	src, err := h.moduleSvc.GetModule(ctx, row.ID)
+	if err != nil {
+		return "", err
 	}
 	newURN := row.ModuleUrn + ".clone-" + strconv.FormatInt(time.Now().UnixNano(), 36)
 	tenantID := sess.TenantID
 	ownerID := sess.IdentityID
 	newMod, err := h.moduleSvc.CreateModule(ctx, &tenantID, &ownerID, newURN, src.Title+" (clone)", src.Description)
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "clone failed: "+err.Error())
+		return "", echo.NewHTTPError(http.StatusInternalServerError, "clone failed: "+err.Error())
 	}
 
 	// Copy the source's latest version (published preferred, else
@@ -639,8 +717,23 @@ func (h *Handler) PolicyModuleClone(c echo.Context) error {
 			if err == nil {
 				scripts, _ := h.db.Queries.ListScriptsForVersion(ctx, srcVersionID)
 				for _, sc := range scripts {
-					_, _ = h.db.Queries.UpsertModuleScript(ctx, db.UpsertModuleScriptParams{
-						VersionID: draft.ID, Phase: sc.Phase, Filename: sc.Filename, Source: sc.Source, Seq: sc.Seq,
+					// draft was just created above, so its state is
+					// 'draft' -- the guard cannot reject this copy.
+					_, _ = h.db.Queries.UpsertModuleScriptGuarded(ctx, db.UpsertModuleScriptGuardedParams{
+						VersionID: draft.ID, Name: sc.Name, Language: sc.Language, Source: sc.Source, Origin: sc.Origin, Seq: sc.Seq,
+					})
+				}
+				conds, _ := h.db.Queries.ListVersionConditions(ctx, srcVersionID)
+				for _, cond := range conds {
+					_, _ = h.db.Queries.CreateVersionConditionGuarded(ctx, db.CreateVersionConditionGuardedParams{
+						VersionID: draft.ID, Kind: cond.Kind, ParamPath: cond.ParamPath,
+						Operator: cond.Operator, ValueJson: cond.ValueJson,
+						ScriptSource: cond.ScriptSource, ScriptRef: cond.ScriptRef, Seq: cond.Seq,
+					})
+				}
+				if srcVersionRow.ConditionsMatchMode == "any" {
+					_, _ = h.db.Queries.UpdateVersionConditionsMatchMode(ctx, db.UpdateVersionConditionsMatchModeParams{
+						ID: draft.ID, ConditionsMatchMode: "any",
 					})
 				}
 			}
@@ -652,5 +745,5 @@ func (h *Handler) PolicyModuleClone(c echo.Context) error {
 		Event: "module_cloned", Detail: sql.NullString{String: "from " + row.ModuleUrn, Valid: true},
 		ActorIdentityID: sql.NullInt64{Int64: sess.IdentityID, Valid: true},
 	})
-	return c.Redirect(http.StatusFound, "/policy/modules/"+newURN)
+	return newURN, nil
 }
