@@ -15,11 +15,14 @@ INSERT INTO identities (
 ) RETURNING *;
 
 -- name: GetIdentity :one
+SELECT * FROM identities WHERE id = @id AND deleted_at IS NULL LIMIT 1;
+
+-- name: GetIdentityIncludingDeleted :one
 SELECT * FROM identities WHERE id = @id LIMIT 1;
 
 -- name: GetIdentityByEmail :one
 SELECT * FROM identities
-WHERE tenant_id = @tenant_id AND email = @email
+WHERE tenant_id = @tenant_id AND email = @email AND deleted_at IS NULL
 LIMIT 1;
 
 -- Used at login: the user only enters an email, not a tenant, so this
@@ -28,24 +31,54 @@ LIMIT 1;
 -- length and treat >1 as an ambiguous-account error, never just take
 -- the first result.
 -- name: GetIdentityByEmailGlobal :many
-SELECT * FROM identities WHERE email = @email;
+SELECT * FROM identities WHERE email = @email AND deleted_at IS NULL;
 
 -- name: ListIdentitiesByTenant :many
 SELECT * FROM identities
 WHERE tenant_id = @tenant_id
+  AND deleted_at IS NULL
 ORDER BY display_name
 LIMIT @limit OFFSET @offset;
 
+-- name: ListDeletedIdentitiesByTenant :many
+SELECT * FROM identities
+WHERE tenant_id = @tenant_id AND deleted_at IS NOT NULL
+ORDER BY display_name
+LIMIT @limit OFFSET @offset;
+
+-- Same rows as ListIdentitiesByTenant plus the resolved site name, for the
+-- Users list page (INV-L). A separate query rather than widening the query
+-- above: ListIdentitiesByTenant is also called directly by group_rules.go
+-- and targets.go, which do not need the join and should not pay for it.
+-- name: ListIdentitiesByTenantWithSite :many
+SELECT sqlc.embed(identities), s.name AS site_name
+FROM identities
+LEFT JOIN sites s ON identities.site_id = s.id
+WHERE identities.tenant_id = @tenant_id
+  AND identities.deleted_at IS NULL
+ORDER BY identities.display_name
+LIMIT @limit OFFSET @offset;
+
+-- name: ListDeletedIdentitiesByTenantWithSite :many
+SELECT sqlc.embed(identities), s.name AS site_name
+FROM identities
+LEFT JOIN sites s ON identities.site_id = s.id
+WHERE identities.tenant_id = @tenant_id
+  AND identities.deleted_at IS NOT NULL
+ORDER BY identities.display_name
+LIMIT @limit OFFSET @offset;
+
 -- name: CountIdentitiesByTenant :one
-SELECT COUNT(*) FROM identities WHERE tenant_id = @tenant_id;
+SELECT COUNT(*) FROM identities WHERE tenant_id = @tenant_id AND deleted_at IS NULL;
 
 -- Used by the setup-gate middleware: "does any identity exist anywhere?"
 -- name: CountIdentitiesGlobal :one
-SELECT COUNT(*) FROM identities;
+SELECT COUNT(*) FROM identities WHERE deleted_at IS NULL;
 
 -- name: SearchIdentities :many
 SELECT * FROM identities
 WHERE tenant_id = @tenant_id
+  AND deleted_at IS NULL
   AND (display_name LIKE '%' || @search || '%'
        OR email LIKE '%' || @search || '%'
        OR username LIKE '%' || @search || '%'
@@ -140,3 +173,18 @@ WHERE id = @id AND bad_password_count >= @threshold;
 
 -- name: DeleteIdentity :exec
 DELETE FROM identities WHERE id = @id;
+
+-- name: SoftDeleteIdentity :execrows
+UPDATE identities
+SET deleted_at = CURRENT_TIMESTAMP, deleted_by = @deleted_by
+WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NULL;
+
+-- name: RestoreIdentity :execrows
+UPDATE identities
+SET deleted_at = NULL, deleted_by = NULL
+WHERE id = @id AND tenant_id = @tenant_id AND deleted_at IS NOT NULL;
+
+-- name: ListExpiredIdentities :many
+SELECT * FROM identities
+WHERE deleted_at IS NOT NULL AND deleted_at <= @cutoff
+ORDER BY deleted_at, id;

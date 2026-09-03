@@ -25,14 +25,14 @@ import (
 
 // 1. Dashboard
 templ DashboardPage() {
-	@Layout("dashboard", "Dashboard") {
+	@Layout("dashboard", "Dashboard", "") {
 		@PageHeader("Dashboard",
 			"Adjustable scalable tiles. Tile data sources picked from the shared hierarchy (Tenant → Site → Group → Asset | Identity). Display types: graph, text, update view, table, count, status grid.",
 			"Add tile", "")
 		<div data-testid="page-dashboard">
 			@EmptyState("inbox", "No tiles configured yet",
-				"Once Increment 4 lands, admins compose dashboards by picking a hierarchical data source and a display type for each tile. Self-service users get a fixed read-only preset.",
-				"Will mount editors/DashboardTileEditor — Increment 4+.")
+				"Admins will compose dashboards by picking a hierarchical data source and a display type for each tile. Self-service users get a fixed read-only preset.",
+				"Planned for a future release.")
 			@invariantFooter()
 		</div>
 	}
@@ -47,30 +47,40 @@ templ DashboardPage() {
 //    The list, the column picker, the row-click → detail dialog, and
 //    the detail dialog itself are all one component reused across the
 //    four subtypes. The only thing that changes is the filter passed in.
-templ AssetsPage(subtype string, rows []assets.Asset) {
+templ AssetsPage(subtype string, rows []assets.Asset, deleted bool, deleteCopy string, csrf string) {
 	{{ st := subtypeFromSlug(subtype) }}
-	@Layout("assets-"+subtype, "Assets — "+subtypeLabel(subtype)) {
+	@Layout("assets-"+subtype, "Assets — "+subtypeLabel(subtype), "") {
 		<div class="page-content">
 			@PageHeader(subtypeLabel(subtype), assetsDescription(subtype), assetsAddLabel(subtype), "/assets/"+subtype+"/new")
+			<form method="get" class="pm-toolbar card" style="display:flex; align-items:end; gap:12px;">
+				<div class="field">
+					<label for="asset-record-state">State</label>
+					<select id="asset-record-state" class="select" name="state">
+						<option value="active" selected?={ !deleted }>Active</option>
+						<option value="deleted" selected?={ deleted }>Deleted</option>
+					</select>
+				</div>
+				<button type="submit" class="btn btn-secondary">Apply</button>
+			</form>
 		</div>
 		<div
 			data-testid={ "page-assets-" + subtype }
 			data-canonical-editor="AssetEditor"
 			data-asset-subtype={ string(st) }
 		>
-			@assetsList(rows, st, subtype)
-			@assetListNavigationScript(subtype)
+			@assetsList(rows, st, subtype, deleted, deleteCopy, csrf)
 		</div>
 	}
 }
 
 // assetsList — unified Assets list with modern filter system.
 // Inspired by ServiceNow, Jira Service Management, Freshservice.
-templ assetsList(rows []assets.Asset, st assets.Subtype, subtype string) {
+templ assetsList(rows []assets.Asset, st assets.Subtype, subtype string, deleted bool, deleteCopy string, csrf string) {
 	{{ listID := lists.ListIDAssets }}
 	{{ fields := lists.FieldsFor(listID) }}
 	{{ filterJSON := params.FilterConfigJSON(string(st)) }}
-	<div data-pluris-list={ listID } data-filter-builder={ listID }>
+	<div data-pluris-list={ listID } data-filter-builder={ listID } data-mass-delete-copy={ deleteCopy } data-mass-purge-copy="This permanently deletes the selected assets and cannot be undone.">
+		<input type="hidden" name="_csrf" value={ csrf }/>
 		@templ.Raw(`<script type="application/json" data-filter-config>` + filterJSON + `</script>`)
 		<!-- Modern Filter System -->
 		<div class="pluris-filters">
@@ -129,6 +139,7 @@ templ assetsList(rows []assets.Asset, st assets.Subtype, subtype string) {
 			<div class="filter-empty-desc">Try adjusting your search or filters</div>
 		</div>
 		<!-- Assets Table -->
+		@MassActionToolbar(listID, lists.MassActionsFor(listID))
 		<section
 			class="pm-table-wrap"
 			data-list-id={ listID }
@@ -138,9 +149,10 @@ templ assetsList(rows []assets.Asset, st assets.Subtype, subtype string) {
 				@ColumnPickerButton(listID)
 			</div>
 			@ConceptEmptyState("assets", listID)
-			<table class="pm-table pluris-list" data-list-id={ listID }>
+			<table class="pm-table pluris-list" data-list-id={ listID } data-pluris-select={ listID }>
 				<thead>
 					<tr>
+						@ListSelectHeaderCell(listID)
 						for _, f := range fields {
 							if f.IsSortable() {
 								<th data-field={ f.Key } data-width={ f.Width } data-sort-type={ f.Sort } title={ f.Description } class="th-sortable">
@@ -158,7 +170,13 @@ templ assetsList(rows []assets.Asset, st assets.Subtype, subtype string) {
 				<tbody>
 					{{ rowIdx := 0 }}
 					for _, a := range rows {
-						@templ.Raw(`<tr data-detail-id="` + a.ID + `" data-asset-id="` + a.ID + `" data-searchable="` + assetSearchBlobEscaped(a) + `" data-row-index="` + strconv.Itoa(rowIdx) + `" tabindex="0"` + assetFilterAttrs(a) + `>`)
+						if deleted {
+							@templ.Raw(`<tr data-detail-id="` + a.ID + `" data-asset-id="` + a.ID + `" data-select-name="` + a.ID + `" data-searchable="` + assetSearchBlobEscaped(a) + `" data-row-index="` + strconv.Itoa(rowIdx) + `"` + assetFilterAttrs(a) + `>`)
+							@ListSelectCell(listID, a.ID, []string{"restore", "purge"})
+						} else {
+							@templ.Raw(`<tr data-detail-id="` + a.ID + `" data-asset-id="` + a.ID + `" data-select-name="` + a.ID + `" data-row-href="/assets/` + subtype + `/` + a.ID + `" data-searchable="` + assetSearchBlobEscaped(a) + `" data-row-index="` + strconv.Itoa(rowIdx) + `" tabindex="0"` + assetFilterAttrs(a) + `>`)
+							@ListSelectCell(listID, a.ID, []string{"delete"})
+						}
 						for _, f := range fields {
 							<td data-field={ f.Key } data-sort={ lists.RenderAssetCellSort(f.Key, a) }>@templ.Raw(lists.RenderAssetCell(f.Key, a))
 </td>
@@ -170,39 +188,8 @@ templ assetsList(rows []assets.Asset, st assets.Subtype, subtype string) {
 			</table>
 			@templ.Raw(columnPickerScript)
 		</section>
+		@MassActionConfirmDialog()
 	</div>
-}
-
-// assetListNavigationScript — replaces the old detail-dialog engine for
-// assets. Row clicks on `[data-detail-id]` navigate to the full asset
-// detail page. The lists.js detail-dialog engine is not used because no
-// <dialog data-pluris-detail="assets"> exists on the page.
-templ assetListNavigationScript(subtype string) {
-	<script>
-	(function() {
-		'use strict';
-		var subtype = document.currentScript.closest('[data-asset-subtype]').dataset.assetSubtype;
-		var slug = { 'computer':'computers', 'server':'servers', 'printer':'printers', 'desk':'desks' }[subtype] || subtype + 's';
-		document.addEventListener('click', function(e) {
-			if (e.target.closest('button, a, input, select, textarea, label, [data-pluris-no-detail]')) return;
-			var row = e.target.closest('tbody tr[data-detail-id]');
-			if (!row) return;
-			var table = row.closest('[data-list-id="assets"]');
-			if (!table) return;
-			e.preventDefault();
-			window.location.href = '/assets/' + slug + '/' + encodeURIComponent(row.dataset.detailId);
-		});
-		document.addEventListener('keydown', function(e) {
-			if (e.key !== 'Enter') return;
-			var row = e.target.closest('tbody tr[data-detail-id]');
-			if (!row) return;
-			var table = row.closest('[data-list-id="assets"]');
-			if (!table) return;
-			e.preventDefault();
-			window.location.href = '/assets/' + slug + '/' + encodeURIComponent(row.dataset.detailId);
-		});
-	})();
-	</script>
 }
 
 func assetsDescription(subtype string) string {
@@ -240,7 +227,7 @@ func assetsAddLabel(subtype string) string {
 templ AssetDetailPage(subtype string, id string) {
 	{{ a := assets.FindByID(id) }}
 	if a == nil {
-		@Layout("assets-"+subtype, "Asset not found") {
+		@Layout("assets-"+subtype, "Asset not found", "/assets/"+subtype) {
 			@PageHeader("Not found", "The asset ID \""+id+"\" does not exist in the catalog.", "", "")
 			<div class="card">
 				<div class="empty-state">
@@ -603,7 +590,7 @@ templ assetDetailDeviceIcon(a *assets.Asset) {
 // only — binding a policy to a target happens in a Configuration Group
 // (see PolicyConfigurationGroupsPage).
 templ PolicyCatalogPage() {
-	@Layout("policy-catalog", "Policy Catalog") {
+	@Layout("policy-catalog", "Policy Catalog", "") {
 		@PageHeader("Policy Catalog",
 			"Windows Group Policy settings with their Linux equivalents. Every row is partitioned into Computer / User scope like Windows GPEdit. To bind a policy to a target, open a Configuration Group.",
 			"", "")
@@ -613,7 +600,6 @@ templ PolicyCatalogPage() {
 				@policyTree(policies.BuildTree())
 				@policyTable(policies.Catalog())
 			</div>
-			@policyCatalogNavigationScript()
 			@invariantFooter()
 		</div>
 	}
@@ -944,6 +930,7 @@ templ policyTable(all []policies.Policy) {
 							data-searchable={ policySearchBlob(p) }
 							data-origin={ policyOrigin(p) }
 							data-policy-id={ p.ID }
+							data-row-href={ templ.SafeURL("/policy/catalog/" + p.ID) }
 							data-row-index={ strconv.Itoa(rowIdx) }
 						>
 							for _, f := range fields {
@@ -1047,14 +1034,14 @@ templ scopeChip(s policies.Scope) {
 
 // 5. Profiles
 templ ProfilesPage() {
-	@Layout("profiles", "Profiles") {
+	@Layout("profiles", "Profiles", "") {
 		@PageHeader("Profiles",
 			"Bundle assigned policy groups, scripts, Wine configuration groups, and packages. Profiles are flat — no profile-includes-profile composition (locked decision in §VII.A).",
 			"New profile", "")
 		<div data-testid="page-profiles">
 			@EmptyState("profiles", "No profiles yet",
 				"Create a profile to bundle a set of policies, scripts, and packages and assign them to assets, users, or groups.",
-				"Will mount editors/ProfileEditor — Increment 4+.")
+				"Planned for a future release.")
 			@invariantFooter()
 		</div>
 	}
@@ -1065,14 +1052,14 @@ templ ProfilesPage() {
 // /policy/modules on 2026-05-16; legacy /scripts/scripts and
 // /scripts/policy-modules paths redirect.
 templ ScriptsPage() {
-	@Layout("scripts", "Scripts") {
+	@Layout("scripts", "Scripts", "") {
 		@PageHeader("Scripts",
 			"User automation scripts with trigger field. Editor includes manual-trigger test against admin testing workstation, live agent log stream, and trigger picker.",
 			"New script", "")
 		<div data-testid="page-scripts">
 			@EmptyState("scripts", "No scripts yet",
 				"Pluris ships at least 5 predefined scripts (update-on-shutdown, cleanup-temp-on-logout, compliance-snapshot-daily, force-screen-lock-on-policy-change, wake-and-update-windowed). Custom scripts can be authored here with manual-trigger testing against an admin testing workstation.",
-				"Will mount editors/ScriptEditor — Increment 4+.")
+				"Planned for a future release.")
 			@invariantFooter()
 		</div>
 	}
@@ -1092,20 +1079,20 @@ templ ScriptsPage() {
 // configures where modules come from (Pluris-bundled, Tenant-local,
 // Imported registries). All three share the same page chrome and the
 // same canonical editor (editors/PolicyModuleEditor).
-templ PolicyModulesPage(view string, mods []policymodules.Module, defaults []policymodules.TenantDefault, deps map[string]ModuleDepsView, groups []dependencygroups.Group, csrf string, isAdmin bool) {
-	@Layout("policy-modules-"+view, "Policy Modules — "+policyModulesViewLabel(view)) {
+templ PolicyModulesPage(view string, mods []policymodules.Module, defaults []policymodules.TenantDefault, deps map[string]ModuleDepsView, groups []dependencygroups.Group, csrf string, isAdmin bool, deleted bool, deleteCopy string) {
+	@Layout("policy-modules-"+view, "Policy Modules — "+policyModulesViewLabel(view), "") {
 		@PageHeader("Modules — "+policyModulesViewLabel(view),
 			policyModulesViewDescription(view),
-			policyModulesViewAction(view), policyModulesViewActionHref(view))
+			policyModulesViewActionForState(view, deleted), policyModulesViewActionHref(view))
 		@policyModulesSubTabs(view)
 		<div data-testid={ "page-policy-modules" + policyModulesViewTestIDSuffix(view) }>
 			switch view {
 				case "defaults":
 					@policyModulesDefaultsBody(defaults, mods)
 				case "sources":
-					@policyModulesSourcesBody()
+					@policyModulesSourcesBody(csrf, deleteCopy)
 				default:
-					@policyModulesList(mods, deps, groups, csrf, isAdmin)
+					@policyModulesList(mods, deps, groups, csrf, isAdmin, deleted, deleteCopy)
 			}
 			@invariantFooter()
 		</div>
@@ -1154,6 +1141,13 @@ func policyModulesViewAction(v string) string {
 	return "New module"
 }
 
+func policyModulesViewActionForState(view string, deleted bool) string {
+	if deleted && (view == "library" || view == "") {
+		return ""
+	}
+	return policyModulesViewAction(view)
+}
+
 // policyModulesViewActionHref — the Library sub-tab's header action is a
 // real link to the Task 4.3 create page; Defaults/Sources keep their
 // existing non-functional stub buttons (out of scope here).
@@ -1173,14 +1167,14 @@ func policyModulesViewTestIDSuffix(v string) string {
 
 // 7. Wine
 templ WinePage() {
-	@Layout("wine", "Wine") {
+	@Layout("wine", "Wine", "") {
 		@PageHeader("Wine",
 			"Manage Windows applications running under Wine on Linux assets. Configuration Groups define the prefix (registry, file overrides, path mappings, env, DLL overrides).",
 			"New configuration group", "")
 		<div data-testid="page-wine">
 			@EmptyState("wine", "No Wine groups yet",
 				"Create a Wine Configuration Group to define a shared prefix configuration, then add Wine Applications that install into it.",
-				"Will mount editors/WineConfigGroupEditor and editors/WineApplicationEditor — Increment 4+.")
+				"Planned for a future release.")
 			@invariantFooter()
 		</div>
 	}
@@ -1189,7 +1183,7 @@ templ WinePage() {
 // 8. Package Management — Managers / Packages / Update Cycles, navigated
 //    via the sidebar.
 templ PackagesPage(tab string) {
-	@Layout("packages-"+tab, "Package Management — "+subtypeLabel(tab)) {
+	@Layout("packages-"+tab, "Package Management — "+subtypeLabel(tab), "") {
 		@PageHeader(subtypeLabel(tab), packagesDescription(tab), packagesAddLabel(tab), "")
 		<div data-testid={ "page-packages-" + tab }>
 			@EmptyState("packages", "No "+subtypeLabel(tab)+" yet",
@@ -1238,41 +1232,77 @@ func packagesEmptyHint(tab string) string {
 
 func packagesEditorRef(tab string) string {
 	switch tab {
-	case "managers":
-		return "Will mount editors/PackageManagerEditor — Increment 4+."
-	case "packages":
-		return "Will mount editors/PackageEditor — Increment 4+."
-	case "cycles":
-		return "Will mount editors/UpdateCycleEditor — Increment 4+."
+	case "managers", "packages", "cycles":
+		return "Planned for a future release."
 	}
 	return ""
 }
 
 // 9. Server Administration
 templ ServerAdminPage() {
-	@Layout("server-admin", "Server Administration") {
+	@Layout("server-admin", "Server Administration", "") {
 		@PageHeader("Server Administration",
 			"AD connection settings (Kanidm + LDAP), Group Policy import wizard, Policy Enforcement Scripts (admin view of the Policy Module catalog), application logs, tenant management.",
 			"", "")
 		<div data-testid="page-server-admin">
 			@EmptyState("server-admin", "Server administration",
 				"Configure tenant settings, integrations, AD connection, GP import, and view application logs.",
-				"Will mount multiple editors (TenantEditor, SiteEditor, GP Import wizard, PolicyModuleEditor admin view, RoleEditor) — Increment 4+.")
+				"Planned for a future release.")
 			@invariantFooter()
+		</div>
+	}
+}
+
+templ DataManagementPage(settings []db.RetentionSetting, csrf string, message string, errorMessage string) {
+	@Layout("server-admin-data", "Data Management", "") {
+		@PageHeader("Data Management", "Choose whether deletion is reversible and how long deleted records are retained for each entity type.", "", "")
+		<div data-testid="page-data-management">
+			if message != "" {
+				<div class="callout-info" role="status">{ message }</div>
+			}
+			if errorMessage != "" {
+				<div class="callout-danger" role="alert">{ errorMessage }</div>
+			}
+			<div style="display:grid; gap:12px;">
+				for _, setting := range settings {
+					<section class="card" style="padding:18px;">
+						<form method="post" action="/server-admin/data" style="display:grid; grid-template-columns:minmax(180px,1fr) minmax(180px,240px) minmax(180px,240px) auto; gap:16px; align-items:end;">
+							<input type="hidden" name="_csrf" value={ csrf }/>
+							<input type="hidden" name="entity_kind" value={ setting.EntityKind }/>
+							<div>
+								<h3 style="margin:0 0 4px;">{ retentionKindLabel(setting.EntityKind) }</h3>
+								<p class="text-muted" style="margin:0;">Blank retention means deleted records are never purged automatically.</p>
+							</div>
+							<div class="field">
+								<label for={ "retention-days-" + setting.EntityKind }>Retention days</label>
+								<input id={ "retention-days-" + setting.EntityKind } class="input" type="number" min="0" name="purge_after_days" value={ retentionDaysValue(setting) } placeholder="Never"/>
+							</div>
+							<div class="field">
+								<label for={ "retention-mode-" + setting.EntityKind }>Deletion mode</label>
+								<select id={ "retention-mode-" + setting.EntityKind } class="input" name="mode">
+									<option value="soft" selected?={ setting.Mode == "soft" }>Soft delete</option>
+									<option value="immediate" selected?={ setting.Mode == "immediate" }>Delete immediately</option>
+								</select>
+							</div>
+							<button type="submit" class="btn btn-primary">Save</button>
+						</form>
+					</section>
+				}
+			</div>
 		</div>
 	}
 }
 
 // 10. User / Admin Preferences
 templ PreferencesPage() {
-	@Layout("preferences", "User / Admin Preferences") {
+	@Layout("preferences", "User / Admin Preferences", "") {
 		@PageHeader("Preferences",
 			"Per-user (light/dark theme, profile picture). Admin section (admin testing workstations — list of existing assets used for manual-trigger script tests; not a separate concept).",
 			"", "")
 		<div data-testid="page-preferences">
 			@EmptyState("preferences", "Preferences",
 				"Manage your profile, appearance, and (for admins) the testing workstations referenced by manual script tests.",
-				"Inline form — Increment 4+.")
+				"Planned for a future release.")
 			@invariantFooter()
 		</div>
 	}
@@ -1338,25 +1368,8 @@ templ tabLink(href string, label string, key string, active string) {
 templ invariantFooter() {
 	<div class="invariant-foot">
 		<div><span class="label">Single Source of Truth UI (INV-U)</span></div>
-		<div>Every entry point that shows this concept mounts the same canonical editor with at most a context filter applied. See <span class="font-mono">docs/UX_INVARIANTS.md</span> §VII Concept Registry.</div>
+		<div>Every entry point that shows this concept mounts the same canonical editor with at most a context filter applied. See <span class="font-mono">docs/endpoint-management/ui/invariants.md</span> (INV-U).</div>
 	</div>
-}
-
-// policyCatalogNavigationScript — row click navigates to the policy
-// detail page (Task 15 replaced the PolicyDetailDialog popup). Same
-// pattern as usersListNavigationScript; interactive elements inside a
-// row keep their own behavior.
-templ policyCatalogNavigationScript() {
-	@templ.Raw(`<script>
-(function () {
-	document.addEventListener('click', function (e) {
-		if (e.target.closest('a, button, input, select, form')) return;
-		var row = e.target.closest('tr[data-policy-id]');
-		if (!row) return;
-		window.location.href = '/policy/catalog/' + encodeURIComponent(row.dataset.policyId);
-	});
-})();
-</script>`)
 }
 
 // policyModulesList — the Scripts → Policy Modules tab body. Lists every
@@ -1364,9 +1377,10 @@ templ policyCatalogNavigationScript() {
 // imported), latest version, signature signer, lifecycle phase strip,
 // and dependency / conflict counts. Click a row → mounts the canonical
 // editors/PolicyModuleEditor (live as a stub modal here in Phase 0).
-templ policyModulesList(mods []policymodules.Module, deps map[string]ModuleDepsView, groups []dependencygroups.Group, csrf string, isAdmin bool) {
+templ policyModulesList(mods []policymodules.Module, deps map[string]ModuleDepsView, groups []dependencygroups.Group, csrf string, isAdmin bool, deleted bool, deleteCopy string) {
 	{{ listID := lists.ListIDPolicyModules }}
-	<section class="pm-toolbar card" data-pluris-list={ listID }>
+	<section class="pm-toolbar card" data-pluris-list={ listID } data-mass-delete-copy={ deleteCopy } data-mass-purge-copy="This permanently deletes the selected policy modules and cannot be undone." data-mass-revoke-copy="Revokes all published and superseded versions; cannot be undone; publish a new version to re-enable.">
+		<input type="hidden" name="_csrf" value={ csrf }/>
 		<div class="field field-wide">
 			<label for="pm-search">Search</label>
 			<input
@@ -1380,6 +1394,13 @@ templ policyModulesList(mods []policymodules.Module, deps map[string]ModuleDepsV
 				data-pluris-highlight="1"
 				placeholder="Filter by id, title, satisfies, signer…"
 			/>
+		</div>
+		<div class="field">
+			<label for="pm-state">State</label>
+			<select id="pm-state" class="select" onchange="window.location.href = this.value">
+				<option value="/policy/modules" selected?={ !deleted }>Active</option>
+				<option value="/policy/modules?state=deleted" selected?={ deleted }>Deleted</option>
+			</select>
 		</div>
 		<div class="field">
 			<label for="pm-origin">Origin</label>
@@ -1400,32 +1421,35 @@ templ policyModulesList(mods []policymodules.Module, deps map[string]ModuleDepsV
 			<label>&nbsp;</label>
 			<span data-pluris-count={ listID } data-template="{visible} of {total} modules"></span>
 		</div>
-		<div class="field field-action">
-			<label>&nbsp;</label>
-			<a href="/policy/modules/new" class="btn btn-secondary">
-				@iconSVG("plus")
-				<span>New module</span>
-			</a>
-		</div>
 	</section>
+	@MassActionToolbar(listID, lists.MassActionsFor(listID))
 	<section class="pm-table-wrap card" data-pluris-list={ listID }>
 		@ConceptEmptyState("policy-modules", listID)
-		<table class="pm-table pluris-list" data-list-id={ listID }>
+		<table class="pm-table pluris-list" data-list-id={ listID } data-pluris-select={ listID }>
 			<thead>
 				<tr>
+					@ListSelectHeaderCell(listID)
 					<th style="width:24%">Module</th>
 					<th style="width:12%">Origin</th>
 					<th style="width:10%">Latest</th>
 					<th style="width:10%">Lifecycle</th>
 					<th style="width:12%">Deps / Conflicts</th>
 					<th style="width:16%">Signer</th>
-					<th style="width:16%">Actions</th>
 				</tr>
 			</thead>
 			<tbody>
 				for _, m := range mods {
 					{{ ver := m.LatestVersion() }}
-					<tr data-pm-id={ m.ID } data-pm-origin={ m.Origin } data-pm-search={ moduleSearchBlob(m) }>
+					<tr
+						data-pm-id={ m.ID }
+						data-pm-origin={ m.Origin }
+						data-pm-search={ moduleSearchBlob(m) }
+						data-row-href={ templ.SafeURL(policyModuleRowHref(m.ID, deleted)) }
+						data-select-name={ m.Title }
+						data-select-reason-revoke="Bundled modules cannot have versions revoked."
+						data-select-reason-delete="Bundled modules cannot be deleted."
+					>
+						@ListSelectCell(listID, m.ID, moduleSelectCaps(m, deleted))
 						<td>
 							<div class="pm-name">{ m.Title }</div>
 							<div class="pm-id font-mono">{ m.ID }</div>
@@ -1476,72 +1500,19 @@ templ policyModulesList(mods []policymodules.Module, deps map[string]ModuleDepsV
 								<div class="pm-key font-mono">{ ver.Signature.KeyID }</div>
 							}
 						</td>
-						<td class="pm-row-actions">
-							if len(m.Satisfies) > 0 {
-								<button
-									type="button"
-									class="btn btn-sm btn-secondary"
-									data-pmp-open
-									data-pmp-urn={ m.Satisfies[0] }
-									data-pmp-os="linux"
-									data-pmp-source="binding"
-									data-pmp-current-id={ m.ID }
-									title="Open the module picker scoped to this module's primary policy URN"
-								>
-									@iconSVG("plus")
-									<span>Pick</span>
-								</button>
-							}
-							<a
-								href={ templ.SafeURL("/policy/modules/" + m.ID) }
-								class="btn btn-sm btn-secondary"
-								title={ moduleOpenTitle(m.Origin) }
-							>
-								if m.Origin == "tenant" {
-									@iconSVG("pencil")
-									<span>Edit</span>
-								} else {
-									<span>View</span>
-								}
-							</a>
-							<form method="post" action={ templ.SafeURL("/policy/modules/" + m.ID + "/clone") } style="display:inline;">
-								<input type="hidden" name="_csrf" value={ csrf }/>
-								<button
-									type="submit"
-									class="btn btn-sm btn-secondary"
-									title="Clone into a tenant module you can edit"
-								>
-									@iconSVG("copy")
-									<span>Clone</span>
-								</button>
-							</form>
-							if m.Origin != "bundled" {
-								<button
-									type="button"
-									class="btn btn-sm btn-secondary"
-									data-pm-action="disable"
-									data-pm-id={ m.ID }
-									title="Disable (agents stop running this module; bindings flagged)"
-								>
-									@iconSVG("ban")
-								</button>
-								<form method="post" action={ templ.SafeURL("/policy/modules/" + m.ID + "/delete") } style="display:inline;" onsubmit="return confirm('Delete this module? This only works if nothing references it.')">
-									<input type="hidden" name="_csrf" value={ csrf }/>
-									<button
-										type="submit"
-										class="btn btn-sm btn-danger"
-										title="Delete (only allowed when refcount = 0 across all versions)"
-									>
-										@iconSVG("trash")
-									</button>
-								</form>
-							}
-						</td>
 					</tr>
 				}
 			</tbody>
 		</table>
 	</section>
+	@MassActionConfirmDialog()
+}
+
+func policyModuleRowHref(id string, deleted bool) string {
+	if deleted {
+		return ""
+	}
+	return "/policy/modules/" + id
 }
 
 // moduleDepsDetails (Task 7) — a native <details> expander inside a
@@ -1629,7 +1600,7 @@ templ policyModulesDefaultsBody(defaults []policymodules.TenantDefault, catalog 
 	if len(defaults) == 0 {
 		@EmptyState("policy-modules-defaults", "No tenant defaults set",
 			"All bindings currently use Pluris-bundled defaults. Click ‘Set default’ above (or on a row in the Library) to pin a tenant-wide choice for a specific policy.",
-			"editors/TenantModuleDefaultPicker")
+			"")
 	} else {
 		<section class="pm-defaults-table-wrap card">
 			<table class="pm-defaults-table">
@@ -1712,7 +1683,23 @@ func findCatalogModule(catalog []policymodules.Module, id string) *policymodules
 // and approves the diff. Removing a source flips its modules to
 // `orphaned` (bindings keep working until the admin re-binds).
 // =====================================================================
-templ policyModulesSourcesBody() {
+templ policyModulesSourcesBody(csrf string, warn string) {
+	if warn != "" {
+		<div class="auth-error" role="alert" style="margin-bottom:12px;">{ warn }</div>
+	}
+	<section class="pm-sources card" data-testid="pm-import-form">
+		<h4 class="asset-detail-section-title">Import a module package (.pmdl)</h4>
+		<p class="cg-hint">A .pmdl file is an exported Pluris module (tar.gz under the hood). Every version imports as a draft -- review and publish locally. The module appears in the Library with the imported chip.</p>
+		<form method="post" action="/policy/modules/import" enctype="multipart/form-data" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+			<input type="hidden" name="_csrf" value={ csrf }/>
+			<input type="file" name="pmdl" accept=".pmdl,application/gzip" class="input" required/>
+			<label style="display:flex; gap:4px; align-items:center;">
+				<input type="checkbox" name="as_copy" value="1"/>
+				<span class="cg-hint">Import as copy if the URN already exists</span>
+			</label>
+			<button type="submit" class="btn btn-primary">Import</button>
+		</form>
+	</section>
 	<section class="pm-sources card">
 		<ul class="pm-source-list">
 			<li class="pm-source pm-source-bundled">

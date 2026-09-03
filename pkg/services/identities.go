@@ -100,9 +100,10 @@ func (s *IdentityService) GetByEmailGlobal(ctx context.Context, email string) (i
 	return s.convert(rows[0]), nil
 }
 
-// List returns identities for tenantID, paginated.
+// List returns identities for tenantID, paginated, with site names resolved
+// (INV-L: list columns show display names, never raw foreign-key ids).
 func (s *IdentityService) List(ctx context.Context, tenantID int64, limit, offset int64) ([]identities.Identity, error) {
-	rows, err := s.db.Queries.ListIdentitiesByTenant(ctx, db.ListIdentitiesByTenantParams{
+	rows, err := s.db.Queries.ListIdentitiesByTenantWithSite(ctx, db.ListIdentitiesByTenantWithSiteParams{
 		TenantID: tenantID, Limit: limit, Offset: offset,
 	})
 	if err != nil {
@@ -110,7 +111,25 @@ func (s *IdentityService) List(ctx context.Context, tenantID int64, limit, offse
 	}
 	out := make([]identities.Identity, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, s.convert(row))
+		ident := s.convert(row.Identity)
+		ident.SiteName = row.SiteName.String
+		out = append(out, ident)
+	}
+	return out, nil
+}
+
+func (s *IdentityService) ListDeleted(ctx context.Context, tenantID int64, limit, offset int64) ([]identities.Identity, error) {
+	rows, err := s.db.Queries.ListDeletedIdentitiesByTenantWithSite(ctx, db.ListDeletedIdentitiesByTenantWithSiteParams{
+		TenantID: tenantID, Limit: limit, Offset: offset,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list deleted identities: %w", err)
+	}
+	out := make([]identities.Identity, 0, len(rows))
+	for _, row := range rows {
+		ident := s.convert(row.Identity)
+		ident.SiteName = row.SiteName.String
+		out = append(out, ident)
 	}
 	return out, nil
 }
@@ -353,12 +372,42 @@ func (s *IdentityService) ListAssignedAssets(ctx context.Context, tenantID, iden
 	return out, nil
 }
 
-// Delete permanently removes an identity.
-func (s *IdentityService) Delete(ctx context.Context, id int64) error {
-	if err := s.db.Queries.DeleteIdentity(ctx, id); err != nil {
+// Delete follows the identity retention setting.
+func (s *IdentityService) Delete(ctx context.Context, tenantID, id, actorID int64) error {
+	row, err := s.db.Queries.GetIdentityIncludingDeleted(ctx, id)
+	if err != nil {
+		return fmt.Errorf("delete identity %d: %w", id, err)
+	}
+	if row.TenantID != tenantID {
+		return fmt.Errorf("delete identity %d: %w", id, sql.ErrNoRows)
+	}
+	setting, err := s.db.Queries.GetRetentionSetting(ctx, EntityKindIdentity)
+	if err != nil {
+		return err
+	}
+	if setting.Mode == RetentionModeImmediate {
+		return s.PermanentlyDelete(ctx, tenantID, id)
+	}
+	if _, err := s.db.Queries.SoftDeleteIdentity(ctx, db.SoftDeleteIdentityParams{DeletedBy: actorID, ID: id, TenantID: tenantID}); err != nil {
 		return fmt.Errorf("delete identity %d: %w", id, err)
 	}
 	return nil
+}
+
+func (s *IdentityService) Restore(ctx context.Context, tenantID, id int64) error {
+	_, err := s.db.Queries.RestoreIdentity(ctx, db.RestoreIdentityParams{ID: id, TenantID: tenantID})
+	return err
+}
+
+func (s *IdentityService) PermanentlyDelete(ctx context.Context, tenantID, id int64) error {
+	row, err := s.db.Queries.GetIdentityIncludingDeleted(ctx, id)
+	if err != nil {
+		return fmt.Errorf("delete identity %d: %w", id, err)
+	}
+	if row.TenantID != tenantID {
+		return fmt.Errorf("delete identity %d: %w", id, sql.ErrNoRows)
+	}
+	return s.db.Queries.DeleteIdentity(ctx, id)
 }
 
 // convert adapts a db.Identity row into the canonical identities.Identity shape.

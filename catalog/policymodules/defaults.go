@@ -15,7 +15,7 @@ package policymodules
 //      satisfies the URN and supports the device OS, ordered by
 //      the catalog's stable order.
 //
-// Lock as INV-M11 (resolution order) in UX_INVARIANTS §VII.B.
+// Lock as INV-M11 (resolution order) in docs/endpoint-management/ui/invariants.md.
 //
 // v1 storage: in-memory mock keyed on (tenant_id, policy_urn). Backend
 // slice replaces this with an Ent entity holding the same fields.

@@ -11,18 +11,16 @@ import (
 // area (white/slate). Inspired by Intune / GLPI / Qualys / Linear.
 //   active — Key of the active sidebar item (e.g. "dashboard", "assets-computers").
 //   title  — Page title shown in <title> and the header bar.
-templ Layout(active string, title string) {
+templ Layout(active string, title string, backHref string) {
 	<!DOCTYPE html>
 	<html lang="en">
 		<head>
 			<meta charset="UTF-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 			<title>{ title } — Pluris</title>
-			<script src="https://cdn.tailwindcss.com"></script>
 			<link rel="preconnect" href="https://fonts.googleapis.com"/>
 			<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
 			<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
-			<script src="https://unpkg.com/htmx.org@1.9.12"></script>
 			<link rel="stylesheet" href="/static/lists.css"/>
 			<link rel="stylesheet" href="/static/filters-modern.css"/>
 			<script src="/static/lists.js" defer></script>
@@ -46,6 +44,12 @@ templ Layout(active string, title string) {
 					--paper-hover: #f1f5f9;
 					--border: #e2e8f0;
 					--border-strong: #cbd5e1;
+
+					/* Data-list surfaces. Themes override these semantic tokens;
+					   list components never carry their own palette. */
+					--list-row-bg: var(--paper);
+					--list-row-alt: #f4f6f9;
+					--list-row-hover: #cbd5e1;
 
 					/* Text on light */
 					--text: #0f172a;
@@ -183,6 +187,19 @@ templ Layout(active string, title string) {
 					margin: 0; font-size: 16px; font-weight: 600; color: var(--text);
 					letter-spacing: -0.01em;
 				}
+				.app-header-back {
+					display: inline-flex; align-items: center; gap: 8px;
+					min-height: 32px; padding: 5px 10px 5px 8px;
+					border: 1px solid var(--border-strong); border-radius: 6px;
+					background: var(--paper); color: var(--text-secondary);
+					font-size: 13px; font-weight: 600; text-decoration: none;
+					transition: background 0.12s, border-color 0.12s, color 0.12s;
+				}
+				.app-header-back:hover {
+					background: var(--paper-hover); border-color: var(--text-muted); color: var(--text);
+				}
+				.app-header-back:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+				.app-header-back svg { width: 15px; height: 15px; flex-shrink: 0; }
 				.search-input {
 					display: flex; align-items: center; gap: 8px;
 					background: var(--paper-alt);
@@ -1913,7 +1930,7 @@ templ Layout(active string, title string) {
 			<div class="app">
 				@Sidebar(active)
 				<main>
-					@Header(title)
+					@Header(title, backHref)
 					<div class="app-content">
 						{ children... }
 					</div>
@@ -1950,9 +1967,16 @@ func firstRuneUpper(s string) string {
 	return strings.ToUpper(string(r))
 }
 
-templ Header(title string) {
+templ Header(title string, backHref string) {
 	<header class="app-header">
-		<h1>{ title }</h1>
+		if backHref != "" {
+			<a href={ templ.SafeURL(backHref) } class="app-header-back" aria-label="Back to previous list">
+				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"></path></svg>
+				<span>Back</span>
+			</a>
+		} else {
+			<h1>{ title }</h1>
+		}
 		<div style="display:flex; align-items:center; gap:16px;">
 			<label class="search-input">
 				@iconSVG("search")
@@ -2008,7 +2032,7 @@ templ Sidebar(active string) {
 				}
 			}
 		</nav>
-		<div class="sidebar-foot">Increment 1 — UI shell</div>
+		<div class="sidebar-foot">Pre-beta</div>
 	</aside>
 }
 

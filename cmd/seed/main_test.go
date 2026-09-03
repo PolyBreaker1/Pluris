@@ -36,7 +36,8 @@ func TestSeedIsIdempotent(t *testing.T) {
 		Sites:       3,
 		Assets:      15 + 12 + 10 + 12,
 		Groups:      2,
-		Memberships: 3, // 3 computers; demo tenant has no identities
+		Identities:  10,
+		Memberships: 5, // 3 computers -> Engineering-Laptops + 2 identities -> HQ-All-Staff
 		CfgGroups:   1,
 		Bindings:    1,
 		Assignments: 1,
@@ -63,6 +64,7 @@ type counts struct {
 	Sites       int
 	Assets      int
 	Groups      int
+	Identities  int
 	Memberships int
 	CfgGroups   int
 	Bindings    int
@@ -93,6 +95,7 @@ func seedCounts(t *testing.T, dbPath string) counts {
 		Sites:       count(`SELECT COUNT(*) FROM sites`),
 		Assets:      count(`SELECT COUNT(*) FROM assets`),
 		Groups:      count(`SELECT COUNT(*) FROM groups`),
+		Identities:  count(`SELECT COUNT(*) FROM identities`),
 		Memberships: count(`SELECT COUNT(*) FROM group_memberships`),
 		CfgGroups:   count(`SELECT COUNT(*) FROM configuration_groups`),
 		Bindings:    count(`SELECT COUNT(*) FROM configuration_group_bindings`),

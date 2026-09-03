@@ -2,8 +2,9 @@ package services
 
 import (
 	"context"
+	"database/sql"
 	"errors"
-	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/pluris/pluris/catalog/dependencygroups"
@@ -18,12 +19,7 @@ import (
 // to this file so parallel package test runs never collide.
 func setupGroupRulesTestDB(t *testing.T) (*database.Database, int64) {
 	t.Helper()
-	dbPath := "test_group_rules_service.db"
-	t.Cleanup(func() {
-		os.Remove(dbPath)
-		os.Remove(dbPath + "-shm")
-		os.Remove(dbPath + "-wal")
-	})
+	dbPath := filepath.Join(t.TempDir(), "test_group_rules_service.db")
 	d, err := database.Open(dbPath)
 	if err != nil {
 		t.Fatalf("failed to open database: %v", err)
@@ -107,9 +103,32 @@ func TestMigration009AppliesFresh(t *testing.T) {
 	}
 }
 
+func TestDynamicMembershipExcludesSoftDeletedIdentity(t *testing.T) {
+	d, tenantID := setupGroupRulesTestDB(t)
+	ctx := context.Background()
+	identity := mustCreateIdentity(t, d, tenantID, "deleted-dynamic", "deleted-dynamic@example.com", "IT")
+	group := mustCreateDynamicGroup(t, d, tenantID, "dyn-deleted-identity", MemberKindIdentity)
+	svc := NewGroupService(d)
+	if _, err := svc.AddRule(ctx, group.ID, "param", "user/identity/email", string(dependencygroups.OpExists), nil, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if member, err := d.Queries.IsIdentityInGroup(ctx, db.IsIdentityInGroupParams{GroupID: group.ID, IdentityID: sql.NullInt64{Int64: identity.ID, Valid: true}}); err != nil || !member {
+		t.Fatalf("identity was not initially added: member=%v err=%v", member, err)
+	}
+	if err := NewIdentityService(d).Delete(ctx, tenantID, identity.ID, 99); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.EvaluateDynamicMembership(ctx, group.ID); err != nil {
+		t.Fatal(err)
+	}
+	if member, err := d.Queries.IsIdentityInGroup(ctx, db.IsIdentityInGroupParams{GroupID: group.ID, IdentityID: sql.NullInt64{Int64: identity.ID, Valid: true}}); err != nil || member {
+		t.Fatalf("deleted identity remains a dynamic member: member=%v err=%v", member, err)
+	}
+}
+
 // TestRuleCRUDValidationMatrix exercises AddRule against the same
 // validation semantics DependencyGroupService.AddCondition applies
-// (bad path/operator/kind/script_expect all rejected the same way).
+// (bad path/operator/kind/script subject all rejected the same way).
 func TestRuleCRUDValidationMatrix(t *testing.T) {
 	d, tenantID := setupGroupRulesTestDB(t)
 	svc := NewGroupService(d)
@@ -117,20 +136,22 @@ func TestRuleCRUDValidationMatrix(t *testing.T) {
 
 	cases := []struct {
 		name                                            string
-		kind, paramPath, operator, scriptSrc, scriptExp string
+		kind, paramPath, operator, scriptSrc, scriptRef string
 		wantErr                                         error
 	}{
 		{"missing param path", "param", "", string(dependencygroups.OpEquals), "", "", ErrParamPathRequired},
 		{"bad operator", "param", "computer/hardware/os_family", "made_up_op", "", "", ErrInvalidOperator},
 		{"bad kind", "bogus", "computer/hardware/os_family", string(dependencygroups.OpEquals), "", "", ErrInvalidConditionKind},
-		{"missing script source", "script", "", "", "", "", ErrScriptSourceRequired},
-		{"invalid script_expect", "script", "", "", "echo hi", `{"unknown_key":1}`, ErrInvalidScriptExpect},
+		{"missing script source", "script", "", string(dependencygroups.OpExists), "", "", ErrScriptSourceRequired},
+		{"script source and ref both set", "script", "", string(dependencygroups.OpExists), "echo hi", "lib-1", ErrScriptSourceAmbiguous},
+		{"missing command", "command", "", string(dependencygroups.OpContains), "", "", ErrScriptSourceRequired},
 		{"valid param rule", "param", "computer/hardware/os_family", string(dependencygroups.OpEquals), "", "", nil},
-		{"valid script rule", "script", "", "", "echo hi", "", nil},
+		{"valid script rule", "script", "", string(dependencygroups.OpExists), "echo hi", "", nil},
+		{"valid command rule", "command", "", string(dependencygroups.OpContains), "uname -r", "", nil},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := svc.AddRule(context.Background(), g.ID, tc.kind, tc.paramPath, tc.operator, []string{"linux"}, tc.scriptSrc, tc.scriptExp)
+			_, err := svc.AddRule(context.Background(), g.ID, tc.kind, tc.paramPath, tc.operator, []string{"linux"}, tc.scriptSrc, tc.scriptRef)
 			if tc.wantErr == nil {
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)
@@ -397,7 +418,7 @@ func TestEvaluateDynamicMembership_ScriptRuleZeroMembers(t *testing.T) {
 
 	mustCreateAsset(t, d, tenantID, "77777777-7777-7777-7777-777777777777", `{"os_family":"linux"}`)
 
-	if _, err := svc.AddRule(ctx, g.ID, "script", "", "", nil, "echo hi", ""); err != nil {
+	if _, err := svc.AddRule(ctx, g.ID, "script", "", string(dependencygroups.OpExists), nil, "echo hi", ""); err != nil {
 		t.Fatalf("AddRule failed: %v", err)
 	}
 

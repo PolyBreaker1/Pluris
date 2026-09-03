@@ -122,11 +122,7 @@ func getIdentityParamValue(key string, u identities.Identity) string {
 	case "tenant":
 		return strconv.FormatInt(u.TenantID, 10)
 	case "site":
-		// TODO: resolve to a display name once a site-lookup exists; renders the raw numeric ID for now.
-		if u.SiteID == 0 {
-			return ""
-		}
-		return strconv.FormatInt(u.SiteID, 10)
+		return u.SiteName
 	case "role":
 		return string(u.Role)
 	case "title":

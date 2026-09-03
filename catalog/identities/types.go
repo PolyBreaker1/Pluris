@@ -46,7 +46,8 @@ func (r Role) Label() string {
 type Identity struct {
 	ID       int64
 	TenantID int64
-	SiteID   int64 // 0 when unset
+	SiteID   int64  // 0 when unset
+	SiteName string // resolved display name; "" when SiteID is unset or unresolved
 
 	Username          string
 	UserPrincipalName string

@@ -18,7 +18,7 @@
 // @ConceptEmptyState call, then run `go run ./cmd/gendocs` to refresh
 // the doc table. The same key is used in the docs URL fragment.
 //
-// Authoring rules (locked as INV-O1, INV-O3 in UX_INVARIANTS.md):
+// Authoring rules (locked as INV-O1, INV-O3 in docs/endpoint-management/ui/invariants.md):
 //   - ADEquivalent is short (≤ 60 chars). Use the *Windows admin's*
 //     vocabulary: "AD OU + GP filtering", "Intune Configuration Profile",
 //     "GPO". Say "No direct equivalent" when honest, never fudge.

@@ -487,6 +487,121 @@ func run(dbPath, tenantSlug string) error {
 	}
 
 	// =========================================================================
+	// IDENTITIES - 10 directory entries across 3 sites, varied roles/state
+	// so the Users list has something to filter/sort/search against (role,
+	// department, site, enabled, locked). Directory records only - no
+	// password_hash, matching "Identity list - synced from Kanidm or
+	// manually added" on the page: most demo staff never need console login.
+	// =========================================================================
+	identitySeeds := []struct {
+		username, email, displayName, givenName, surname string
+		title, department, employeeType                  string
+		site                                             db.Site
+		role                                             string
+		phoneOffice, phoneMobile                         string
+		managerUsername                                  string // "" = no manager
+		locked, disabled                                 bool
+	}{
+		{"j.moreau", "j.moreau@" + tenant.Slug + ".local", "Julien Moreau", "Julien", "Moreau",
+			"Engineering Manager", "Engineering", "full_time", hqSite, "admin",
+			"+1-555-0101", "+1-555-7101", "", false, false},
+		{"s.chen", "s.chen@" + tenant.Slug + ".local", "Sarah Chen", "Sarah", "Chen",
+			"Senior Software Engineer", "Engineering", "full_time", hqSite, "user",
+			"+1-555-0102", "+1-555-7102", "j.moreau", false, false},
+		{"a.osei", "a.osei@" + tenant.Slug + ".local", "Ama Osei", "Ama", "Osei",
+			"Software Engineer", "Engineering", "full_time", hqSite, "user",
+			"+1-555-0103", "+1-555-7103", "j.moreau", false, false},
+		{"r.kowalski", "r.kowalski@" + tenant.Slug + ".local", "Robert Kowalski", "Robert", "Kowalski",
+			"IT Support Technician", "IT", "full_time", hqSite, "technician",
+			"+1-555-0104", "+1-555-7104", "", false, false},
+		{"n.patel", "n.patel@" + tenant.Slug + ".local", "Nisha Patel", "Nisha", "Patel",
+			"IT Support Technician", "IT", "full_time", dcSite, "technician",
+			"+1-555-0105", "+1-555-7105", "", false, false},
+		{"d.oconnor", "d.oconnor@" + tenant.Slug + ".local", "Declan O'Connor", "Declan", "O'Connor",
+			"QA Engineer", "Quality Assurance", "full_time", hqSite, "user",
+			"+1-555-0106", "+1-555-7106", "j.moreau", false, false},
+		{"m.tanaka", "m.tanaka@" + tenant.Slug + ".local", "Mika Tanaka", "Mika", "Tanaka",
+			"Account Executive", "Sales", "full_time", remoteSite, "user",
+			"+1-555-0107", "+1-555-7107", "", false, false},
+		{"l.silva", "l.silva@" + tenant.Slug + ".local", "Lucas Silva", "Lucas", "Silva",
+			"Customer Support Specialist", "Support", "full_time", remoteSite, "user",
+			"+1-555-0108", "+1-555-7108", "", true, false}, // locked: too many bad logins
+		{"e.novak", "e.novak@" + tenant.Slug + ".local", "Eva Novak", "Eva", "Novak",
+			"Office Manager", "Operations", "full_time", hqSite, "user",
+			"+1-555-0109", "+1-555-7109", "", false, false},
+		{"t.andersson", "t.andersson@" + tenant.Slug + ".local", "Theo Andersson", "Theo", "Andersson",
+			"Contract Developer", "Engineering", "contractor", hqSite, "user",
+			"+1-555-0110", "+1-555-7110", "j.moreau", false, true}, // disabled: contract ended
+	}
+
+	identityIDByUsername := make(map[string]int64, len(identitySeeds))
+	identityCount := 0
+	for _, seed := range identitySeeds {
+		var managerID sql.NullInt64
+		if seed.managerUsername != "" {
+			if id, ok := identityIDByUsername[seed.managerUsername]; ok {
+				managerID = sql.NullInt64{Int64: id, Valid: true}
+			}
+		}
+
+		ident, err := database.Queries.CreateIdentity(ctx, db.CreateIdentityParams{
+			TenantID:          tenant.ID,
+			SiteID:            sql.NullInt64{Int64: seed.site.ID, Valid: true},
+			Username:          seed.username,
+			UserPrincipalName: sql.NullString{String: seed.email, Valid: true},
+			Email:             seed.email,
+			DisplayName:       seed.displayName,
+			GivenName:         sql.NullString{String: seed.givenName, Valid: true},
+			Surname:           sql.NullString{String: seed.surname, Valid: true},
+			Title:             sql.NullString{String: seed.title, Valid: true},
+			Department:        sql.NullString{String: seed.department, Valid: true},
+			Company:           sql.NullString{String: tenant.Name, Valid: true},
+			EmployeeID:        sql.NullString{String: fmt.Sprintf("EMP-%04d", identityCount+1), Valid: true},
+			EmployeeType:      sql.NullString{String: seed.employeeType, Valid: true},
+			ManagerID:         managerID,
+			PhoneOffice:       sql.NullString{String: seed.phoneOffice, Valid: true},
+			PhoneMobile:       sql.NullString{String: seed.phoneMobile, Valid: true},
+			Role:              seed.role,
+		})
+		if err != nil {
+			if isUniqueConstraintErr(err) {
+				log.Printf("Identity %s already present, skipping", seed.username)
+				// Still needed below by any seeded report's managerUsername lookup.
+				existing, getErr := database.Queries.GetIdentityByEmail(ctx, db.GetIdentityByEmailParams{
+					TenantID: tenant.ID,
+					Email:    seed.email,
+				})
+				if getErr == nil {
+					identityIDByUsername[seed.username] = existing.ID
+				}
+				continue
+			}
+			return fmt.Errorf("create identity %s: %w", seed.username, err)
+		}
+		identityIDByUsername[seed.username] = ident.ID
+
+		if seed.locked {
+			if err := database.Queries.SetIdentityLocked(ctx, db.SetIdentityLockedParams{
+				ID:            ident.ID,
+				AccountLocked: true,
+			}); err != nil {
+				return fmt.Errorf("lock identity %s: %w", seed.username, err)
+			}
+		}
+		if seed.disabled {
+			if err := database.Queries.SetIdentityEnabled(ctx, db.SetIdentityEnabledParams{
+				ID:             ident.ID,
+				AccountEnabled: false,
+			}); err != nil {
+				return fmt.Errorf("disable identity %s: %w", seed.username, err)
+			}
+		}
+
+		log.Printf("✓ Identity: %s (ID: %d, Role: %s, Dept: %s)", seed.displayName, ident.ID, seed.role, seed.department)
+		identityCount++
+	}
+
+	// =========================================================================
 	// GROUPS, MEMBERSHIPS, CONFIG GROUP, SOFTWARE, ASSET EXTRAS
 	// =========================================================================
 

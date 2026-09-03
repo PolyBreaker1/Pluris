@@ -30,7 +30,7 @@ type HeroDef struct {
 }
 
 // HeroSpec describes the standardized detail-page hero (INV: one shell
-// for every entity — see docs/UX_INVARIANTS.md and spec §1).
+// for every entity — see docs/endpoint-management/ui/invariants.md).
 type HeroSpec struct {
 	Crumbs     []Crumb
 	Name       string
@@ -55,7 +55,7 @@ type TabSpec struct {
 // first tab/panel starts active; web/static/detail.js handles switching
 // and hash deep-links.
 templ DetailShell(activeNav string, title string, attrs templ.Attributes, hero HeroSpec, tabs []TabSpec) {
-	@Layout(activeNav, title) {
+	@Layout(activeNav, title, detailBackHref(hero.Crumbs)) {
 		<div class="page-content">
 			<div class="asset-detail" { attrs... }>
 				<!-- Breadcrumb -->
@@ -143,6 +143,17 @@ templ DetailShell(activeNav string, title string, attrs templ.Attributes, hero H
 			</div>
 		</div>
 	}
+}
+
+// detailBackHref returns the nearest linked breadcrumb, which is the
+// deterministic parent for the global detail-page Back control.
+func detailBackHref(crumbs []Crumb) string {
+	for i := len(crumbs) - 1; i >= 0; i-- {
+		if crumbs[i].Href != "" {
+			return crumbs[i].Href
+		}
+	}
+	return ""
 }
 
 // DetailTableFrame renders the standardized embedded-table frame for a
